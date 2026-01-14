@@ -623,6 +623,14 @@ func (u *onuUsecase) GetByBoardIDAndPonIDWithPagination(
 		// Calculate the index of the first item to be retrieved
 		startIndex := (pageIndex - 1) * pageSize
 
+		// If startIndex is out of range, return empty result
+		if startIndex >= count {
+			return model.PaginationResult{
+				OnuInformationList: []model.ONUInfoPerBoard{},
+				Count:              count,
+			}, nil
+		}
+
 		// Calculate the index of the last item to be retrieved
 		endIndex := startIndex + pageSize
 
