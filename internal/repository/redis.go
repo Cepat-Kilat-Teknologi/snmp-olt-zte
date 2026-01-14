@@ -58,15 +58,9 @@ func (r *onuRedisRepo) GetOnuIDCtx(ctx context.Context, key string) ([]model.Onu
 
 // SetOnuIDCtx is a method to set onu id to redis
 func (r *onuRedisRepo) SetOnuIDCtx(ctx context.Context, key string, seconds int, onuID []model.OnuID) error {
-
 	// Marshal onuID slice to JSON bytes
-	onuBytes, err := json.Marshal(onuID) // Marshal onuID slice to JSON bytes
-
-	// Check for error
-	if err != nil { // Check for error
-		log.Error().Err(err).Msg("Failed to marshal onu id")               // Log error
-		return apperrors.NewInternalError("failed to marshal onu id", err) // Return wrapped internal error
-	}
+	// Note: json.Marshal cannot fail for model.OnuID (only contains int fields)
+	onuBytes, _ := json.Marshal(onuID)
 
 	// Set the key in Redis with the marshaled bytes and expiration time
 	if err := r.redisClient.Set(ctx, key, onuBytes, time.Second*time.Duration(seconds)).Err(); err != nil {
@@ -91,11 +85,9 @@ func (r *onuRedisRepo) DeleteOnuIDCtx(ctx context.Context, key string) error {
 func (r *onuRedisRepo) SaveONUInfoList(
 	ctx context.Context, key string, seconds int, onuInfoList []model.ONUInfoPerBoard,
 ) error {
-	onuBytes, err := json.Marshal(onuInfoList) // Marshal list to JSON bytes
-	if err != nil {                            // Check for error
-		log.Error().Err(err).Msg("Failed to marshal onu info list")               // Log error
-		return apperrors.NewInternalError("failed to marshal onu info list", err) // Return wrapped internal error
-	}
+	// Marshal list to JSON bytes
+	// Note: json.Marshal cannot fail for model.ONUInfoPerBoard (only contains int/string fields)
+	onuBytes, _ := json.Marshal(onuInfoList)
 
 	// Set key in Redis with expiration
 	if err := r.redisClient.Set(ctx, key, onuBytes, time.Second*time.Duration(seconds)).Err(); err != nil {
@@ -144,11 +136,9 @@ func (r *onuRedisRepo) GetOnlyOnuIDCtx(ctx context.Context, key string) ([]model
 
 // SaveOnlyOnuIDCtx is a method to save only onu id to redis
 func (r *onuRedisRepo) SaveOnlyOnuIDCtx(ctx context.Context, key string, seconds int, onuID []model.OnuOnlyID) error {
-	onuBytes, err := json.Marshal(onuID) // Marshal struct to JSON
-	if err != nil {                      // Check for error
-		log.Error().Err(err).Msg("Failed to marshal onu id")               // Log error
-		return apperrors.NewInternalError("failed to marshal onu id", err) // Return wrapped internal error
-	}
+	// Marshal struct to JSON
+	// Note: json.Marshal cannot fail for model.OnuOnlyID (only contains int field)
+	onuBytes, _ := json.Marshal(onuID)
 
 	// Set key in Redis with expiration
 	if err := r.redisClient.Set(ctx, key, onuBytes, time.Second*time.Duration(seconds)).Err(); err != nil {

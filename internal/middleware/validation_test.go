@@ -11,6 +11,144 @@ import (
 	"github.com/go-chi/chi/v5"
 )
 
+func TestGetBoardID(t *testing.T) {
+	tests := []struct {
+		name      string
+		ctx       context.Context
+		wantValue int
+		wantOk    bool
+	}{
+		{
+			name:      "Valid board ID in context",
+			ctx:       context.WithValue(context.Background(), BoardIDKey, 1),
+			wantValue: 1,
+			wantOk:    true,
+		},
+		{
+			name:      "Board ID 2 in context",
+			ctx:       context.WithValue(context.Background(), BoardIDKey, 2),
+			wantValue: 2,
+			wantOk:    true,
+		},
+		{
+			name:      "No board ID in context",
+			ctx:       context.Background(),
+			wantValue: 0,
+			wantOk:    false,
+		},
+		{
+			name:      "Wrong type in context",
+			ctx:       context.WithValue(context.Background(), BoardIDKey, "not-an-int"),
+			wantValue: 0,
+			wantOk:    false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			gotValue, gotOk := GetBoardID(tt.ctx)
+			if gotValue != tt.wantValue {
+				t.Errorf("GetBoardID() value = %v, want %v", gotValue, tt.wantValue)
+			}
+			if gotOk != tt.wantOk {
+				t.Errorf("GetBoardID() ok = %v, want %v", gotOk, tt.wantOk)
+			}
+		})
+	}
+}
+
+func TestGetPonID(t *testing.T) {
+	tests := []struct {
+		name      string
+		ctx       context.Context
+		wantValue int
+		wantOk    bool
+	}{
+		{
+			name:      "Valid pon ID in context",
+			ctx:       context.WithValue(context.Background(), PonIDKey, 8),
+			wantValue: 8,
+			wantOk:    true,
+		},
+		{
+			name:      "Pon ID 16 in context",
+			ctx:       context.WithValue(context.Background(), PonIDKey, 16),
+			wantValue: 16,
+			wantOk:    true,
+		},
+		{
+			name:      "No pon ID in context",
+			ctx:       context.Background(),
+			wantValue: 0,
+			wantOk:    false,
+		},
+		{
+			name:      "Wrong type in context",
+			ctx:       context.WithValue(context.Background(), PonIDKey, "not-an-int"),
+			wantValue: 0,
+			wantOk:    false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			gotValue, gotOk := GetPonID(tt.ctx)
+			if gotValue != tt.wantValue {
+				t.Errorf("GetPonID() value = %v, want %v", gotValue, tt.wantValue)
+			}
+			if gotOk != tt.wantOk {
+				t.Errorf("GetPonID() ok = %v, want %v", gotOk, tt.wantOk)
+			}
+		})
+	}
+}
+
+func TestGetOnuID(t *testing.T) {
+	tests := []struct {
+		name      string
+		ctx       context.Context
+		wantValue int
+		wantOk    bool
+	}{
+		{
+			name:      "Valid ONU ID in context",
+			ctx:       context.WithValue(context.Background(), OnuIDKey, 64),
+			wantValue: 64,
+			wantOk:    true,
+		},
+		{
+			name:      "ONU ID 128 in context",
+			ctx:       context.WithValue(context.Background(), OnuIDKey, 128),
+			wantValue: 128,
+			wantOk:    true,
+		},
+		{
+			name:      "No ONU ID in context",
+			ctx:       context.Background(),
+			wantValue: 0,
+			wantOk:    false,
+		},
+		{
+			name:      "Wrong type in context",
+			ctx:       context.WithValue(context.Background(), OnuIDKey, "not-an-int"),
+			wantValue: 0,
+			wantOk:    false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			gotValue, gotOk := GetOnuID(tt.ctx)
+			if gotValue != tt.wantValue {
+				t.Errorf("GetOnuID() value = %v, want %v", gotValue, tt.wantValue)
+			}
+			if gotOk != tt.wantOk {
+				t.Errorf("GetOnuID() ok = %v, want %v", gotOk, tt.wantOk)
+			}
+		})
+	}
+}
+
 func TestValidateBoardPonParams(t *testing.T) {
 	tests := []struct {
 		name           string
