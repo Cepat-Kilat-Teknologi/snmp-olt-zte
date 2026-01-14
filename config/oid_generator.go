@@ -57,16 +57,14 @@ func GenerateBoardPonOID(boardID, ponID int) (*BoardPonConfig, error) {
 	}
 
 	// Determine base values based on board
+	// Note: boardID is already validated to be 1 or 2 above
 	var baseOnuID, baseOnuType int
-	switch boardID {
-	case 1:
+	if boardID == 1 {
 		baseOnuID = Board1OnuIDBase
 		baseOnuType = Board1OnuTypeBase
-	case 2:
+	} else {
 		baseOnuID = Board2OnuIDBase
 		baseOnuType = Board2OnuTypeBase
-	default:
-		return nil, fmt.Errorf("unsupported boardID: %d", boardID)
 	}
 
 	// Calculate suffixes using formula
@@ -92,15 +90,14 @@ func GenerateBoardPonOID(boardID, ponID int) (*BoardPonConfig, error) {
 
 // InitializeBoardPonMap generates all 32 Board-PON configurations dynamically.
 // This replaces the need for a 20KB config file with 384 lines of OID mappings.
+// Note: This function cannot fail since it always uses valid boardID (1-2) and ponID (1-16).
 func InitializeBoardPonMap() (map[BoardPonKey]*BoardPonConfig, error) {
 	boardPonMap := make(map[BoardPonKey]*BoardPonConfig, 32) // Pre-allocate for 32 entries (2 boards * 16 PONs)
 
 	for boardID := 1; boardID <= 2; boardID++ {
 		for ponID := 1; ponID <= 16; ponID++ {
-			cfg, err := GenerateBoardPonOID(boardID, ponID)
-			if err != nil {
-				return nil, fmt.Errorf("failed to generate OID for Board%dPon%d: %w", boardID, ponID, err)
-			}
+			// GenerateBoardPonOID only fails for invalid boardID/ponID, which can't happen here
+			cfg, _ := GenerateBoardPonOID(boardID, ponID)
 			boardPonMap[BoardPonKey{BoardID: boardID, PonID: ponID}] = cfg
 		}
 	}

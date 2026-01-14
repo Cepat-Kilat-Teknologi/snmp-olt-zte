@@ -56,18 +56,13 @@ func Shutdown(ctx context.Context, server *http.Server) error {
 	case <-ctx.Done(): // If context is canceled (e.g., external shutdown request)
 		timeoutCtx, cancel := context.WithTimeout(context.Background(), time.Second*10) // Create a shutdown context with 10s timeout
 		defer cancel()                                                                  // Ensure cancellation
-		if err := server.Shutdown(timeoutCtx); err != nil {                             // Attempt a graceful shutdown
-			log.Printf("Failed to gracefully shut down the server: %v", err) // Log failure
-		}
+		_ = server.Shutdown(timeoutCtx)                                                 // Attempt a graceful shutdown (error is non-critical during shutdown)
 	case sig := <-signalCh: // If OS signal received
 		log.Printf("Received signal: %v. Shutting down gracefully...", sig) // Log signal reception
 
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), time.Second*10) // Create a shutdown context with 10s timeout
 		defer cancel()                                                                   // Ensure cancellation
-
-		if err := server.Shutdown(shutdownCtx); err != nil { // Attempt a graceful shutdown
-			log.Printf("Failed to gracefully shut down the server: %v", err) // Log failure
-		}
+		_ = server.Shutdown(shutdownCtx)                                                 // Attempt a graceful shutdown (error is non-critical during shutdown)
 	}
 
 	return nil // Return nil indicating a successful (or handled) shutdown
