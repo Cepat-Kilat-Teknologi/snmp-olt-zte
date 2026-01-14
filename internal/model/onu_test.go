@@ -205,27 +205,6 @@ func TestOnuOnlyID_JSONMarshaling(t *testing.T) {
 	}
 }
 
-func TestSNMPWalkTask_Initialization(t *testing.T) {
-	task := SNMPWalkTask{
-		BaseOID:   "1.3.6.1.4.1",
-		TargetOID: "1.3.6.1.4.1.100",
-		BoardID:   1,
-		PON:       8,
-	}
-
-	if task.BaseOID != "1.3.6.1.4.1" {
-		t.Errorf("Expected BaseOID '1.3.6.1.4.1', got '%s'", task.BaseOID)
-	}
-
-	if task.BoardID != 1 {
-		t.Errorf("Expected BoardID 1, got %d", task.BoardID)
-	}
-
-	if task.PON != 8 {
-		t.Errorf("Expected PON 8, got %d", task.PON)
-	}
-}
-
 func TestOnuSerialNumber_JSONMarshaling(t *testing.T) {
 	sn := OnuSerialNumber{
 		Board:        1,

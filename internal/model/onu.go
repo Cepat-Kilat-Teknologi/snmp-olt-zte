@@ -68,14 +68,6 @@ type OnuOnlyID struct {
 	ID int `json:"onu_id"` // ONU ID
 }
 
-// SNMPWalkTask struct is a struct that represents the SNMP walk task
-type SNMPWalkTask struct {
-	BaseOID   string // Base OID to walk
-	TargetOID string // Target OID
-	BoardID   int    // Board ID
-	PON       int    // PON ID
-}
-
 // OnuSerialNumber struct is a struct that represents the ONU serial number
 type OnuSerialNumber struct {
 	Board        int    `json:"board"`         // Board ID
