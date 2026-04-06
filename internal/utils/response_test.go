@@ -70,13 +70,13 @@ func TestErrorBadRequestBos(t *testing.T) {
 		t.Errorf("Gagal mendekode respons JSON: %v", err)
 	}
 
-	expectedResponse := ErrorResponse{
-		Code:    http.StatusBadRequest,
-		Status:  "Bad Request",
-		Message: "Bad Request",
+	if decodedResponse.Code != http.StatusBadRequest {
+		t.Errorf("Code tidak sesuai: got %v want %v", decodedResponse.Code, http.StatusBadRequest)
 	}
-
-	if decodedResponse != expectedResponse {
-		t.Errorf("Respons JSON tidak sesuai: got %+v want %+v", decodedResponse, expectedResponse)
+	if decodedResponse.Status != "Bad Request" {
+		t.Errorf("Status tidak sesuai: got %v want %v", decodedResponse.Status, "Bad Request")
+	}
+	if decodedResponse.Error.Message != "Bad Request" {
+		t.Errorf("Error message tidak sesuai: got %v want %v", decodedResponse.Error.Message, "Bad Request")
 	}
 }

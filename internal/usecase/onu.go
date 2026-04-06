@@ -46,7 +46,15 @@ const (
 const (
 	RedisKeyTypeONUInfo    = "onu_info"
 	RedisKeyTypeEmptyOnuID = "empty_onu_id"
+	RedisKeyTypeONUDetail  = "onu_detail"
 )
+
+// RedisONUInfoRefreshThreshold is the remaining TTL (in seconds) below which
+// a background refresh is triggered (20% of RedisONUInfoTTL = 120s)
+const RedisONUInfoRefreshThreshold = 120
+
+// RedisONUDetailTTL is the TTL in seconds for ONU detail cache (2 minutes)
+const RedisONUDetailTTL = 120
 
 // GenerateRedisKey creates a consistent Redis key based on key type, board ID, and PON ID
 func GenerateRedisKey(keyType string, boardID, ponID int) string {
@@ -58,14 +66,19 @@ func GenerateRedisKey(keyType string, boardID, ponID int) string {
 	}
 }
 
+// GenerateONUDetailRedisKey creates a Redis key for ONU detail cache
+func GenerateONUDetailRedisKey(boardID, ponID, onuID int) string {
+	return fmt.Sprintf("board_%d_pon_%d_onu_%d_detail", boardID, ponID, onuID)
+}
+
 // OnuUseCaseInterface is an interface that represents the auth's usecase contract
 type OnuUseCaseInterface interface {
 	GetByBoardIDAndPonID(ctx context.Context, boardID, ponID int) ([]model.ONUInfoPerBoard, error)        // Get ONU info by board and PON
-	GetByBoardIDPonIDAndOnuID(boardID, ponID, onuID int) (model.ONUCustomerInfo, error)                   // Get specific ONU info
+	GetByBoardIDPonIDAndOnuID(ctx context.Context, boardID, ponID, onuID int) (model.ONUCustomerInfo, error) // Get specific ONU info
 	GetEmptyOnuID(ctx context.Context, boardID, ponID int) ([]model.OnuID, error)                         // Get empty ONU IDs
-	GetOnuIDAndSerialNumber(boardID, ponID int) ([]model.OnuSerialNumber, error)                          // Get ONU IDs and serial numbers
+	GetOnuIDAndSerialNumber(ctx context.Context, boardID, ponID int) ([]model.OnuSerialNumber, error)      // Get ONU IDs and serial numbers
 	UpdateEmptyOnuID(ctx context.Context, boardID, ponID int) error                                       // Update empty ONU IDs cache
-	GetByBoardIDAndPonIDWithPagination(boardID, ponID, page, pageSize int) ([]model.ONUInfoPerBoard, int) // Get paginated ONU info
+	GetByBoardIDAndPonIDWithPagination(ctx context.Context, boardID, ponID, page, pageSize int) ([]model.ONUInfoPerBoard, int) // Get paginated ONU info
 	DeleteCache(ctx context.Context, boardID, ponID int) error                                            // Delete cache for specific board/pon
 }
 
@@ -154,6 +167,16 @@ func (u *onuUsecase) GetByBoardIDAndPonID(ctx context.Context, boardID, ponID in
 		cachedOnuData, err := u.redisRepository.GetONUInfoList(ctx, redisKey) // Get ONU Information from Redis
 		if err == nil && cachedOnuData != nil {
 			log.Info().Str("redis_key", redisKey).Msg("Retrieved ONU information from Redis cache")
+
+			// Background refresh if TTL is low
+			ttl, ttlErr := u.redisRepository.GetTTL(ctx, redisKey)
+			if ttlErr == nil && ttl > 0 && ttl < time.Duration(RedisONUInfoRefreshThreshold)*time.Second {
+				go func() {
+					log.Info().Str("redis_key", redisKey).Msg("Background cache refresh triggered")
+					u.refreshONUInfoCache(context.Background(), boardID, ponID, oltConfig, redisKey)
+				}()
+			}
+
 			return cachedOnuData, nil
 		}
 
@@ -162,7 +185,7 @@ func (u *onuUsecase) GetByBoardIDAndPonID(ctx context.Context, boardID, ponID in
 		// Create a map to store SNMP Walk results
 		snmpDataMap := make(map[string]gosnmp.SnmpPDU)
 		// Perform SNMP Walk to get ONU ID and Name using snmpRepository Walk method with timeout context parameter
-		err = u.snmpRepository.Walk(oltConfig.BaseOID+oltConfig.OnuIDNameOID, func(pdu gosnmp.SnmpPDU) error {
+		err = u.snmpRepository.BulkWalk(oltConfig.BaseOID+oltConfig.OnuIDNameOID, func(pdu gosnmp.SnmpPDU) error {
 			snmpDataMap[utils.ExtractONUID(pdu.Name)] = pdu // Store PDU in map with ONU ID as key
 			return nil
 		})
@@ -184,22 +207,23 @@ func (u *onuUsecase) GetByBoardIDAndPonID(ctx context.Context, boardID, ponID in
 				Name:  utils.ExtractName(pdu.Value),   // Extract and set ONU Name
 			}
 
-			// Sequential SNMP Gets (gosnmp is not thread-safe, parallel caused worse performance)
-			// Get Data ONU Type from SNMP Walk using the getONUType method
-			if onuType, err := u.getONUType(oltConfig.OnuTypeOID, strconv.Itoa(onuInfo.ID)); err == nil {
-				onuInfo.OnuType = onuType
+			// Batch SNMP Get: fetch type, serial, rx_power, status in one request
+			onuIDStr := strconv.Itoa(onuInfo.ID)
+			batchOIDs := []string{
+				u.cfg.OltCfg.BaseOID2 + oltConfig.OnuTypeOID + "." + onuIDStr,
+				u.cfg.OltCfg.BaseOID1 + oltConfig.OnuSerialNumberOID + "." + onuIDStr,
+				u.cfg.OltCfg.BaseOID1 + oltConfig.OnuRxPowerOID + "." + onuIDStr + SNMPOIDSuffix,
+				u.cfg.OltCfg.BaseOID1 + oltConfig.OnuStatusOID + "." + onuIDStr,
 			}
-			// Get Data ONU Serial Number from SNMP Walk using the getSerialNumber method
-			if sn, err := u.getSerialNumber(oltConfig.OnuSerialNumberOID, strconv.Itoa(onuInfo.ID)); err == nil {
-				onuInfo.SerialNumber = sn
-			}
-			// Get Data ONU RX Power from SNMP Walk using the getRxPower method
-			if rx, err := u.getRxPower(oltConfig.OnuRxPowerOID, strconv.Itoa(onuInfo.ID)); err == nil {
-				onuInfo.RXPower = rx
-			}
-			// Get Data ONU TX Power from SNMP Walk using getTxPower method
-			if status, err := u.getStatus(oltConfig.OnuStatusOID, strconv.Itoa(onuInfo.ID)); err == nil {
-				onuInfo.Status = status
+
+			batchResult, err := u.snmpRepository.Get(batchOIDs)
+			if err == nil && len(batchResult.Variables) >= 4 {
+				onuInfo.OnuType = utils.ExtractName(batchResult.Variables[0].Value)
+				onuInfo.SerialNumber = utils.ExtractSerialNumber(batchResult.Variables[1].Value)
+				if power, convErr := utils.ConvertAndMultiply(batchResult.Variables[2].Value); convErr == nil {
+					onuInfo.RXPower = power
+				}
+				onuInfo.Status = utils.ExtractAndGetStatus(batchResult.Variables[3].Value)
 			}
 
 			// Add info to the list
@@ -232,7 +256,54 @@ func (u *onuUsecase) GetByBoardIDAndPonID(ctx context.Context, boardID, ponID in
 	return result.([]model.ONUInfoPerBoard), nil // Return the result from the cache or SNMP Walk
 }
 
-func (u *onuUsecase) GetByBoardIDPonIDAndOnuID(boardID, ponID, onuID int) (
+// refreshONUInfoCache performs a background SNMP fetch and updates the Redis cache
+func (u *onuUsecase) refreshONUInfoCache(ctx context.Context, boardID, ponID int, oltConfig *model.OltConfig, redisKey string) {
+	snmpDataMap := make(map[string]gosnmp.SnmpPDU)
+	err := u.snmpRepository.BulkWalk(oltConfig.BaseOID+oltConfig.OnuIDNameOID, func(pdu gosnmp.SnmpPDU) error {
+		snmpDataMap[utils.ExtractONUID(pdu.Name)] = pdu
+		return nil
+	})
+	if err != nil {
+		log.Error().Err(err).Msg("Background refresh: SNMP Walk failed")
+		return
+	}
+
+	var list []model.ONUInfoPerBoard
+	for _, pdu := range snmpDataMap {
+		onuInfo := model.ONUInfoPerBoard{
+			Board: boardID, PON: ponID,
+			ID:   utils.ExtractIDOnuID(pdu.Name),
+			Name: utils.ExtractName(pdu.Value),
+		}
+		onuIDStr := strconv.Itoa(onuInfo.ID)
+		batchOIDs := []string{
+			u.cfg.OltCfg.BaseOID2 + oltConfig.OnuTypeOID + "." + onuIDStr,
+			u.cfg.OltCfg.BaseOID1 + oltConfig.OnuSerialNumberOID + "." + onuIDStr,
+			u.cfg.OltCfg.BaseOID1 + oltConfig.OnuRxPowerOID + "." + onuIDStr + SNMPOIDSuffix,
+			u.cfg.OltCfg.BaseOID1 + oltConfig.OnuStatusOID + "." + onuIDStr,
+		}
+		batchResult, err := u.snmpRepository.Get(batchOIDs)
+		if err == nil && len(batchResult.Variables) >= 4 {
+			onuInfo.OnuType = utils.ExtractName(batchResult.Variables[0].Value)
+			onuInfo.SerialNumber = utils.ExtractSerialNumber(batchResult.Variables[1].Value)
+			if power, convErr := utils.ConvertAndMultiply(batchResult.Variables[2].Value); convErr == nil {
+				onuInfo.RXPower = power
+			}
+			onuInfo.Status = utils.ExtractAndGetStatus(batchResult.Variables[3].Value)
+		}
+		list = append(list, onuInfo)
+	}
+
+	sort.Slice(list, func(i, j int) bool { return list[i].ID < list[j].ID })
+
+	if err := u.redisRepository.SaveONUInfoList(ctx, redisKey, RedisONUInfoTTL, list); err != nil {
+		log.Error().Err(err).Msg("Background refresh: failed to save to Redis")
+	} else {
+		log.Info().Str("redis_key", redisKey).Msg("Background refresh: cache updated")
+	}
+}
+
+func (u *onuUsecase) GetByBoardIDPonIDAndOnuID(ctx context.Context, boardID, ponID, onuID int) (
 	model.ONUCustomerInfo, error,
 ) {
 	// Set key for simple flight
@@ -246,6 +317,14 @@ func (u *onuUsecase) GetByBoardIDPonIDAndOnuID(boardID, ponID, onuID int) (
 			return model.ONUCustomerInfo{}, err
 		}
 
+		// Check Redis cache for ONU detail
+		redisKey := GenerateONUDetailRedisKey(boardID, ponID, onuID)
+		cached, cacheErr := u.redisRepository.GetONUDetail(ctx, redisKey)
+		if cacheErr == nil && cached != nil {
+			log.Info().Str("redis_key", redisKey).Msg("Retrieved ONU detail from Redis cache")
+			return *cached, nil
+		}
+
 		var onuInformationList model.ONUCustomerInfo   // Create a variable to store ONU information
 		snmpDataMap := make(map[string]gosnmp.SnmpPDU) // Create a map to store SNMP Walk results
 
@@ -256,7 +335,7 @@ func (u *onuUsecase) GetByBoardIDPonIDAndOnuID(boardID, ponID, onuID int) (
 			Msg("Fetching detailed ONU information via SNMP Walk")
 
 		// Get ONU ID and Name using snmpRepository Walk method with timeout context parameter
-		err = u.snmpRepository.Walk(oltConfig.BaseOID+oltConfig.OnuIDNameOID+"."+strconv.Itoa(onuID),
+		err = u.snmpRepository.BulkWalk(oltConfig.BaseOID+oltConfig.OnuIDNameOID+"."+strconv.Itoa(onuID),
 			func(pdu gosnmp.SnmpPDU) error {
 				snmpDataMap[utils.ExtractONUID(pdu.Name)] = pdu // Extract ID and store PDU
 				return nil
@@ -346,6 +425,9 @@ func (u *onuUsecase) GetByBoardIDPonIDAndOnuID(boardID, ponID, onuID int) (
 			onuInformationList = onuInfo // Append ONU information to the onuInformationList
 		}
 
+		// Save ONU detail to Redis cache
+		_ = u.redisRepository.SaveONUDetail(ctx, redisKey, RedisONUDetailTTL, onuInformationList)
+
 		return onuInformationList, nil // Return the ONU information list
 	})
 
@@ -387,7 +469,7 @@ func (u *onuUsecase) GetEmptyOnuID(ctx context.Context, boardID, ponID int) ([]m
 		log.Info().Int("board_id", boardID).Int("pon_id", ponID).Msg("Fetching empty ONU IDs via SNMP Walk")
 
 		// Perform SNMP Walk to get ONU ID and Name
-		err = u.snmpRepository.Walk(snmpOID, func(pdu gosnmp.SnmpPDU) error {
+		err = u.snmpRepository.BulkWalk(snmpOID, func(pdu gosnmp.SnmpPDU) error {
 			idOnuID := utils.ExtractIDOnuID(pdu.Name) // Extract ID
 			emptyOnuIDList = append(emptyOnuIDList, model.OnuID{
 				Board: boardID,
@@ -447,7 +529,7 @@ func (u *onuUsecase) GetEmptyOnuID(ctx context.Context, boardID, ponID int) ([]m
 	return result.([]model.OnuID), nil // Return cast result
 }
 
-func (u *onuUsecase) GetOnuIDAndSerialNumber(boardID, ponID int) ([]model.OnuSerialNumber, error) {
+func (u *onuUsecase) GetOnuIDAndSerialNumber(ctx context.Context, boardID, ponID int) ([]model.OnuSerialNumber, error) {
 	// Set key for simple flight
 	key := fmt.Sprintf("onu_id_and_serial_number:%d:%d", boardID, ponID)
 
@@ -467,7 +549,7 @@ func (u *onuUsecase) GetOnuIDAndSerialNumber(boardID, ponID int) ([]model.OnuSer
 		log.Info().Int("board_id", boardID).Int("pon_id", ponID).Msg("Fetching ONU IDs and serial numbers via SNMP Walk")
 
 		// Perform SNMP BulkWalk to get ONU ID and Name
-		err = u.snmpRepository.Walk(snmpOID, func(pdu gosnmp.SnmpPDU) error {
+		err = u.snmpRepository.BulkWalk(snmpOID, func(pdu gosnmp.SnmpPDU) error {
 			idOnuID := utils.ExtractIDOnuID(pdu.Name) // Extract ID
 			onuIDList = append(onuIDList, model.OnuID{
 				Board: boardID,
@@ -534,7 +616,7 @@ func (u *onuUsecase) UpdateEmptyOnuID(ctx context.Context, boardID, ponID int) e
 		log.Info().Int("board_id", boardID).Int("pon_id", ponID).Msg("Updating empty ONU IDs via SNMP Walk")
 
 		// Perform SNMP BulkWalk to get ONU ID and Name
-		err = u.snmpRepository.Walk(snmpOID, func(pdu gosnmp.SnmpPDU) error {
+		err = u.snmpRepository.BulkWalk(snmpOID, func(pdu gosnmp.SnmpPDU) error {
 			idOnuID := utils.ExtractIDOnuID(pdu.Name) // Extract ID
 			emptyOnuIDList = append(emptyOnuIDList, model.OnuID{
 				Board: boardID,
@@ -586,127 +668,28 @@ func (u *onuUsecase) UpdateEmptyOnuID(ctx context.Context, boardID, ponID int) e
 }
 
 func (u *onuUsecase) GetByBoardIDAndPonIDWithPagination(
-	boardID, ponID, pageIndex, pageSize int,
+	ctx context.Context, boardID, ponID, pageIndex, pageSize int,
 ) ([]model.ONUInfoPerBoard, int) {
-
-	// Create a unique key for this request based on the parameters
-	key := fmt.Sprintf("get_onu_info:%d:%d:%d:%d", boardID, ponID, pageIndex, pageSize)
-
-	// Using simple flight to prevent duplicate requests for the same data
-	result, err, _ := u.sg.Do(key, func() (interface{}, error) {
-		// Get OLT config based on Board ID and PON ID
-		oltConfig, err := u.getOltConfig(boardID, ponID)
-		if err != nil {
-			return nil, err // Return error if config fetch fails
-		}
-
-		// SNMP OID variable
-		snmpOID := oltConfig.BaseOID + oltConfig.OnuIDNameOID
-
-		var onlyOnuIDList []model.OnuOnlyID // List to store only IDs
-		var count int                       // Total count
-
-		// Get ONU IDs from SNMP Walk
-		err = u.snmpRepository.Walk(snmpOID, func(pdu gosnmp.SnmpPDU) error {
-			onlyOnuIDList = append(onlyOnuIDList, model.OnuOnlyID{
-				ID: utils.ExtractIDOnuID(pdu.Name), // Extract ID
-			})
-			return nil
-		})
-		if err != nil {
-			return nil, err // Return error if walk fails
-		}
-
-		// Calculate total count
-		count = len(onlyOnuIDList)
-
-		// Calculate the index of the first item to be retrieved
-		startIndex := (pageIndex - 1) * pageSize
-
-		// If startIndex is out of range, return empty result
-		if startIndex >= count {
-			return model.PaginationResult{
-				OnuInformationList: []model.ONUInfoPerBoard{},
-				Count:              count,
-			}, nil
-		}
-
-		// Calculate the index of the last item to be retrieved
-		endIndex := startIndex + pageSize
-
-		// If the index of the last item to be retrieved is greater than the number of items, set it to the number of items
-		if endIndex > len(onlyOnuIDList) {
-			endIndex = len(onlyOnuIDList)
-		}
-
-		// Slice the data for pagination
-		onlyOnuIDList = onlyOnuIDList[startIndex:endIndex]
-
-		var onuInformationList []model.ONUInfoPerBoard // List for fully populated info
-
-		// Loop through onlyOnuIDList to get ONU information based on ONU ID
-		for _, onuID := range onlyOnuIDList {
-			onuInfo := model.ONUInfoPerBoard{
-				Board: boardID,  // Set Board ID to ONUInfo struct Board field
-				PON:   ponID,    // Set PON ID to ONUInfo struct PON field
-				ID:    onuID.ID, // Set ONU ID to ONUInfo struct ID field
-			}
-
-			// Get Name based on ONU ID and ONU Name OID and store it to ONU onuInfo struct
-			onuName, err := u.getName(oltConfig.OnuIDNameOID, strconv.Itoa(onuInfo.ID))
-			if err == nil {
-				onuInfo.Name = onuName // Set ONU Name to ONU onuInfo struct Name field
-			}
-
-			// Get ONU Type based on ONU ID and ONU Type OID and store it to ONU onuInfo struct
-			onuType, err := u.getONUType(oltConfig.OnuTypeOID, strconv.Itoa(onuInfo.ID))
-			if err == nil {
-				onuInfo.OnuType = onuType // Set ONU Type to ONU onuInfo struct OnuType field
-			}
-
-			// Get ONU Serial Number based on ONU ID and ONU Serial Number OID and store it to ONU onuInfo struct
-			onuSerialNumber, err := u.getSerialNumber(oltConfig.OnuSerialNumberOID, strconv.Itoa(onuInfo.ID))
-			if err == nil {
-				onuInfo.SerialNumber = onuSerialNumber // Set ONU Serial Number to ONU onuInfo struct SerialNumber field
-			}
-
-			// Get ONU RX Power based on ONU ID and ONU RX Power OID and store it to ONU onuInfo struct
-			onuRXPower, err := u.getRxPower(oltConfig.OnuRxPowerOID, strconv.Itoa(onuInfo.ID))
-			if err == nil {
-				onuInfo.RXPower = onuRXPower // Set ONU RX Power to ONU onuInfo struct RXPower field
-			}
-
-			// Get ONU Status based on ONU ID and ONU Status OID and store it to ONU onuInfo struct
-			onuStatus, err := u.getStatus(oltConfig.OnuStatusOID, strconv.Itoa(onuInfo.ID))
-			if err == nil {
-				onuInfo.Status = onuStatus // Set ONU Status to ONU onuInfo struct Status field
-			}
-
-			// Append ONU information to the onuInformationList
-			onuInformationList = append(onuInformationList, onuInfo)
-		}
-
-		// Sort ONU information list based on ONU ID ascending
-		sort.Slice(onuInformationList, func(i, j int) bool {
-			return onuInformationList[i].ID < onuInformationList[j].ID
-		})
-
-		// Return both the list and the count inside a struct
-		return model.PaginationResult{
-			OnuInformationList: onuInformationList,
-			Count:              count,
-		}, nil
-	})
-
-	// Handle error if any occurred during simple flight processing
+	// Get full ONU list (cached via Redis or fresh from SNMP)
+	allOnus, err := u.GetByBoardIDAndPonID(ctx, boardID, ponID)
 	if err != nil {
 		return nil, 0
 	}
 
-	// Extract the result from the simple flight result and return it
-	paginationResult := result.(model.PaginationResult)
-	return paginationResult.OnuInformationList, paginationResult.Count
+	count := len(allOnus)
 
+	// Calculate pagination bounds
+	startIndex := (pageIndex - 1) * pageSize
+	if startIndex >= count {
+		return []model.ONUInfoPerBoard{}, count
+	}
+
+	endIndex := startIndex + pageSize
+	if endIndex > count {
+		endIndex = count
+	}
+
+	return allOnus[startIndex:endIndex], count
 }
 
 func (u *onuUsecase) getName(OnuIDNameOID, onuID string) (string, error) {
@@ -790,7 +773,10 @@ func (u *onuUsecase) getLastOnline(OnuLastOnlineOID, onuID string) (string, erro
 		return "", err
 	}
 
-	value := result.Variables[0].Value.([]byte)    // Get value as bytes
+	value, ok := result.Variables[0].Value.([]byte) // Get value as bytes
+	if !ok {
+		return "", fmt.Errorf("unexpected SNMP value type for last online")
+	}
 	return utils.ConvertByteArrayToDateTime(value) // Convert to DateTime
 }
 
@@ -809,8 +795,11 @@ func (u *onuUsecase) getLastOffline(OnuLastOfflineOID, onuID string) (string, er
 
 	resultData := result.(*gosnmp.SnmpPacket) // Case result to SnmpPacket
 	if len(resultData.Variables) > 0 {
-		value := resultData.Variables[0].Value.([]byte) // Get value
-		return utils.ConvertByteArrayToDateTime(value)  // Convert to DateTime
+		value, ok := resultData.Variables[0].Value.([]byte) // Get value
+		if !ok {
+			return "", fmt.Errorf("unexpected SNMP value type for last offline")
+		}
+		return utils.ConvertByteArrayToDateTime(value) // Convert to DateTime
 	}
 
 	log.Error().Str("oid", oid).Msg("Failed to get ONU Last Offline: No variables in response")
@@ -838,7 +827,7 @@ func (u *onuUsecase) getOnuGponOpticalDistance(OnuGponOpticalDistanceOID, onuID 
 }
 
 func (u *onuUsecase) getUptimeDuration(lastOnline string) (string, error) {
-	currentTime := time.Now() // Get current time
+	currentTime := time.Now().UTC() // Get current time in UTC
 
 	lastOnlineTime, err := time.Parse(DateTimeFormat, lastOnline) // Parse last online string
 	if err != nil {
@@ -846,7 +835,7 @@ func (u *onuUsecase) getUptimeDuration(lastOnline string) (string, error) {
 		return "", err
 	}
 
-	duration := currentTime.Sub(lastOnlineTime) + TimezoneOffsetWIB // Calculate duration (adjusting for WIB timezone)
+	duration := currentTime.Sub(lastOnlineTime) // Calculate duration
 	return utils.ConvertDurationToString(duration), nil             // Convert to string and return
 }
 

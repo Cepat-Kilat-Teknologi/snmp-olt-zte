@@ -3,7 +3,7 @@ ARG TARGETPLATFORM
 ARG BUILDPLATFORM
 
 # Development stage with hot reload
-FROM golang:1.25.5-alpine AS dev
+FROM golang:1.26-alpine AS dev
 
 # Install air for hot reload
 RUN go install github.com/air-verse/air@latest

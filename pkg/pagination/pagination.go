@@ -13,16 +13,13 @@ var (
 	PageSizeVar     = "limit" // Query parameter key for page size
 )
 
-// Pages struct defines the structure for paginated responses
-// This structure is used to standardize API responses involving lists of items.
+// Pages struct defines the structure for pagination metadata.
+// This structure is used to calculate and hold pagination parameters.
 type Pages struct {
-	Code      int32       `json:"code"`       // HTTP status code
-	Status    string      `json:"status"`     // Status message
-	Page      int         `json:"page"`       // Current page number
-	PageSize  int         `json:"limit"`      // Number of items per page
-	PageCount int         `json:"page_count"` // Total number of pages
-	TotalRows int         `json:"total_rows"` // Total number of rows/items
-	Data      interface{} `json:"data"`       // The actual data payload (slice of items)
+	Page      int `json:"page"`       // Current page number
+	PageSize  int `json:"limit"`      // Number of items per page
+	PageCount int `json:"page_count"` // Total number of pages
+	TotalRows int `json:"total_rows"` // Total number of rows/items
 }
 
 // New creates a new Pages instance with the provided parameters
@@ -42,8 +39,6 @@ func New(page, pageSize, total int) *Pages {
 		pageCount = (total + pageSize - 1) / pageSize
 	}
 	return &Pages{ // Return initialized Pages struct
-		Code:      200,
-		Status:    "OK",
 		Page:      page,
 		PageSize:  pageSize,
 		TotalRows: total,

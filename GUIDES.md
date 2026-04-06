@@ -35,7 +35,7 @@ Complete guide for deploying the Go SNMP OLT ZTE C320 service in various environ
 ### Software Requirements
 
 - Docker 20.10+ and Docker Compose 2.0+ (for Docker deployment)
-- Go 1.25.5+ (for binary deployment)
+- Go 1.26+ (for binary deployment)
 - Redis 7.0+ (standalone or external)
 - Network access to ZTE C320 OLT (SNMP port 161)
 
@@ -71,9 +71,9 @@ REDIS_HOST=redis              # Use 'redis' for Docker Compose, or external Redi
 REDIS_PORT=6379
 REDIS_PASSWORD=               # Set strong password in production!
 REDIS_DB=0
-REDIS_MIN_IDLE_CONNECTIONS=200
-REDIS_POOL_SIZE=12000
-REDIS_POOL_TIMEOUT=240
+REDIS_MIN_IDLE_CONNECTIONS=10
+REDIS_POOL_SIZE=100
+REDIS_POOL_TIMEOUT=30
 
 # TLS/HTTPS Configuration (Production Recommended)
 USE_TLS=false                 # Set to 'true' for HTTPS
@@ -86,6 +86,10 @@ CORS_ALLOWED_METHODS=GET,POST,PUT,DELETE,OPTIONS
 CORS_ALLOWED_HEADERS=Accept,Authorization,Content-Type,X-API-Key,X-Request-ID
 CORS_ALLOW_CREDENTIALS=true
 CORS_MAX_AGE=3600
+
+# API Key Authentication (Optional)
+# Set to enable API key validation on /api/v1 routes
+API_KEY=your-secret-api-key
 ```
 
 ### Security Hardening
@@ -95,6 +99,7 @@ CORS_MAX_AGE=3600
 2. **Redis Password**: Set `REDIS_PASSWORD` with a strong password
 3. **TLS**: Enable HTTPS in production (`USE_TLS=true`)
 4. **CORS**: Restrict `CORS_ALLOWED_ORIGINS` to your domain only
+5. **API Key**: Set `API_KEY` to protect API endpoints
 
 ## Deployment Methods
 
@@ -190,9 +195,9 @@ docker run -d \
   -e REDIS_PORT=6379 \
   -e REDIS_PASSWORD=YOUR_REDIS_PASSWORD \
   -e REDIS_DB=0 \
-  -e REDIS_MIN_IDLE_CONNECTIONS=200 \
-  -e REDIS_POOL_SIZE=12000 \
-  -e REDIS_POOL_TIMEOUT=240 \
+  -e REDIS_MIN_IDLE_CONNECTIONS=10 \
+  -e REDIS_POOL_SIZE=100 \
+  -e REDIS_POOL_TIMEOUT=30 \
   cepatkilatteknologi/snmp-olt-zte-c320:latest
 
 # Verify

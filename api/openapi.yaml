@@ -1,0 +1,700 @@
+openapi: 3.1.0
+info:
+  title: Go SNMP OLT ZTE C320 Monitoring API
+  description: >
+    REST API for monitoring ZTE C320 OLT (Optical Line Terminal) via SNMP.
+    Provides endpoints to query ONU status, optical power levels, serial numbers,
+    and manage cache for board/PON combinations.
+  version: 1.0.0
+  contact:
+    name: API Support
+  license:
+    name: MIT
+    identifier: MIT
+
+servers:
+  - url: http://localhost:8081
+    description: Local development server
+
+security:
+  - ApiKeyAuth: []
+
+paths:
+  /health:
+    get:
+      summary: Health check
+      description: Returns the health status of the API server. No authentication required.
+      operationId: healthCheck
+      tags:
+        - Health
+      security: []
+      responses:
+        "200":
+          description: Server is healthy
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: ok
+                required:
+                  - status
+
+  /api/v1/board/{board_id}/pon/{pon_id}:
+    get:
+      summary: Get all ONUs for a board/PON combination
+      description: Retrieves a list of all ONUs connected to the specified board and PON port.
+      operationId: getOnusByBoardPon
+      tags:
+        - ONU
+      parameters:
+        - $ref: "#/components/parameters/BoardId"
+        - $ref: "#/components/parameters/PonId"
+      responses:
+        "200":
+          description: List of ONUs retrieved successfully
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/WebResponse"
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items:
+                          $ref: "#/components/schemas/ONUInfoPerBoard"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /api/v1/board/{board_id}/pon/{pon_id}/cache/clear:
+    delete:
+      summary: Clear cache for a board/PON combination
+      description: Removes the cached ONU data for the specified board and PON port. The next request will fetch fresh data from SNMP.
+      operationId: clearCacheByBoardPon
+      tags:
+        - Cache
+      parameters:
+        - $ref: "#/components/parameters/BoardId"
+        - $ref: "#/components/parameters/PonId"
+      responses:
+        "200":
+          description: Cache cleared successfully
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/WebResponse"
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          message:
+                            type: string
+                            example: Cache deleted successfully
+                          board_id:
+                            type: integer
+                            example: 1
+                          pon_id:
+                            type: integer
+                            example: 1
+                        required:
+                          - message
+                          - board_id
+                          - pon_id
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /api/v1/board/{board_id}/pon/{pon_id}/onu/{onu_id}:
+    get:
+      summary: Get specific ONU detail
+      description: Retrieves detailed information for a specific ONU including optical power levels, uptime, and offline history.
+      operationId: getOnuDetail
+      tags:
+        - ONU
+      parameters:
+        - $ref: "#/components/parameters/BoardId"
+        - $ref: "#/components/parameters/PonId"
+        - $ref: "#/components/parameters/OnuId"
+      responses:
+        "200":
+          description: ONU detail retrieved successfully
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/WebResponse"
+                  - type: object
+                    properties:
+                      data:
+                        $ref: "#/components/schemas/ONUCustomerInfo"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /api/v1/board/{board_id}/pon/{pon_id}/onu_id/empty:
+    get:
+      summary: Get available/empty ONU IDs
+      description: Returns a list of ONU IDs that are not currently assigned on the specified board and PON port.
+      operationId: getEmptyOnuIds
+      tags:
+        - ONU ID
+      parameters:
+        - $ref: "#/components/parameters/BoardId"
+        - $ref: "#/components/parameters/PonId"
+      responses:
+        "200":
+          description: List of empty ONU IDs retrieved successfully
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/WebResponse"
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items:
+                          $ref: "#/components/schemas/OnuID"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /api/v1/board/{board_id}/pon/{pon_id}/onu_id_sn:
+    get:
+      summary: Get ONU IDs with serial numbers
+      description: Returns a list of ONU IDs along with their corresponding serial numbers for the specified board and PON port.
+      operationId: getOnuIdSerialNumbers
+      tags:
+        - ONU ID
+      parameters:
+        - $ref: "#/components/parameters/BoardId"
+        - $ref: "#/components/parameters/PonId"
+      responses:
+        "200":
+          description: ONU IDs with serial numbers retrieved successfully
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/WebResponse"
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items:
+                          $ref: "#/components/schemas/OnuSerialNumber"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /api/v1/board/{board_id}/pon/{pon_id}/onu_id/update:
+    post:
+      summary: Force refresh empty ONU ID cache
+      description: Triggers a cache refresh for empty ONU IDs on the specified board and PON port.
+      operationId: updateEmptyOnuIdCache
+      tags:
+        - Cache
+      parameters:
+        - $ref: "#/components/parameters/BoardId"
+        - $ref: "#/components/parameters/PonId"
+      responses:
+        "200":
+          description: Cache updated successfully
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/WebResponse"
+                  - type: object
+                    properties:
+                      data:
+                        type: string
+                        example: Success Update Empty ONU_ID
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /api/v1/paginate/board/{board_id}/pon/{pon_id}:
+    get:
+      summary: Get paginated ONU list
+      description: Retrieves a paginated list of ONUs for the specified board and PON port with metadata about total rows and page count.
+      operationId: getOnusPaginated
+      tags:
+        - ONU
+      parameters:
+        - $ref: "#/components/parameters/BoardId"
+        - $ref: "#/components/parameters/PonId"
+        - name: page
+          in: query
+          description: Page number (1-indexed)
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            default: 1
+            example: 1
+        - name: limit
+          in: query
+          description: Number of items per page
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 10
+            example: 10
+      responses:
+        "200":
+          description: Paginated list of ONUs retrieved successfully
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/WebResponse"
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items:
+                          $ref: "#/components/schemas/ONUInfoPerBoard"
+                      meta:
+                        $ref: "#/components/schemas/Meta"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+components:
+  securitySchemes:
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
+      description: Optional API key for authenticating requests to /api/v1 routes.
+
+  parameters:
+    BoardId:
+      name: board_id
+      in: path
+      required: true
+      description: Board identifier on the OLT
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 2
+        example: 1
+    PonId:
+      name: pon_id
+      in: path
+      required: true
+      description: PON port identifier on the board
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 16
+        example: 1
+    OnuId:
+      name: onu_id
+      in: path
+      required: true
+      description: ONU identifier on the PON port
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 128
+        example: 1
+
+  schemas:
+    WebResponse:
+      type: object
+      description: Standard success response wrapper
+      properties:
+        code:
+          type: integer
+          description: HTTP status code
+          example: 200
+        status:
+          type: string
+          description: HTTP status text
+          example: OK
+        data: {}
+      required:
+        - code
+        - status
+        - data
+
+    ErrorResponse:
+      type: object
+      description: Standard error response wrapper
+      properties:
+        code:
+          type: integer
+          description: HTTP status code
+          example: 400
+        status:
+          type: string
+          description: HTTP status text
+          example: Bad Request
+        error:
+          $ref: "#/components/schemas/ErrorDetail"
+      required:
+        - code
+        - status
+        - error
+
+    ErrorDetail:
+      type: object
+      description: Detailed error information
+      properties:
+        type:
+          type: string
+          description: Error type identifier
+          enum:
+            - VALIDATION_ERROR
+            - AUTHENTICATION_ERROR
+            - NOT_FOUND
+            - RATE_LIMIT_ERROR
+            - INTERNAL_ERROR
+          example: VALIDATION_ERROR
+        message:
+          type: string
+          description: Human-readable error message
+          example: board_id must be 1 or 2
+        details:
+          type: object
+          description: Additional context about the error
+          additionalProperties: true
+          example:
+            received: "99"
+      required:
+        - type
+        - message
+
+    Meta:
+      type: object
+      description: Pagination metadata
+      properties:
+        page:
+          type: integer
+          description: Current page number
+          example: 1
+        limit:
+          type: integer
+          description: Items per page
+          example: 10
+        page_count:
+          type: integer
+          description: Total number of pages
+          example: 7
+        total_rows:
+          type: integer
+          description: Total number of records
+          example: 69
+      required:
+        - page
+        - limit
+        - page_count
+        - total_rows
+
+    ONUInfoPerBoard:
+      type: object
+      description: Summary information for an ONU on a board/PON combination
+      properties:
+        board:
+          type: integer
+          description: Board number
+          example: 1
+        pon:
+          type: integer
+          description: PON port number
+          example: 1
+        onu_id:
+          type: integer
+          description: ONU identifier
+          example: 1
+        name:
+          type: string
+          description: Customer or ONU name
+          example: Customer-001
+        onu_type:
+          type: string
+          description: ONU hardware model
+          example: F670LV7.1
+        serial_number:
+          type: string
+          description: ONU serial number
+          example: ZTEGC12345678
+        rx_power:
+          type: string
+          description: Received optical power in dBm
+          example: "-22.22"
+        status:
+          type: string
+          description: Current ONU status
+          enum:
+            - Online
+            - Offline
+            - LOS
+            - DyingGasp
+          example: Online
+      required:
+        - board
+        - pon
+        - onu_id
+        - name
+        - onu_type
+        - serial_number
+        - rx_power
+        - status
+
+    ONUCustomerInfo:
+      type: object
+      description: Detailed information for a specific ONU including optical levels and uptime history
+      properties:
+        board:
+          type: integer
+          example: 1
+        pon:
+          type: integer
+          example: 1
+        onu_id:
+          type: integer
+          example: 1
+        name:
+          type: string
+          description: Customer or ONU name
+          example: Customer-001
+        description:
+          type: string
+          description: ONU location or description
+          example: Location
+        onu_type:
+          type: string
+          description: ONU hardware model
+          example: F670LV7.1
+        serial_number:
+          type: string
+          description: ONU serial number
+          example: ZTEGC12345678
+        rx_power:
+          type: string
+          description: Received optical power in dBm
+          example: "-22.22"
+        tx_power:
+          type: string
+          description: Transmitted optical power in dBm
+          example: "2.57"
+        status:
+          type: string
+          description: Current ONU status
+          enum:
+            - Online
+            - Offline
+            - LOS
+            - DyingGasp
+          example: Online
+        ip_address:
+          type: string
+          description: ONU management IP address
+          example: 10.0.0.1
+        last_online:
+          type: string
+          description: Timestamp of last online event
+          example: "2024-08-11 10:09:37"
+        last_offline:
+          type: string
+          description: Timestamp of last offline event
+          example: "2024-08-11 10:08:35"
+        uptime:
+          type: string
+          description: Current uptime duration
+          example: 5 days 13 hours 10 minutes 50 seconds
+        last_down_time_duration:
+          type: string
+          description: Duration of the last downtime event
+          example: 0 days 0 hours 1 minutes 2 seconds
+        offline_reason:
+          type: string
+          description: Reason for the last offline event
+          example: PowerOff
+        gpon_optical_distance:
+          type: string
+          description: GPON optical distance in meters
+          example: "6701"
+      required:
+        - board
+        - pon
+        - onu_id
+        - name
+        - description
+        - onu_type
+        - serial_number
+        - rx_power
+        - tx_power
+        - status
+        - ip_address
+        - last_online
+        - last_offline
+        - uptime
+        - last_down_time_duration
+        - offline_reason
+        - gpon_optical_distance
+
+    OnuID:
+      type: object
+      description: An available/empty ONU ID slot
+      properties:
+        board:
+          type: integer
+          example: 1
+        pon:
+          type: integer
+          example: 1
+        onu_id:
+          type: integer
+          example: 123
+      required:
+        - board
+        - pon
+        - onu_id
+
+    OnuSerialNumber:
+      type: object
+      description: ONU ID paired with its serial number
+      properties:
+        board:
+          type: integer
+          example: 1
+        pon:
+          type: integer
+          example: 1
+        onu_id:
+          type: integer
+          example: 1
+        serial_number:
+          type: string
+          example: ZTEGC12345678
+      required:
+        - board
+        - pon
+        - onu_id
+        - serial_number
+
+  responses:
+    BadRequest:
+      description: Validation error
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+          example:
+            code: 400
+            status: Bad Request
+            error:
+              type: VALIDATION_ERROR
+              message: board_id must be 1 or 2
+              details:
+                received: "99"
+    Unauthorized:
+      description: Missing or invalid API key
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+          example:
+            code: 401
+            status: Unauthorized
+            error:
+              type: AUTHENTICATION_ERROR
+              message: Invalid or missing API key
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+          example:
+            code: 404
+            status: Not Found
+            error:
+              type: NOT_FOUND
+              message: ONU not found
+    RateLimited:
+      description: Rate limit exceeded
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+          example:
+            code: 429
+            status: Too Many Requests
+            error:
+              type: RATE_LIMIT_ERROR
+              message: Rate limit exceeded, try again later
+    InternalError:
+      description: Internal server error
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+          example:
+            code: 500
+            status: Internal Server Error
+            error:
+              type: INTERNAL_ERROR
+              message: An unexpected error occurred
+
+tags:
+  - name: Health
+    description: Server health check
+  - name: ONU
+    description: ONU monitoring and detail endpoints
+  - name: ONU ID
+    description: ONU ID listing and serial number lookup
+  - name: Cache
+    description: Cache management operations

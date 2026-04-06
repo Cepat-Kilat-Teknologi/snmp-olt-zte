@@ -22,6 +22,9 @@ type OnuRedisRepositoryInterface interface {
 	GetOnlyOnuIDCtx(ctx context.Context, key string) ([]model.OnuOnlyID, error)                              // Get only ONU IDs from Redis
 	SaveOnlyOnuIDCtx(ctx context.Context, key string, seconds int, onuID []model.OnuOnlyID) error            // Save only ONU IDs to Redis
 	Delete(ctx context.Context, key string) error                                                            // Delete any key from Redis
+	GetTTL(ctx context.Context, key string) (time.Duration, error)                                           // Get TTL for a key
+	SaveONUDetail(ctx context.Context, key string, seconds int, detail model.ONUCustomerInfo) error          // Save ONU detail to Redis
+	GetONUDetail(ctx context.Context, key string) (*model.ONUCustomerInfo, error)                            // Get ONU detail from Redis
 }
 
 // Auth redis repository
@@ -166,4 +169,44 @@ func (r *onuRedisRepo) Delete(ctx context.Context, key string) error {
 	}
 
 	return nil
+}
+
+// GetTTL returns the remaining TTL for a key in Redis
+func (r *onuRedisRepo) GetTTL(ctx context.Context, key string) (time.Duration, error) {
+	return r.redisClient.TTL(ctx, key).Result()
+}
+
+// SaveONUDetail saves ONU detail information to Redis with expiration
+func (r *onuRedisRepo) SaveONUDetail(ctx context.Context, key string, seconds int, detail model.ONUCustomerInfo) error {
+	// Marshal detail to JSON bytes
+	detailBytes, err := json.Marshal(detail)
+	if err != nil {
+		log.Error().Err(err).Msg("Failed to marshal ONU detail")
+		return apperrors.NewInternalError("failed to marshal ONU detail", err)
+	}
+
+	// Set key in Redis with expiration
+	if err := r.redisClient.Set(ctx, key, detailBytes, time.Second*time.Duration(seconds)).Err(); err != nil {
+		log.Error().Err(err).Str("key", key).Msg("Failed to set ONU detail to redis")
+		return apperrors.NewRedisError("Set", err)
+	}
+
+	return nil
+}
+
+// GetONUDetail retrieves ONU detail information from Redis
+func (r *onuRedisRepo) GetONUDetail(ctx context.Context, key string) (*model.ONUCustomerInfo, error) {
+	detailBytes, err := r.redisClient.Get(ctx, key).Bytes()
+	if err != nil {
+		log.Debug().Str("key", key).Msg("Cache miss - ONU detail key not found in Redis")
+		return nil, apperrors.NewRedisError("Get", err)
+	}
+
+	var detail model.ONUCustomerInfo
+	if err := json.Unmarshal(detailBytes, &detail); err != nil {
+		log.Error().Err(err).Msg("Failed to unmarshal ONU detail")
+		return nil, apperrors.NewInternalError("failed to unmarshal ONU detail", err)
+	}
+
+	return &detail, nil
 }

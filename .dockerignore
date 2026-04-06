@@ -3,4 +3,5 @@ Taskfile.yml
 *.md
 Dockerfile
 *.toml
+!.air.toml
 /sumitroajiprabowo/

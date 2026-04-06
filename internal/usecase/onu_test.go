@@ -14,8 +14,9 @@ import (
 
 // mockSnmpRepository is a mock implementation of SnmpRepositoryInterface
 type mockSnmpRepository struct {
-	GetFunc  func(oids []string) (*gosnmp.SnmpPacket, error)
-	WalkFunc func(oid string, walkFunc func(pdu gosnmp.SnmpPDU) error) error
+	GetFunc      func(oids []string) (*gosnmp.SnmpPacket, error)
+	WalkFunc     func(oid string, walkFunc func(pdu gosnmp.SnmpPDU) error) error
+	BulkWalkFunc func(oid string, walkFunc func(pdu gosnmp.SnmpPDU) error) error
 }
 
 func (m *mockSnmpRepository) Get(oids []string) (*gosnmp.SnmpPacket, error) {
@@ -45,6 +46,24 @@ func (m *mockSnmpRepository) Walk(oid string, walkFunc func(pdu gosnmp.SnmpPDU) 
 		Value: []byte("TestONU"),
 	})
 }
+
+func (m *mockSnmpRepository) BulkWalk(oid string, walkFunc func(pdu gosnmp.SnmpPDU) error) error {
+	if m.BulkWalkFunc != nil {
+		return m.BulkWalkFunc(oid, walkFunc)
+	}
+	// Default: delegate to WalkFunc for backward compatibility
+	if m.WalkFunc != nil {
+		return m.WalkFunc(oid, walkFunc)
+	}
+	// Default: simulate one ONU
+	return walkFunc(gosnmp.SnmpPDU{
+		Name:  oid + ".1.1.1",
+		Type:  gosnmp.OctetString,
+		Value: []byte("TestONU"),
+	})
+}
+
+func (m *mockSnmpRepository) Close() {}
 
 // mockRedisRepository is a mock implementation of OnuRedisRepositoryInterface
 type mockRedisRepository struct {
@@ -93,6 +112,18 @@ func (m *mockRedisRepository) GetOnlyOnuIDCtx(ctx context.Context, key string) (
 
 func (m *mockRedisRepository) SaveOnlyOnuIDCtx(ctx context.Context, key string, seconds int, onuID []model.OnuOnlyID) error {
 	return nil
+}
+
+func (m *mockRedisRepository) GetTTL(ctx context.Context, key string) (time.Duration, error) {
+	return 0, errors.New("not supported")
+}
+
+func (m *mockRedisRepository) SaveONUDetail(ctx context.Context, key string, seconds int, detail model.ONUCustomerInfo) error {
+	return nil
+}
+
+func (m *mockRedisRepository) GetONUDetail(ctx context.Context, key string) (*model.ONUCustomerInfo, error) {
+	return nil, errors.New("not found")
 }
 
 func (m *mockRedisRepository) Delete(ctx context.Context, key string) error {
@@ -338,7 +369,7 @@ func TestGetByBoardIDAndPonID_Success(t *testing.T) {
 	}
 
 	snmpRepo := &mockSnmpRepository{
-		WalkFunc: func(oid string, walkFunc func(pdu gosnmp.SnmpPDU) error) error {
+		BulkWalkFunc: func(oid string, walkFunc func(pdu gosnmp.SnmpPDU) error) error {
 			return walkFunc(gosnmp.SnmpPDU{
 				Name:  oid + ".1",
 				Type:  gosnmp.OctetString,
@@ -346,25 +377,47 @@ func TestGetByBoardIDAndPonID_Success(t *testing.T) {
 			})
 		},
 		GetFunc: func(oids []string) (*gosnmp.SnmpPacket, error) {
+			// Return 4 variables to cover the batch success path
 			return &gosnmp.SnmpPacket{
 				Variables: []gosnmp.SnmpPDU{
 					{Name: oids[0], Type: gosnmp.OctetString, Value: []byte("F670")},
+					{Name: oids[0], Type: gosnmp.OctetString, Value: []byte("ZTEG12345678")},
+					{Name: oids[0], Type: gosnmp.Integer, Value: 1000},
+					{Name: oids[0], Type: gosnmp.Integer, Value: 4},
 				},
 			}, nil
 		},
 	}
 
-	redisRepo := &mockRedisRepository{}
+	redisRepo := &mockRedisRepository{
+		GetONUInfoListFunc: func(ctx context.Context, key string) ([]model.ONUInfoPerBoard, error) {
+			return nil, errors.New("cache miss")
+		},
+		SaveONUInfoListFunc: func(ctx context.Context, key string, seconds int, list []model.ONUInfoPerBoard) error {
+			return nil
+		},
+	}
 
-	usecase := NewOnuUsecase(snmpRepo, redisRepo, cfg)
-	result, err := usecase.GetByBoardIDAndPonID(context.Background(), 1, 1)
+	uc := NewOnuUsecase(snmpRepo, redisRepo, cfg)
+	result, err := uc.GetByBoardIDAndPonID(context.Background(), 1, 1)
 
 	if err != nil {
 		t.Errorf("Expected no error, got %v", err)
 	}
 
 	if len(result) == 0 {
-		t.Error("Expected non-empty result")
+		t.Fatal("Expected non-empty result")
+	}
+
+	// Verify batch Get populated the fields
+	if result[0].OnuType == "" {
+		t.Error("Expected OnuType to be populated from batch Get")
+	}
+	if result[0].SerialNumber == "" {
+		t.Error("Expected SerialNumber to be populated from batch Get")
+	}
+	if result[0].Status == "" {
+		t.Error("Expected Status to be populated from batch Get")
 	}
 }
 
@@ -395,7 +448,7 @@ func TestGetByBoardIDPonIDAndOnuID_Success(t *testing.T) {
 	redisRepo := &mockRedisRepository{}
 
 	usecase := NewOnuUsecase(snmpRepo, redisRepo, cfg)
-	result, err := usecase.GetByBoardIDPonIDAndOnuID(1, 1, 5)
+	result, err := usecase.GetByBoardIDPonIDAndOnuID(context.Background(), 1, 1, 5)
 
 	if err != nil {
 		t.Errorf("Expected no error, got %v", err)
@@ -470,7 +523,7 @@ func TestGetOnuIDAndSerialNumber_Success(t *testing.T) {
 	redisRepo := &mockRedisRepository{}
 
 	usecase := NewOnuUsecase(snmpRepo, redisRepo, cfg)
-	result, err := usecase.GetOnuIDAndSerialNumber(1, 1)
+	result, err := usecase.GetOnuIDAndSerialNumber(context.Background(), 1, 1)
 
 	if err != nil {
 		t.Errorf("Expected no error, got %v", err)
@@ -539,7 +592,7 @@ func TestGetByBoardIDAndPonIDWithPagination_Success(t *testing.T) {
 	redisRepo := &mockRedisRepository{}
 
 	usecase := NewOnuUsecase(snmpRepo, redisRepo, cfg)
-	result, count := usecase.GetByBoardIDAndPonIDWithPagination(1, 1, 1, 5)
+	result, count := usecase.GetByBoardIDAndPonIDWithPagination(context.Background(), 1, 1, 1, 5)
 
 	if count == 0 {
 		t.Error("Expected non-zero count")
@@ -698,7 +751,7 @@ func TestGetOnuIDAndSerialNumber_SNMPError(t *testing.T) {
 	redisRepo := &mockRedisRepository{}
 
 	usecase := NewOnuUsecase(snmpRepo, redisRepo, cfg)
-	_, err := usecase.GetOnuIDAndSerialNumber(1, 1)
+	_, err := usecase.GetOnuIDAndSerialNumber(context.Background(), 1, 1)
 
 	if err == nil {
 		t.Error("Expected SNMP error")
@@ -752,7 +805,7 @@ func TestGetByBoardIDPonIDAndOnuID_SNMPError(t *testing.T) {
 	redisRepo := &mockRedisRepository{}
 
 	usecase := NewOnuUsecase(snmpRepo, redisRepo, cfg)
-	_, err := usecase.GetByBoardIDPonIDAndOnuID(1, 1, 5)
+	_, err := usecase.GetByBoardIDPonIDAndOnuID(context.Background(), 1, 1, 5)
 
 	if err == nil {
 		t.Error("Expected SNMP error")
@@ -2164,7 +2217,7 @@ func TestGetByBoardIDPonIDAndOnuID_InvalidConfig(t *testing.T) {
 	redisRepo := &mockRedisRepository{}
 
 	usecase := NewOnuUsecase(snmpRepo, redisRepo, cfg)
-	_, err := usecase.GetByBoardIDPonIDAndOnuID(99, 99, 1) // Invalid board/pon
+	_, err := usecase.GetByBoardIDPonIDAndOnuID(context.Background(), 99, 99, 1) // Invalid board/pon
 
 	if err == nil {
 		t.Error("Expected error for invalid config")
@@ -2278,7 +2331,7 @@ func TestGetOnuIDAndSerialNumber_InvalidConfig(t *testing.T) {
 	redisRepo := &mockRedisRepository{}
 
 	usecase := NewOnuUsecase(snmpRepo, redisRepo, cfg)
-	_, err := usecase.GetOnuIDAndSerialNumber(99, 99) // Invalid board/pon
+	_, err := usecase.GetOnuIDAndSerialNumber(context.Background(), 99, 99) // Invalid board/pon
 
 	if err == nil {
 		t.Error("Expected error for invalid config")
@@ -2351,7 +2404,7 @@ func TestGetByBoardIDAndPonIDWithPagination_InvalidConfig(t *testing.T) {
 	redisRepo := &mockRedisRepository{}
 
 	usecase := NewOnuUsecase(snmpRepo, redisRepo, cfg)
-	result, count := usecase.GetByBoardIDAndPonIDWithPagination(99, 99, 1, 10) // Invalid board/pon
+	result, count := usecase.GetByBoardIDAndPonIDWithPagination(context.Background(), 99, 99, 1, 10) // Invalid board/pon
 
 	if result != nil {
 		t.Error("Expected nil result for invalid config")
@@ -2381,7 +2434,7 @@ func TestGetByBoardIDAndPonIDWithPagination_SNMPError(t *testing.T) {
 	redisRepo := &mockRedisRepository{}
 
 	usecase := NewOnuUsecase(snmpRepo, redisRepo, cfg)
-	result, count := usecase.GetByBoardIDAndPonIDWithPagination(1, 1, 1, 10)
+	result, count := usecase.GetByBoardIDAndPonIDWithPagination(context.Background(), 1, 1, 1, 10)
 
 	if result != nil {
 		t.Error("Expected nil result for SNMP error")
@@ -2425,7 +2478,7 @@ func TestGetByBoardIDAndPonIDWithPagination_OutOfRange(t *testing.T) {
 
 	usecase := NewOnuUsecase(snmpRepo, redisRepo, cfg)
 	// Page 10 with size 10 = startIndex 90, but we only have 2 ONUs
-	result, count := usecase.GetByBoardIDAndPonIDWithPagination(1, 1, 10, 10)
+	result, count := usecase.GetByBoardIDAndPonIDWithPagination(context.Background(), 1, 1, 10, 10)
 
 	// Should return empty list but with total count
 	if count != 2 {
@@ -2499,7 +2552,7 @@ func TestGetByBoardIDPonIDAndOnuID_WithValidDatetime(t *testing.T) {
 	redisRepo := &mockRedisRepository{}
 
 	usecase := NewOnuUsecase(snmpRepo, redisRepo, cfg)
-	result, err := usecase.GetByBoardIDPonIDAndOnuID(1, 1, 5)
+	result, err := usecase.GetByBoardIDPonIDAndOnuID(context.Background(), 1, 1, 5)
 
 	if err != nil {
 		t.Errorf("Expected no error, got %v", err)
@@ -2556,7 +2609,7 @@ func TestGetByBoardIDAndPonIDWithPagination_PartialPage(t *testing.T) {
 
 	usecase := NewOnuUsecase(snmpRepo, redisRepo, cfg)
 	// Page 1 with size 10 = startIndex 0, endIndex should be adjusted to 3 (not 10)
-	result, count := usecase.GetByBoardIDAndPonIDWithPagination(1, 1, 1, 10)
+	result, count := usecase.GetByBoardIDAndPonIDWithPagination(context.Background(), 1, 1, 1, 10)
 
 	if count != 3 {
 		t.Errorf("Expected count 3, got %d", count)
@@ -2623,6 +2676,156 @@ func TestGetByBoardIDAndPonID_MultipleSortOrder(t *testing.T) {
 	}
 }
 
+func createTestConfig() *config.Config {
+	cfg := &config.Config{
+		OltCfg: config.OltConfig{
+			BaseOID1: "1.3.6.1.4.1",
+			BaseOID2: "1.3.6.1.4.1",
+		},
+		BoardPonMap: make(map[config.BoardPonKey]*config.BoardPonConfig),
+	}
+	cfg.BoardPonMap[config.BoardPonKey{BoardID: 1, PonID: 1}] = &config.BoardPonConfig{
+		OnuIDNameOID:       ".1.1.1",
+		OnuTypeOID:         ".1.1.2",
+		OnuSerialNumberOID: ".1.1.3",
+		OnuRxPowerOID:      ".1.1.4",
+		OnuStatusOID:       ".1.1.5",
+	}
+	return cfg
+}
+
+func TestGetLastOnline_InvalidType(t *testing.T) {
+	cfg := &config.Config{
+		OltCfg: config.OltConfig{
+			BaseOID1: "1.3.6.1.4.1",
+		},
+	}
+
+	snmpRepo := &mockSnmpRepository{
+		GetFunc: func(oids []string) (*gosnmp.SnmpPacket, error) {
+			return &gosnmp.SnmpPacket{
+				Variables: []gosnmp.SnmpPDU{
+					{Name: oids[0], Type: gosnmp.Integer, Value: 12345},
+				},
+			}, nil
+		},
+	}
+	redisRepo := &mockRedisRepository{}
+
+	uc := NewOnuUsecase(snmpRepo, redisRepo, cfg).(*onuUsecase)
+	_, err := uc.getLastOnline(".1.2.3", "5")
+
+	if err == nil {
+		t.Error("Expected error for non-byte value type")
+	}
+}
+
+func TestGetLastOffline_InvalidType(t *testing.T) {
+	cfg := &config.Config{
+		OltCfg: config.OltConfig{
+			BaseOID1: "1.3.6.1.4.1",
+		},
+	}
+
+	snmpRepo := &mockSnmpRepository{
+		GetFunc: func(oids []string) (*gosnmp.SnmpPacket, error) {
+			return &gosnmp.SnmpPacket{
+				Variables: []gosnmp.SnmpPDU{
+					{Name: oids[0], Type: gosnmp.Integer, Value: 12345},
+				},
+			}, nil
+		},
+	}
+	redisRepo := &mockRedisRepository{}
+
+	uc := NewOnuUsecase(snmpRepo, redisRepo, cfg).(*onuUsecase)
+	_, err := uc.getLastOffline(".1.2.3", "5")
+
+	if err == nil {
+		t.Error("Expected error for non-byte value type")
+	}
+}
+
+func TestGetByBoardIDAndPonID_BatchGetError(t *testing.T) {
+	cfg := createTestConfig()
+
+	snmpRepo := &mockSnmpRepository{
+		BulkWalkFunc: func(oid string, walkFunc func(pdu gosnmp.SnmpPDU) error) error {
+			return walkFunc(gosnmp.SnmpPDU{
+				Name:  oid + ".1",
+				Type:  gosnmp.OctetString,
+				Value: []byte("TestONU"),
+			})
+		},
+		GetFunc: func(oids []string) (*gosnmp.SnmpPacket, error) {
+			return nil, errors.New("batch get failed")
+		},
+	}
+	redisRepo := &mockRedisRepository{
+		GetONUInfoListFunc: func(ctx context.Context, key string) ([]model.ONUInfoPerBoard, error) {
+			return nil, errors.New("cache miss")
+		},
+		SaveONUInfoListFunc: func(ctx context.Context, key string, seconds int, list []model.ONUInfoPerBoard) error {
+			return nil
+		},
+	}
+
+	uc := NewOnuUsecase(snmpRepo, redisRepo, cfg)
+	result, err := uc.GetByBoardIDAndPonID(context.Background(), 1, 1)
+
+	if err != nil {
+		t.Errorf("Expected no error (batch failure is non-fatal), got: %v", err)
+	}
+	if len(result) == 0 {
+		t.Error("Expected at least 1 result even with batch get error")
+	}
+	if len(result) > 0 && result[0].OnuType != "" {
+		t.Error("Expected empty OnuType when batch get fails")
+	}
+}
+
+func TestGetByBoardIDAndPonID_BatchGetPartialResult(t *testing.T) {
+	cfg := createTestConfig()
+
+	snmpRepo := &mockSnmpRepository{
+		BulkWalkFunc: func(oid string, walkFunc func(pdu gosnmp.SnmpPDU) error) error {
+			return walkFunc(gosnmp.SnmpPDU{
+				Name:  oid + ".1",
+				Type:  gosnmp.OctetString,
+				Value: []byte("TestONU"),
+			})
+		},
+		GetFunc: func(oids []string) (*gosnmp.SnmpPacket, error) {
+			return &gosnmp.SnmpPacket{
+				Variables: []gosnmp.SnmpPDU{
+					{Name: oids[0], Type: gosnmp.OctetString, Value: []byte("SomeType")},
+				},
+			}, nil
+		},
+	}
+	redisRepo := &mockRedisRepository{
+		GetONUInfoListFunc: func(ctx context.Context, key string) ([]model.ONUInfoPerBoard, error) {
+			return nil, errors.New("cache miss")
+		},
+		SaveONUInfoListFunc: func(ctx context.Context, key string, seconds int, list []model.ONUInfoPerBoard) error {
+			return nil
+		},
+	}
+
+	uc := NewOnuUsecase(snmpRepo, redisRepo, cfg)
+	result, err := uc.GetByBoardIDAndPonID(context.Background(), 1, 1)
+
+	if err != nil {
+		t.Errorf("Expected no error, got: %v", err)
+	}
+	if len(result) == 0 {
+		t.Error("Expected at least 1 result")
+	}
+	if len(result) > 0 && result[0].OnuType != "" {
+		t.Error("Expected empty OnuType when batch returns < 4 variables")
+	}
+}
+
 // Test GetOnuIDAndSerialNumber with multiple ONUs to trigger sort callback
 func TestGetOnuIDAndSerialNumber_MultipleSortOrder(t *testing.T) {
 	cfg := &config.Config{
@@ -2659,7 +2862,7 @@ func TestGetOnuIDAndSerialNumber_MultipleSortOrder(t *testing.T) {
 	redisRepo := &mockRedisRepository{}
 
 	usecase := NewOnuUsecase(snmpRepo, redisRepo, cfg)
-	result, err := usecase.GetOnuIDAndSerialNumber(1, 1)
+	result, err := usecase.GetOnuIDAndSerialNumber(context.Background(), 1, 1)
 
 	if err != nil {
 		t.Errorf("Expected no error, got %v", err)

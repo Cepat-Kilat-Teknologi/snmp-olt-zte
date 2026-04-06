@@ -1,17 +1,32 @@
 package utils
 
-// WebResponse defines the structure for standard web responses
-// used for successful API responses with data.
+// WebResponse defines the standard API response structure.
+// Meta is optional — only included for paginated responses.
 type WebResponse struct {
-	Code   int32       `json:"code"`   // HTTP status code
-	Status string      `json:"status"` // Textual status message
-	Data   interface{} `json:"data"`   // Payload data
+	Code   int    `json:"code"`
+	Status string `json:"status"`
+	Data   any    `json:"data"`
+	Meta   *Meta  `json:"meta,omitempty"`
 }
 
-// ErrorResponse defines the structure for error responses
-// used when an API request fails.
+// Meta contains pagination metadata.
+type Meta struct {
+	Page      int `json:"page"`
+	Limit     int `json:"limit"`
+	PageCount int `json:"page_count"`
+	TotalRows int `json:"total_rows"`
+}
+
+// ErrorDetail contains structured error information.
+type ErrorDetail struct {
+	Type    string `json:"type"`
+	Message string `json:"message"`
+	Details any    `json:"details,omitempty"`
+}
+
+// ErrorResponse defines the standard API error response structure.
 type ErrorResponse struct {
-	Code    int32       `json:"code"`    // HTTP status code
-	Status  string      `json:"status"`  // Textual status message
-	Message interface{} `json:"message"` // Error message or details
+	Code   int         `json:"code"`
+	Status string      `json:"status"`
+	Error  ErrorDetail `json:"error"`
 }

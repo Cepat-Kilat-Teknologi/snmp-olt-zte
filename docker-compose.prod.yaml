@@ -32,14 +32,17 @@ services:
       REDIS_PORT: ${REDIS_PORT:-6379}
       REDIS_PASSWORD: ${REDIS_PASSWORD:-}
       REDIS_DB: ${REDIS_DB:-0}
-      REDIS_MIN_IDLE_CONNECTIONS: ${REDIS_MIN_IDLE_CONNECTIONS:-200}
-      REDIS_POOL_SIZE: ${REDIS_POOL_SIZE:-12000}
+      REDIS_MIN_IDLE_CONNECTIONS: ${REDIS_MIN_IDLE_CONNECTIONS:-10}
+      REDIS_POOL_SIZE: ${REDIS_POOL_SIZE:-100}
       REDIS_POOL_TIMEOUT: ${REDIS_POOL_TIMEOUT:-240}
 
       # TLS/HTTPS (Recommended for production)
       USE_TLS: ${USE_TLS:-false}
       TLS_CERT_FILE: ${TLS_CERT_FILE:-/certs/cert.pem}
       TLS_KEY_FILE: ${TLS_KEY_FILE:-/certs/key.pem}
+
+      # Authentication
+      API_KEY: ${API_KEY:-}
 
       # CORS (Restrict in production)
       CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-https://yourdomain.com}
@@ -66,7 +69,7 @@ services:
     #   - ./certs:/certs:ro
 
     healthcheck:
-      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8081/"]
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8081/health"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -79,9 +82,6 @@ services:
 
     environment:
       TZ: ${TZ:-Asia/Jakarta}
-
-    ports:
-      - "${REDIS_PORT:-6379}:6379"
 
     networks:
       - snmp-olt-network
@@ -96,7 +96,7 @@ services:
       retries: 3
 
     # Use Redis with password in production (recommended)
-    # command: redis-server --requires ${REDIS_PASSWORD}
+    command: redis-server --requirepass ${REDIS_PASSWORD}
 
 networks:
   snmp-olt-network:

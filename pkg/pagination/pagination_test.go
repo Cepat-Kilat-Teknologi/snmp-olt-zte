@@ -126,14 +126,6 @@ func TestNew(t *testing.T) {
 			if result.TotalRows != tt.total {
 				t.Errorf("Expected totalRows %d, got %d", tt.total, result.TotalRows)
 			}
-
-			if result.Code != 200 {
-				t.Errorf("Expected code 200, got %d", result.Code)
-			}
-
-			if result.Status != "OK" {
-				t.Errorf("Expected status OK, got %s", result.Status)
-			}
 		})
 	}
 }

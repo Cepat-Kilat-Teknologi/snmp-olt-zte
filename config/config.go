@@ -127,8 +127,8 @@ func LoadConfig() (*Config, error) {
 		Password:           getEnv("REDIS_PASSWORD", ""),
 		DB:                 getEnvAsInt("REDIS_DB", 0),
 		DefaultDB:          getEnvAsInt("REDIS_DB", 0),
-		MinIdleConnections: getEnvAsInt("REDIS_MIN_IDLE_CONNECTIONS", 200),
-		PoolSize:           getEnvAsInt("REDIS_POOL_SIZE", 12000),
+		MinIdleConnections: getEnvAsInt("REDIS_MIN_IDLE_CONNECTIONS", 10),
+		PoolSize:           getEnvAsInt("REDIS_POOL_SIZE", 100),
 		PoolTimeout:        getEnvAsInt("REDIS_POOL_TIMEOUT", 240),
 	}
 
@@ -148,6 +148,14 @@ func LoadConfig() (*Config, error) {
 	// Note: InitializeBoardPonMap cannot fail since it uses hardcoded valid values
 	// and always creates all 32 board/pon combinations, so ValidateConfig is not needed here
 	cfg.BoardPonMap, _ = InitializeBoardPonMap()
+
+	// Validate required environment variables
+	if cfg.SnmpCfg.IP == "" {
+		return nil, fmt.Errorf("SNMP_HOST environment variable is required")
+	}
+	if cfg.SnmpCfg.Community == "" {
+		return nil, fmt.Errorf("SNMP_COMMUNITY environment variable is required")
+	}
 
 	return &cfg, nil
 }

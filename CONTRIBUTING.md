@@ -28,7 +28,7 @@ By participating in this project, you agree to maintain a respectful and inclusi
 
 ### Prerequisites
 
-- Go 1.25.5 or higher
+- Go 1.26 or higher
 - Docker & Docker Compose
 - Task (task runner)
 - Git
@@ -135,23 +135,24 @@ golangci-lint run
 
 ```
 .
+├── api/              # OpenAPI 3.1 specification
 ├── app/              # Application setup and routing
 ├── cmd/              # Application entrypoints
 │   └── api/         # API server entrypoint
-├── config/          # Configuration management
+├── config/          # Configuration (env-based, OID generation)
 ├── internal/        # Private application code
-│   ├── errors/     # Custom error types
-│   ├── handler/    # HTTP handlers
-│   ├── middleware/ # HTTP middleware
+│   ├── errors/     # Typed error system (validation, SNMP, Redis, config)
+│   ├── handler/    # HTTP handlers with request ID correlation
+│   ├── middleware/ # Auth, CORS, rate limiting, security, validation
 │   ├── model/      # Data models
-│   ├── repository/ # Data access layer
-│   ├── usecase/    # Business logic
-│   └── utils/      # Utility functions
+│   ├── repository/ # SNMP connection pool, Redis cache operations
+│   ├── usecase/    # Business logic, singleflight, background refresh
+│   └── utils/      # OID extractors, power converters, response helpers
 └── pkg/            # Public libraries
     ├── graceful/   # Graceful shutdown
-    ├── pagination/ # Pagination utilities
-    ├── redis/      # Redis client
-    └── snmp/       # SNMP utilities
+    ├── pagination/ # Pagination calculation
+    ├── redis/      # Redis client factory
+    └── snmp/       # SNMP connection setup
 ```
 
 ### Naming Conventions
@@ -221,7 +222,7 @@ log.Info().Msg("Fetching ONU for board " + strconv.Itoa(boardID))
 
 ### Unit Tests
 
-All new code must include unit tests with minimum **90% code coverage** for:
+All new code must include unit tests with minimum **96% code coverage** for:
 - Handlers
 - Usecases
 - Repositories
@@ -269,7 +270,7 @@ task test-html
 
 ### Test Coverage Requirements
 
-- **New features**: ≥90% coverage required
+- **New features**: ≥96% coverage required
 - **Bug fixes**: Add tests reproducing the bug
 - **Refactoring**: Maintain or improve existing coverage
 
@@ -293,7 +294,8 @@ task test
 3. **Check coverage**:
 ```bash
 task test-coverage
-# Ensure overall coverage is ≥90%
+# Ensure overall coverage is ≥96%
+# Current project coverage is 99%
 ```
 
 4. **Format and lint**:

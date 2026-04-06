@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"net/http"
+	"os"
 
 	"github.com/Cepat-Kilat-Teknologi/go-snmp-olt-zte-c320/config"
 	"github.com/Cepat-Kilat-Teknologi/go-snmp-olt-zte-c320/internal/handler"
@@ -67,37 +68,18 @@ func (a *App) Start(ctx context.Context) error { // Method to start the applicat
 	}(redisClient) // Pass redisClient to the deferred function
 
 	// Initialize SNMP connection
-	snmpConn, err := snmp.SetupSnmpConnection(cfg) // Setup SNMP connection using configuration
-	if err != nil {                                // Check if setup failed
-		log.Error().Err(err).Msg("Failed to setup SNMP connection") // Log the error
+	snmpConn, err := snmp.SetupSnmpConnection(cfg)
+	if err != nil {
+		log.Error().Err(err).Msg("Failed to setup SNMP connection")
+		return err
 	}
+	log.Info().Msg("SNMP server successfully connected")
 
-	// Check SNMP connection
-	/*
-		if SNMP Connection with wrong credentials in SNMP v3, return error is nil
-		if SNMP Connection with the wrong Port in SNMP v2 v2c, return error is nil
-		if SNMP Connection with wrong community v2 v2c, return error is nil
+	// Initialize repository (creates connection pool from seed connection)
+	snmpRepo := repository.NewPonRepository(snmpConn)
 
-		Connect creates and opens a socket. Because UDP is a connectionless protocol,
-		you won't know if the remote host is responding until you send packets.
-		Neither will you know if the host is regularly disappearing and reappearing.
-	*/
-
-	if snmpConn.Connect() != nil { // Attempt to connect to SNMP agent (UDP socket creation)
-		log.Error().Err(err).Msg("Failed to connect to SNMP server") // Log connection failure
-	} else { // If connection setup (socket creation) succeeded
-		log.Info().Msg("SNMP server successfully connected") // Log success message
-	}
-
-	// Close SNMP connection after application shutdown
-	defer func() { // Defer closure of SNMP connection
-		if err := snmpConn.Conn.Close(); err != nil { // Close the SNMP connection and check for error
-			log.Error().Err(err).Msg("Failed to close SNMP connection") // Log the error
-		}
-	}()
-
-	// Initialize repository
-	snmpRepo := repository.NewPonRepository(snmpConn.Target, snmpConn.Community, snmpConn.Port) // Create a new PON repository with SNMP details
+	// Close all pool connections on shutdown
+	defer snmpRepo.Close()
 	redisRepo := repository.NewOnuRedisRepo(redisClient)                                        // Create new ONU Redis repository
 
 	// Initialize usecase
@@ -110,7 +92,10 @@ func (a *App) Start(ctx context.Context) error { // Method to start the applicat
 	a.router = loadRoutes(onuHandler) // Load all routes and middleware, assigning to app router
 
 	// Start server
-	addr := "8081"          // Define the server address/port
+	addr := os.Getenv("SERVER_PORT") // Read port from environment variable
+	if addr == "" {
+		addr = "8081" // Default to port 8081 if not set
+	}
 	server := &http.Server{ // Create a new HTTP server struct
 		Addr:    ":" + addr, // Set the address
 		Handler: a.router,   // Set the handler (router)

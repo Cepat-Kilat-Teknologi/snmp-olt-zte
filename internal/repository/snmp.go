@@ -9,71 +9,135 @@ import (
 
 // SnmpRepositoryInterface is an interface that represents the SNMP repository contract
 type SnmpRepositoryInterface interface {
-	Get(oids []string) (result *gosnmp.SnmpPacket, err error)       // Get SNMP data for the given OIDs
-	Walk(oid string, walkFunc func(pdu gosnmp.SnmpPDU) error) error // Walk SNMP to get all OIDs under the given OID
+	Get(oids []string) (result *gosnmp.SnmpPacket, err error)
+	Walk(oid string, walkFunc func(pdu gosnmp.SnmpPDU) error) error
+	BulkWalk(oid string, walkFunc func(pdu gosnmp.SnmpPDU) error) error
+	Close()
 }
 
-// snmpRepository is a struct that implements SnmpRepositoryInterface
+// snmpConfig holds connection parameters for creating new SNMP connections
+type snmpConfig struct {
+	target    string
+	port      uint16
+	community string
+	version   gosnmp.SnmpVersion
+	timeout   time.Duration
+	retries   int
+	maxOids   int
+}
+
+// snmpRepository uses a connection pool for concurrent SNMP access
 type snmpRepository struct {
-	target    string // SNMP target IP address
-	community string // SNMP community string
-	port      uint16 // SNMP port number
+	pool chan *gosnmp.GoSNMP
+	cfg  snmpConfig
 }
 
-// NewPonRepository is a constructor function to create a new instance of snmpRepository
-func NewPonRepository(target string, community string, port uint16) SnmpRepositoryInterface {
-	return &snmpRepository{ // Return a pointer to the new snmpRepository struct
-		target:    target,    // SNMP target IP address
-		community: community, // SNMP community string
-		port:      port,      // SNMP port number
+// DefaultPoolSize is the default number of SNMP connections in the pool
+const DefaultPoolSize = 4
+
+// NewPonRepository creates a repository with a connection pool.
+// The seed connection is used to extract config, then poolSize connections are created.
+func NewPonRepository(seed *gosnmp.GoSNMP) SnmpRepositoryInterface {
+	cfg := snmpConfig{
+		target:    seed.Target,
+		port:      seed.Port,
+		community: seed.Community,
+		version:   seed.Version,
+		timeout:   seed.Timeout,
+		retries:   seed.Retries,
+		maxOids:   seed.MaxOids,
+	}
+
+	pool := make(chan *gosnmp.GoSNMP, DefaultPoolSize)
+
+	// Put the seed connection as the first pool member
+	pool <- seed
+
+	// Create additional connections to fill the pool
+	for i := 1; i < DefaultPoolSize; i++ {
+		conn, err := createConnection(cfg)
+		if err != nil {
+			// If we can't create more connections, proceed with what we have
+			break
+		}
+		pool <- conn
+	}
+
+	return &snmpRepository{
+		pool: pool,
+		cfg:  cfg,
 	}
 }
 
-// buildSNMPInstance for creating a new SNMP instance
-func (r *snmpRepository) buildSNMPInstance() (*gosnmp.GoSNMP, error) {
-	params := &gosnmp.GoSNMP{ // Initialize GoSNMP struct with parameters
-		Target:    r.target,                       // SNMP target IP address
-		Port:      r.port,                         // SNMP port number
-		Community: r.community,                    // SNMP community string
-		Version:   gosnmp.Version2c,               // SNMP version (using 2c)
-		Timeout:   time.Duration(3) * time.Second, // SNMP timeout set to 3 seconds
-		Retries:   1,                              // Number of retries for SNMP requests
+// createConnection creates a new SNMP connection from config
+func createConnection(cfg snmpConfig) (*gosnmp.GoSNMP, error) {
+	conn := &gosnmp.GoSNMP{
+		Target:    cfg.target,
+		Port:      cfg.port,
+		Community: cfg.community,
+		Version:   cfg.version,
+		Timeout:   cfg.timeout,
+		Retries:   cfg.retries,
+		MaxOids:   cfg.maxOids,
 	}
-
-	// Set logger to nil to disable logging (default behavior of gosnmp if not set)
-	// Connect creates a udp connection
-	if err := params.Connect(); err != nil { // Attempt to establish connection
-		return nil, fmt.Errorf("SNMP Connect error: %w", err) // Error connecting to SNMP target
+	if err := conn.Connect(); err != nil {
+		return nil, fmt.Errorf("SNMP pool connect failed: %w", err)
 	}
-	return params, nil // Return the SNMP instance
+	return conn, nil
 }
 
-// Get to get SNMP data for the given OIDs
+// acquire gets a connection from the pool
+func (r *snmpRepository) acquire() *gosnmp.GoSNMP {
+	return <-r.pool
+}
+
+// release returns a connection to the pool
+func (r *snmpRepository) release(conn *gosnmp.GoSNMP) {
+	r.pool <- conn
+}
+
+// Get retrieves SNMP data for the given OIDs
 func (r *snmpRepository) Get(oids []string) (*gosnmp.SnmpPacket, error) {
-	snmp, err := r.buildSNMPInstance() // Create a new SNMP instance
-	if err != nil {
-		return nil, err // Return error if instance creation failed
-	}
-	defer snmp.Conn.Close() // Defer closing the connection
+	conn := r.acquire()
+	defer r.release(conn)
 
-	result, err := snmp.Get(oids) // Perform SNMP GET operation
+	result, err := conn.Get(oids)
 	if err != nil {
-		return nil, fmt.Errorf("SNMP Get failed: %w", err) // Return wrapped error on failure
+		return nil, fmt.Errorf("SNMP Get failed: %w", err)
 	}
-	return result, nil // Return result on success
+	return result, nil
 }
 
-// Walk for SNMP Walk to get all OIDs under the given OID
+// Walk performs SNMP Walk to get all OIDs under the given OID
 func (r *snmpRepository) Walk(oid string, walkFunc func(pdu gosnmp.SnmpPDU) error) error {
-	snmp, err := r.buildSNMPInstance() // Create a new SNMP instance
-	if err != nil {
-		return err // Return error if creation failed
-	}
-	defer snmp.Conn.Close() // Defer closing the connection
+	conn := r.acquire()
+	defer r.release(conn)
 
-	err = snmp.Walk(oid, walkFunc) // Perform SNMP WALK operation with the callback function
+	err := conn.Walk(oid, walkFunc)
 	if err != nil {
-		return fmt.Errorf("SNMP Walk failed: %w", err) // Return wrapped error on failure
+		return fmt.Errorf("SNMP Walk failed: %w", err)
 	}
-	return nil // Return nil on success
+	return nil
+}
+
+// Close drains the pool and closes all SNMP connections
+func (r *snmpRepository) Close() {
+	close(r.pool)
+	for conn := range r.pool {
+		if conn.Conn != nil {
+			conn.Conn.Close()
+		}
+	}
+}
+
+// BulkWalk performs SNMP BulkWalk to get all OIDs under the given OID using GetBulk requests
+func (r *snmpRepository) BulkWalk(oid string, walkFunc func(pdu gosnmp.SnmpPDU) error) error {
+	conn := r.acquire()
+	defer r.release(conn)
+
+	err := conn.BulkWalk(oid, walkFunc)
+	if err != nil {
+		return fmt.Errorf("SNMP BulkWalk failed: %w", err)
+	}
+	return nil
 }

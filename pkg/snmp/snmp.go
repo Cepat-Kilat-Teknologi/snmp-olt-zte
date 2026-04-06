@@ -11,15 +11,15 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
-var (
-	snmpHost      string // SNMP host IP
-	snmpPort      uint16 // SNMP port number
-	snmpCommunity string // SNMP community string
-)
-
 // SetupSnmpConnection is a function to set up snmp connection
 // It helps in initializing the SNMP parameters based on environment or configuration.
 func SetupSnmpConnection(config *config.Config) (*gosnmp.GoSNMP, error) {
+	var (
+		snmpHost      string // SNMP host IP
+		snmpPort      uint16 // SNMP port number
+		snmpCommunity string // SNMP community string
+	)
+
 	// Check if the application is running in a development or production environment
 	if os.Getenv("APP_ENV") == "development" || os.Getenv("APP_ENV") == "production" {
 		// Load from environment variables

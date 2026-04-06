@@ -1,7 +1,9 @@
 package snmp
 
 import (
+	"net"
 	"os"
+	"strconv"
 	"testing"
 
 	"github.com/Cepat-Kilat-Teknologi/go-snmp-olt-zte-c320/config"
@@ -213,10 +215,97 @@ func TestSetupSnmpConnection_MissingCommunity(t *testing.T) {
 	}
 }
 
+func TestSetupSnmpConnection_Success(t *testing.T) {
+	// Start a local UDP listener to accept SNMP connections
+	listener, err := net.ListenPacket("udp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("Failed to start UDP listener: %v", err)
+	}
+	defer listener.Close()
+
+	addr := listener.LocalAddr().(*net.UDPAddr)
+
+	os.Setenv("APP_ENV", "test")
+	defer os.Unsetenv("APP_ENV")
+
+	cfg := &config.Config{
+		SnmpCfg: config.SnmpConfig{
+			IP:        "127.0.0.1",
+			Port:      uint16(addr.Port),
+			Community: "public",
+		},
+	}
+
+	conn, err := SetupSnmpConnection(cfg)
+	if err != nil {
+		t.Fatalf("Expected successful connection, got error: %v", err)
+	}
+
+	if conn == nil {
+		t.Fatal("Expected non-nil connection")
+	}
+	defer conn.Conn.Close()
+
+	if conn.Target != "127.0.0.1" {
+		t.Errorf("Expected target 127.0.0.1, got %s", conn.Target)
+	}
+	if conn.Port != uint16(addr.Port) {
+		t.Errorf("Expected port %d, got %d", addr.Port, conn.Port)
+	}
+	if conn.Community != "public" {
+		t.Errorf("Expected community 'public', got %s", conn.Community)
+	}
+	if conn.Timeout.Seconds() != 5 {
+		t.Errorf("Expected timeout 5s, got %v", conn.Timeout)
+	}
+	if conn.Retries != 2 {
+		t.Errorf("Expected retries 2, got %d", conn.Retries)
+	}
+	if conn.MaxOids != 60 {
+		t.Errorf("Expected MaxOids 60, got %d", conn.MaxOids)
+	}
+}
+
+func TestSetupSnmpConnection_ConnectFailure(t *testing.T) {
+	// Valid config but using a hostname that causes Connect() to fail
+	os.Setenv("APP_ENV", "test")
+	defer os.Unsetenv("APP_ENV")
+
+	cfg := &config.Config{
+		SnmpCfg: config.SnmpConfig{
+			IP:        "invalid-hostname-!@#$%", // Will cause DNS/connect error
+			Port:      161,
+			Community: "public",
+		},
+	}
+
+	conn, err := SetupSnmpConnection(cfg)
+
+	if err == nil {
+		if conn != nil {
+			conn.Conn.Close()
+		}
+		t.Error("Expected error for invalid hostname connect failure")
+	}
+	if conn != nil {
+		t.Error("Expected nil connection on connect failure")
+	}
+}
+
 func TestSetupSnmpConnection_Development(t *testing.T) {
+	// Start local UDP listener so connection succeeds
+	listener, err := net.ListenPacket("udp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("Failed to start UDP listener: %v", err)
+	}
+	defer listener.Close()
+
+	addr := listener.LocalAddr().(*net.UDPAddr)
+	port := strconv.Itoa(addr.Port)
+
 	os.Setenv("APP_ENV", "development")
-	os.Setenv("SNMP_HOST", "localhost")
-	os.Setenv("SNMP_PORT", "1161")
+	os.Setenv("SNMP_HOST", "127.0.0.1")
+	os.Setenv("SNMP_PORT", port)
 	os.Setenv("SNMP_COMMUNITY", "test")
 	defer func() {
 		os.Unsetenv("APP_ENV")
@@ -228,18 +317,16 @@ func TestSetupSnmpConnection_Development(t *testing.T) {
 	cfg := &config.Config{}
 
 	conn, err := SetupSnmpConnection(cfg)
-
-	// Connection will likely fail, but config should be read from env
 	if err != nil {
-		// Expected - SNMP daemon probably not running on localhost:1161
-		return
+		t.Fatalf("Expected success, got error: %v", err)
 	}
 
-	if conn != nil {
-		defer conn.Conn.Close()
+	if conn == nil {
+		t.Fatal("Expected non-nil connection")
+	}
+	defer conn.Conn.Close()
 
-		if conn.Target != "localhost" {
-			t.Errorf("Expected target localhost, got %s", conn.Target)
-		}
+	if conn.Target != "127.0.0.1" {
+		t.Errorf("Expected target 127.0.0.1, got %s", conn.Target)
 	}
 }

@@ -254,16 +254,21 @@ func TestLoadConfig(t *testing.T) {
 }
 
 func TestLoadConfig_DefaultValues(t *testing.T) {
-	// Clear all environment variables
-	os.Unsetenv("SNMP_HOST")
+	// Set required SNMP env vars, clear everything else
+	os.Setenv("SNMP_HOST", "10.0.0.1")
+	os.Setenv("SNMP_COMMUNITY", "public")
 	os.Unsetenv("SNMP_PORT")
-	os.Unsetenv("SNMP_COMMUNITY")
 	os.Unsetenv("REDIS_HOST")
 	os.Unsetenv("REDIS_PORT")
 	os.Unsetenv("REDIS_DB")
 	os.Unsetenv("REDIS_MIN_IDLE_CONNECTIONS")
 	os.Unsetenv("REDIS_POOL_SIZE")
 	os.Unsetenv("REDIS_POOL_TIMEOUT")
+
+	defer func() {
+		os.Unsetenv("SNMP_HOST")
+		os.Unsetenv("SNMP_COMMUNITY")
+	}()
 
 	cfg, err := LoadConfig()
 
@@ -284,12 +289,42 @@ func TestLoadConfig_DefaultValues(t *testing.T) {
 		t.Errorf("Expected default Redis Port '6379', got '%s'", cfg.RedisCfg.Port)
 	}
 
-	if cfg.RedisCfg.MinIdleConnections != 200 {
-		t.Errorf("Expected default MinIdleConnections 200, got %d", cfg.RedisCfg.MinIdleConnections)
+	if cfg.RedisCfg.MinIdleConnections != 10 {
+		t.Errorf("Expected default MinIdleConnections 10, got %d", cfg.RedisCfg.MinIdleConnections)
 	}
 
-	if cfg.RedisCfg.PoolSize != 12000 {
-		t.Errorf("Expected default PoolSize 12000, got %d", cfg.RedisCfg.PoolSize)
+	if cfg.RedisCfg.PoolSize != 100 {
+		t.Errorf("Expected default PoolSize 100, got %d", cfg.RedisCfg.PoolSize)
+	}
+}
+
+func TestLoadConfig_MissingSNMPHost(t *testing.T) {
+	os.Unsetenv("SNMP_HOST")
+	os.Setenv("SNMP_COMMUNITY", "public")
+	defer os.Unsetenv("SNMP_COMMUNITY")
+
+	_, err := LoadConfig()
+	if err == nil {
+		t.Fatal("Expected error when SNMP_HOST is missing")
+	}
+	expected := "SNMP_HOST environment variable is required"
+	if err.Error() != expected {
+		t.Errorf("Expected error '%s', got '%s'", expected, err.Error())
+	}
+}
+
+func TestLoadConfig_MissingSNMPCommunity(t *testing.T) {
+	os.Setenv("SNMP_HOST", "10.0.0.1")
+	os.Unsetenv("SNMP_COMMUNITY")
+	defer os.Unsetenv("SNMP_HOST")
+
+	_, err := LoadConfig()
+	if err == nil {
+		t.Fatal("Expected error when SNMP_COMMUNITY is missing")
+	}
+	expected := "SNMP_COMMUNITY environment variable is required"
+	if err.Error() != expected {
+		t.Errorf("Expected error '%s', got '%s'", expected, err.Error())
 	}
 }
 

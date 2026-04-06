@@ -1,7 +1,14 @@
 package app
 
 import (
+	"context"
+	"net"
+	"os"
+	"strconv"
 	"testing"
+	"time"
+
+	"github.com/alicebob/miniredis/v2"
 )
 
 func TestNew(t *testing.T) {
@@ -24,8 +31,147 @@ func TestNew_ReturnsAppStruct(t *testing.T) {
 		t.Error("Expected both app instances to be non-nil")
 	}
 
-	// Each call should return a new instance
 	if app1 == app2 {
 		t.Error("Expected different app instances")
 	}
+}
+
+func TestApp_Start_MissingConfig(t *testing.T) {
+	os.Unsetenv("SNMP_HOST")
+	os.Unsetenv("SNMP_COMMUNITY")
+
+	app := New()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	err := app.Start(ctx)
+	if err == nil {
+		t.Error("Expected error for missing SNMP config")
+	}
+}
+
+func TestApp_Start_SNMPSetupFailure(t *testing.T) {
+	// Use miniredis for a working Redis, but invalid SNMP host to trigger SNMP failure
+	mr, err := miniredis.Run()
+	if err != nil {
+		t.Fatalf("Failed to start miniredis: %v", err)
+	}
+	defer mr.Close()
+
+	os.Setenv("SNMP_HOST", "invalid-host-!@#")
+	os.Setenv("SNMP_COMMUNITY", "public")
+	os.Setenv("SNMP_PORT", "161")
+	os.Setenv("REDIS_HOST", mr.Host())
+	os.Setenv("REDIS_PORT", mr.Port())
+	os.Setenv("REDIS_PASSWORD", "")
+	defer func() {
+		os.Unsetenv("SNMP_HOST")
+		os.Unsetenv("SNMP_COMMUNITY")
+		os.Unsetenv("SNMP_PORT")
+		os.Unsetenv("REDIS_HOST")
+		os.Unsetenv("REDIS_PORT")
+		os.Unsetenv("REDIS_PASSWORD")
+	}()
+
+	app := New()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	// Covers: config OK → Redis init → Redis ping SUCCESS → Redis close →
+	// SNMP setup FAILURE → return err
+	err = app.Start(ctx)
+	if err == nil {
+		t.Error("Expected error for invalid SNMP host")
+	}
+}
+
+func TestApp_Start_RedisPingFailure(t *testing.T) {
+	// Start miniredis then close it before app.Start to trigger ping failure
+	mr, err := miniredis.Run()
+	if err != nil {
+		t.Fatalf("Failed to start miniredis: %v", err)
+	}
+	host, port := mr.Host(), mr.Port()
+	mr.Close() // Close before Start — ping will fail
+
+	// Start UDP listener for SNMP
+	udpListener, err := net.ListenPacket("udp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("Failed to start UDP listener: %v", err)
+	}
+	defer udpListener.Close()
+	snmpAddr := udpListener.LocalAddr().(*net.UDPAddr)
+
+	os.Setenv("SNMP_HOST", "127.0.0.1")
+	os.Setenv("SNMP_COMMUNITY", "public")
+	os.Setenv("SNMP_PORT", strconv.Itoa(snmpAddr.Port))
+	os.Setenv("REDIS_HOST", host)
+	os.Setenv("REDIS_PORT", port)
+	os.Setenv("REDIS_PASSWORD", "")
+	defer func() {
+		os.Unsetenv("SNMP_HOST")
+		os.Unsetenv("SNMP_COMMUNITY")
+		os.Unsetenv("SNMP_PORT")
+		os.Unsetenv("REDIS_HOST")
+		os.Unsetenv("REDIS_PORT")
+		os.Unsetenv("REDIS_PASSWORD")
+	}()
+
+	app := New()
+	ctx, cancel := context.WithCancel(context.Background())
+	go func() {
+		time.Sleep(300 * time.Millisecond)
+		cancel()
+	}()
+
+	// Covers: config OK → Redis init → Redis ping FAILURE (non-fatal) →
+	// SNMP connect OK → server start → cancel → shutdown
+	_ = app.Start(ctx)
+}
+
+func TestApp_Start_FullLifecycle(t *testing.T) {
+	// Use miniredis for Redis + local UDP listener for SNMP
+	mr, err := miniredis.Run()
+	if err != nil {
+		t.Fatalf("Failed to start miniredis: %v", err)
+	}
+	defer mr.Close()
+
+	// Start a local UDP listener to simulate SNMP agent
+	udpListener, err := net.ListenPacket("udp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("Failed to start UDP listener: %v", err)
+	}
+	defer udpListener.Close()
+	snmpAddr := udpListener.LocalAddr().(*net.UDPAddr)
+
+	os.Setenv("SNMP_HOST", "127.0.0.1")
+	os.Setenv("SNMP_COMMUNITY", "public")
+	os.Setenv("SNMP_PORT", strconv.Itoa(snmpAddr.Port))
+	os.Setenv("REDIS_HOST", mr.Host())
+	os.Setenv("REDIS_PORT", mr.Port())
+	os.Setenv("REDIS_PASSWORD", "")
+	// Don't set SERVER_PORT — let it fall back to default "8081" to cover that branch
+	defer func() {
+		os.Unsetenv("SNMP_HOST")
+		os.Unsetenv("SNMP_COMMUNITY")
+		os.Unsetenv("SNMP_PORT")
+		os.Unsetenv("REDIS_HOST")
+		os.Unsetenv("REDIS_PORT")
+		os.Unsetenv("REDIS_PASSWORD")
+	}()
+
+	app := New()
+	ctx, cancel := context.WithCancel(context.Background())
+
+	// Cancel after short delay to trigger graceful shutdown
+	go func() {
+		time.Sleep(300 * time.Millisecond)
+		cancel()
+	}()
+
+	// Covers full lifecycle: config → Redis init → Redis ping OK →
+	// SNMP connect OK → repository init → handler init → router init →
+	// server start → context cancel → graceful shutdown → Redis close → SNMP close
+	_ = app.Start(ctx)
 }

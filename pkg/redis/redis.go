@@ -9,19 +9,19 @@ import (
 	"github.com/redis/go-redis/v9"
 )
 
-var (
-	redisHost               string // Redis Host
-	redisPort               string // Redis Port
-	redisPassword           string // Redis Password
-	redisDB                 int    // Redis Database Index
-	redisMinIdleConnections int    // Minimum idle connections
-	redisPoolSize           int    // Max pool size
-	redisPoolTimeout        int    // Pool timeout duration
-)
-
 // NewRedisClient creates and returns a new Redis client based on the provided configuration.
 // It checks environment variables first (if in dev/prod mode) or falls back to the provided config struct.
 func NewRedisClient(cfg *config.Config) *redis.Client {
+	var (
+		redisHost               string // Redis Host
+		redisPort               string // Redis Port
+		redisPassword           string // Redis Password
+		redisDB                 int    // Redis Database Index
+		redisMinIdleConnections int    // Minimum idle connections
+		redisPoolSize           int    // Max pool size
+		redisPoolTimeout        int    // Pool timeout duration
+	)
+
 	// Check application environment
 	if os.Getenv("APP_ENV") == "development" || os.Getenv("APP_ENV") == "production" {
 		// Load from environment variables if in specific environments

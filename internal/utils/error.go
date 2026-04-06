@@ -86,30 +86,51 @@ func HandleError(w http.ResponseWriter, err error) {
 
 // ErrorBadRequest is a helper function to send a 400 Bad Request response
 func ErrorBadRequest(w http.ResponseWriter, err error) {
-	webResponse := ErrorResponse{
-		Code:    http.StatusBadRequest,
-		Status:  "Bad Request",
-		Message: err.Error(),
+	var appErr *apperrors.AppError
+	detail := ErrorDetail{Message: err.Error()}
+	if errors.As(err, &appErr) {
+		detail.Type = string(appErr.Type)
+		detail.Message = appErr.Message
+		detail.Details = appErr.Details
 	}
-	SendJSONResponse(w, http.StatusBadRequest, webResponse)
+	resp := ErrorResponse{
+		Code:   http.StatusBadRequest,
+		Status: "Bad Request",
+		Error:  detail,
+	}
+	SendJSONResponse(w, http.StatusBadRequest, resp)
 }
 
 // ErrorInternalServerError is a helper function to send a 500 Internal Server Error response
 func ErrorInternalServerError(w http.ResponseWriter, err error) {
-	webResponse := ErrorResponse{
-		Code:    http.StatusInternalServerError,
-		Status:  "Internal Server Error",
-		Message: err.Error(),
+	var appErr *apperrors.AppError
+	detail := ErrorDetail{Message: err.Error()}
+	if errors.As(err, &appErr) {
+		detail.Type = string(appErr.Type)
+		detail.Message = appErr.Message
+		detail.Details = appErr.Details
 	}
-	SendJSONResponse(w, http.StatusInternalServerError, webResponse)
+	resp := ErrorResponse{
+		Code:   http.StatusInternalServerError,
+		Status: "Internal Server Error",
+		Error:  detail,
+	}
+	SendJSONResponse(w, http.StatusInternalServerError, resp)
 }
 
 // ErrorNotFound is a helper function to send a 404 Not Found response
 func ErrorNotFound(w http.ResponseWriter, err error) {
-	webResponse := ErrorResponse{
-		Code:    http.StatusNotFound,
-		Status:  "Not Found",
-		Message: err.Error(),
+	var appErr *apperrors.AppError
+	detail := ErrorDetail{Message: err.Error()}
+	if errors.As(err, &appErr) {
+		detail.Type = string(appErr.Type)
+		detail.Message = appErr.Message
+		detail.Details = appErr.Details
 	}
-	SendJSONResponse(w, http.StatusNotFound, webResponse)
+	resp := ErrorResponse{
+		Code:   http.StatusNotFound,
+		Status: "Not Found",
+		Error:  detail,
+	}
+	SendJSONResponse(w, http.StatusNotFound, resp)
 }
