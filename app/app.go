@@ -8,6 +8,7 @@ import (
 	"github.com/Cepat-Kilat-Teknologi/go-snmp-olt-zte-c320/config"
 	"github.com/Cepat-Kilat-Teknologi/go-snmp-olt-zte-c320/internal/handler"
 	"github.com/Cepat-Kilat-Teknologi/go-snmp-olt-zte-c320/internal/repository"
+	"github.com/Cepat-Kilat-Teknologi/go-snmp-olt-zte-c320/internal/trap"
 	"github.com/Cepat-Kilat-Teknologi/go-snmp-olt-zte-c320/internal/usecase"
 	"github.com/Cepat-Kilat-Teknologi/go-snmp-olt-zte-c320/pkg/graceful"
 	"github.com/Cepat-Kilat-Teknologi/go-snmp-olt-zte-c320/pkg/redis"
@@ -87,6 +88,36 @@ func (a *App) Start(ctx context.Context) error { // Method to start the applicat
 
 	// Initialize handler
 	onuHandler := handler.NewOnuHandler(onuUsecase) // Create new ONU handler with usecase
+
+	// Start SNMP Trap listener if enabled
+	if cfg.TrapCfg.Enabled {
+		var webhookClient *trap.WebhookClient
+		if cfg.TrapCfg.WebhookURL != "" {
+			webhookClient = trap.NewWebhookClient(
+				cfg.TrapCfg.WebhookURL,
+				cfg.TrapCfg.WebhookRetries,
+				cfg.TrapCfg.WebhookTimeout,
+			)
+		}
+
+		trapHandler := trap.NewHandler(webhookClient, onuUsecase)
+		trapListener := trap.NewListener(trap.ListenerConfig{
+			Port:      cfg.TrapCfg.Port,
+			Community: cfg.TrapCfg.Community,
+			OnEvent:   trapHandler.HandleEvent,
+		})
+
+		go func() {
+			if err := trapListener.Start(); err != nil {
+				log.Error().Err(err).Msg("SNMP Trap listener failed")
+			}
+		}()
+		// Wait for listener to be ready
+		<-trapListener.Listening()
+		log.Info().Uint16("port", cfg.TrapCfg.Port).Msg("SNMP Trap listener started")
+
+		defer trapListener.Close()
+	}
 
 	// Initialize router
 	a.router = loadRoutes(onuHandler) // Load all routes and middleware, assigning to app router

@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **SNMP Trap listener** for real-time ONU offline detection (LOS, DyingGasp, PowerOff)
+- **Webhook notifications** with exponential backoff retry on ONU offline events
+- **Trap event enrichment** — webhook payload includes ONU name, alamat, type, serial number
+- **Configurable trap port** via `TRAP_PORT` environment variable (default 1620)
+
 ## [3.0.0] - 2026-04-07
 
 ### Added

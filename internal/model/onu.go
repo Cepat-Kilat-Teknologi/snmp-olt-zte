@@ -1,5 +1,7 @@
 package model
 
+import "time"
+
 // OltConfig struct is a struct that represents the OLT configuration
 type OltConfig struct {
 	BaseOID                   string // Base OID for the OLT
@@ -80,4 +82,20 @@ type OnuSerialNumber struct {
 type PaginationResult struct {
 	OnuInformationList []ONUInfoPerBoard // List of ONU information for the current page
 	Count              int               // Total count of items
+}
+
+// TrapEvent represents a processed SNMP trap event from the OLT.
+// Enriched with ONU identity info (name, alamat, serial, type) for notification context.
+type TrapEvent struct {
+	Timestamp    time.Time `json:"timestamp"`
+	Source       string    `json:"source"`
+	Board        int       `json:"board"`
+	PON          int       `json:"pon"`
+	OnuID        int       `json:"onu_id"`
+	EventType    string    `json:"event_type"`
+	Status       string    `json:"status"`
+	Name         string    `json:"name,omitempty"`
+	Description  string    `json:"description,omitempty"`
+	OnuType      string    `json:"onu_type,omitempty"`
+	SerialNumber string    `json:"serial_number,omitempty"`
 }

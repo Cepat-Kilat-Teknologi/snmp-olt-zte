@@ -13,6 +13,7 @@ type Config struct { // Define the main configuration struct named Config
 	SnmpCfg     SnmpConfig                      // Field to hold SNMP configuration settings
 	RedisCfg    RedisConfig                     // Field to hold Redis configuration settings
 	OltCfg      OltConfig                       // Field to hold OLT configuration settings
+	TrapCfg     TrapConfig                      // Field to hold SNMP Trap listener configuration
 	BoardPonMap map[BoardPonKey]*BoardPonConfig `mapstructure:"-"` // Dynamic map to store configurations for each Board and PON, ignored during direct un-marshaling
 }
 
@@ -35,6 +36,17 @@ type RedisConfig struct { // Define the RedisConfig struct for Redis settings
 	MinIdleConnections int    `mapstructure:"min_idle_connections"` // Minimum number of idle connections in the pool, mapped from "min_idle_connections"
 	PoolSize           int    `mapstructure:"pool_size"`            // Maximum number of connections in the pool, mapped from "pool_size"
 	PoolTimeout        int    `mapstructure:"pool_timeout"`         // Timeout duration for waiting for a connection from the pool, mapped from "pool_timeout"
+}
+
+// TrapConfig contains configuration parameters for the SNMP Trap listener
+// including webhook notification settings for ONU events.
+type TrapConfig struct {
+	Enabled        bool
+	Port           uint16
+	Community      string
+	WebhookURL     string
+	WebhookRetries int
+	WebhookTimeout int
 }
 
 // OltConfig contains base OID configurations for OLT device management
@@ -138,6 +150,16 @@ func LoadConfig() (*Config, error) {
 		BaseOID2:        getEnv("OLT_BASE_OID_2", BaseOID2), // Fallback to constant
 		OnuIDNameAllPon: getEnv("ONU_ID_NAME_PREFIX", OnuIDNamePrefix),
 		OnuTypeAllPon:   getEnv("ONU_TYPE_PREFIX", OnuTypePrefix),
+	}
+
+	// SNMP Trap Configuration from environment
+	cfg.TrapCfg = TrapConfig{
+		Enabled:        getEnv("TRAP_ENABLED", "false") == "true",
+		Port:           getEnvAsUint16("TRAP_PORT", 1620),
+		Community:      getEnv("TRAP_COMMUNITY", cfg.SnmpCfg.Community),
+		WebhookURL:     getEnv("TRAP_WEBHOOK_URL", ""),
+		WebhookRetries: getEnvAsInt("TRAP_WEBHOOK_RETRIES", 3),
+		WebhookTimeout: getEnvAsInt("TRAP_WEBHOOK_TIMEOUT", 10),
 	}
 
 	// ===================================================================

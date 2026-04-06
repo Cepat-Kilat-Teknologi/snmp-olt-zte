@@ -213,6 +213,36 @@ Without a valid API key, the server returns `401 Unauthorized`. If `API_KEY` is 
 | `page` | 1 | - |
 | `limit` | 10 | 100 |
 
+## SNMP Trap Listener
+
+Real-time ONU event detection via SNMP Trap. When an ONU goes offline (LOS, DyingGasp, PowerOff), the trap listener detects it and sends a webhook notification with ONU details.
+
+### Enable Trap Listener
+```env
+TRAP_ENABLED=true
+TRAP_PORT=1620
+TRAP_WEBHOOK_URL=https://your-webhook.example.com/olt-alerts
+```
+
+### Webhook Payload
+```json
+{
+  "timestamp": "2026-04-07T10:30:45+07:00",
+  "source": "192.168.213.174",
+  "board": 1,
+  "pon": 5,
+  "onu_id": 23,
+  "event_type": "LOS",
+  "status": "offline",
+  "name": "Customer-023",
+  "description": "Perumahan Graha Ria Blok F No.6",
+  "onu_type": "F670LV7.1",
+  "serial_number": "ZTEGC12345678"
+}
+```
+
+Events that trigger webhook: `LOS`, `DyingGasp`, `PowerOff`, `Offline`, `AuthFailed`, `LOSi`, `LOFi`.
+
 ## Architecture
 
 ```

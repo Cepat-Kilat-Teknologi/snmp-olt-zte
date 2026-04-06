@@ -59,6 +59,13 @@ services:
       CORS_ALLOW_CREDENTIALS: ${CORS_ALLOW_CREDENTIALS:-true}
       CORS_MAX_AGE: ${CORS_MAX_AGE:-300}
 
+      # SNMP Trap
+      TRAP_ENABLED: ${TRAP_ENABLED:-false}
+      TRAP_PORT: ${TRAP_PORT:-1620}
+      TRAP_WEBHOOK_URL: ${TRAP_WEBHOOK_URL:-}
+      TRAP_WEBHOOK_RETRIES: ${TRAP_WEBHOOK_RETRIES:-3}
+      TRAP_WEBHOOK_TIMEOUT: ${TRAP_WEBHOOK_TIMEOUT:-10}
+
       # Timezone
       TZ: ${TZ:-Asia/Jakarta}
 
@@ -71,6 +78,7 @@ services:
 
     ports:
       - "${SERVER_PORT:-8081}:8081"
+      - "${TRAP_PORT:-1620}:1620/udp"
 
     networks:
       - snmp-olt-network
