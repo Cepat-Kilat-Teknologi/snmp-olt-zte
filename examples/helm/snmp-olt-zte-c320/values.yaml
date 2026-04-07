@@ -1,0 +1,196 @@
+# -- Number of replicas for the deployment
+replicaCount: 1
+
+image:
+  # -- Docker image repository
+  repository: s4lfanet/snmp-olt-zte-c320
+  # -- Image pull policy
+  pullPolicy: IfNotPresent
+  # -- Image tag (defaults to appVersion from Chart.yaml)
+  tag: "2.1.0"
+
+# -- Image pull secrets for private registries
+imagePullSecrets: []
+
+# -- Override the release name
+nameOverride: ""
+# -- Override the full release name
+fullnameOverride: ""
+
+service:
+  # -- Kubernetes service type
+  type: ClusterIP
+  # -- HTTP API port
+  port: 8081
+
+ingress:
+  # -- Enable ingress resource
+  enabled: false
+  # -- Ingress class name
+  className: "nginx"
+  # -- Ingress annotations
+  annotations: {}
+    # nginx.ingress.kubernetes.io/rewrite-target: /
+    # nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    # cert-manager.io/cluster-issuer: letsencrypt-prod
+  hosts:
+    - host: snmp-olt.example.com
+      paths:
+        - path: /
+          pathType: Prefix
+  tls: []
+  #  - secretName: snmp-olt-tls
+  #    hosts:
+  #      - snmp-olt.example.com
+
+resources:
+  requests:
+    memory: "256Mi"
+    cpu: "250m"
+  limits:
+    memory: "1Gi"
+    cpu: "1000m"
+
+# -- SNMP connection settings
+snmp:
+  # -- OLT IP address or hostname (required)
+  host: ""
+  # -- SNMP port
+  port: 161
+  # -- SNMP community string (stored in Secret)
+  community: ""
+  # -- Maximum concurrent SNMP operations
+  maxConcurrent: 5
+
+# -- Redis connection settings
+# When redis.enabled=true, host is auto-configured to the subchart service.
+# When redis.enabled=false, set redis.host to your external Redis.
+redis:
+  # -- Deploy Redis as a subchart (Bitnami)
+  enabled: true
+  # -- Redis architecture (subchart)
+  architecture: standalone
+  auth:
+    # -- Enable Redis authentication (subchart)
+    enabled: true
+    # -- Redis password (used by both subchart and app)
+    password: "changeme"
+  master:
+    persistence:
+      # -- Enable Redis data persistence (subchart)
+      enabled: true
+      # -- PVC size for Redis data (subchart)
+      size: 1Gi
+  # -- Redis host (only used when redis.enabled=false for external Redis)
+  host: ""
+  # -- Redis port
+  port: "6379"
+  # -- Redis database index
+  db: 0
+  # -- Connection pool size
+  poolSize: 100
+  # -- Minimum idle connections
+  minIdleConnections: 10
+  # -- Pool timeout in seconds
+  poolTimeout: 240
+
+# -- Cache TTL configuration
+cache:
+  # -- ONU info cache TTL in seconds (default 30 min)
+  onuInfoTTL: 1800
+  # -- ONU detail cache TTL in seconds (default 15 min)
+  onuDetailTTL: 900
+  # -- Empty ONU ID cache TTL in seconds (default 5 min)
+  emptyOnuIDTTL: 300
+  # -- Enable cache pre-warming on startup
+  preWarm: true
+
+# -- TLS configuration
+tls:
+  # -- Enable TLS/HTTPS
+  enabled: false
+  # -- Path to TLS certificate file
+  certFile: /certs/cert.pem
+  # -- Path to TLS key file
+  keyFile: /certs/key.pem
+
+# -- CORS settings
+cors:
+  # -- Comma-separated allowed origins
+  allowedOrigins: "https://*,http://*"
+  # -- Comma-separated allowed HTTP methods
+  allowedMethods: "GET,POST,PUT,DELETE,OPTIONS"
+  # -- Comma-separated allowed headers
+  allowedHeaders: "Accept,Authorization,Content-Type,X-API-Key,X-Request-ID"
+  # -- Allow credentials
+  allowCredentials: false
+  # -- Preflight cache max age in seconds
+  maxAge: 300
+
+# -- API authentication
+auth:
+  # -- API key for X-API-Key header authentication (stored in Secret)
+  apiKey: ""
+
+# -- SNMP Trap listener settings
+trap:
+  # -- Enable SNMP trap listener
+  enabled: false
+  # -- UDP port for trap listener
+  port: 1620
+  # -- Trap community string (defaults to snmp.community)
+  community: ""
+  # -- Webhook URL for trap notifications
+  webhookURL: ""
+  # -- Number of webhook delivery retries
+  webhookRetries: 3
+  # -- Webhook request timeout in seconds
+  webhookTimeout: 10
+
+# -- RX Power monitor settings
+powerMonitor:
+  # -- Enable RX power monitoring
+  enabled: false
+  # -- Monitoring interval in seconds
+  interval: 300
+  # -- Cron expression for scheduled monitoring (e.g. "0 8,12,15,17,0 * * *")
+  cron: ""
+  # -- IANA timezone for cron schedule (e.g. "Asia/Jakarta")
+  timezone: ""
+  # -- High RX power threshold in dBm (overload alert)
+  rxPowerHighThreshold: -8.0
+  # -- Low RX power threshold in dBm (weak signal alert)
+  rxPowerLowThreshold: -25.0
+
+# -- Health check endpoint path
+healthcheck:
+  path: /health
+
+# -- Liveness probe configuration
+livenessProbe:
+  httpGet:
+    path: /health
+    port: http
+  initialDelaySeconds: 30
+  periodSeconds: 30
+  timeoutSeconds: 5
+  failureThreshold: 3
+
+# -- Readiness probe configuration
+readinessProbe:
+  httpGet:
+    path: /health
+    port: http
+  initialDelaySeconds: 10
+  periodSeconds: 10
+  timeoutSeconds: 5
+  failureThreshold: 3
+
+# -- Node selector for pod scheduling
+nodeSelector: {}
+
+# -- Tolerations for pod scheduling
+tolerations: []
+
+# -- Affinity rules for pod scheduling
+affinity: {}

@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: olt-config
+  namespace: olt-monitoring
+data:
+  APP_ENV: "production"
+  CACHE_PREWARM: "true"
+  REDIS_ONU_INFO_TTL: "600"
+  REDIS_ONU_DETAIL_TTL: "600"
+  REDIS_EMPTY_ONU_ID_TTL: "120"
+  REDIS_POOL_SIZE: "50"
+  REDIS_MIN_IDLE_CONNECTIONS: "10"
+  SNMP_MAX_CONCURRENT: "20"

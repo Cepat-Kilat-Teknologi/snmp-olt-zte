@@ -1,0 +1,42 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "snmp-olt-zte-c320.fullname" . }}
+  labels:
+    {{- include "snmp-olt-zte-c320.labels" . | nindent 4 }}
+data:
+  APP_ENV: "production"
+  SERVER_PORT: {{ .Values.service.port | quote }}
+  SNMP_HOST: {{ .Values.snmp.host | quote }}
+  SNMP_PORT: {{ .Values.snmp.port | quote }}
+  SNMP_MAX_CONCURRENT: {{ .Values.snmp.maxConcurrent | quote }}
+  REDIS_HOST: {{ include "snmp-olt-zte-c320.redisHost" . | quote }}
+  REDIS_PORT: {{ .Values.redis.port | quote }}
+  REDIS_DB: {{ .Values.redis.db | quote }}
+  REDIS_POOL_SIZE: {{ .Values.redis.poolSize | quote }}
+  REDIS_MIN_IDLE_CONNECTIONS: {{ .Values.redis.minIdleConnections | quote }}
+  REDIS_POOL_TIMEOUT: {{ .Values.redis.poolTimeout | quote }}
+  REDIS_ONU_INFO_TTL: {{ .Values.cache.onuInfoTTL | quote }}
+  REDIS_ONU_DETAIL_TTL: {{ .Values.cache.onuDetailTTL | quote }}
+  REDIS_EMPTY_ONU_ID_TTL: {{ .Values.cache.emptyOnuIDTTL | quote }}
+  CACHE_PREWARM: {{ .Values.cache.preWarm | quote }}
+  USE_TLS: {{ .Values.tls.enabled | quote }}
+  TLS_CERT_FILE: {{ .Values.tls.certFile | quote }}
+  TLS_KEY_FILE: {{ .Values.tls.keyFile | quote }}
+  CORS_ALLOWED_ORIGINS: {{ .Values.cors.allowedOrigins | quote }}
+  CORS_ALLOWED_METHODS: {{ .Values.cors.allowedMethods | quote }}
+  CORS_ALLOWED_HEADERS: {{ .Values.cors.allowedHeaders | quote }}
+  CORS_ALLOW_CREDENTIALS: {{ .Values.cors.allowCredentials | quote }}
+  CORS_MAX_AGE: {{ .Values.cors.maxAge | quote }}
+  TRAP_ENABLED: {{ .Values.trap.enabled | quote }}
+  TRAP_PORT: {{ .Values.trap.port | quote }}
+  TRAP_COMMUNITY: {{ default .Values.snmp.community .Values.trap.community | quote }}
+  TRAP_WEBHOOK_URL: {{ .Values.trap.webhookURL | quote }}
+  TRAP_WEBHOOK_RETRIES: {{ .Values.trap.webhookRetries | quote }}
+  TRAP_WEBHOOK_TIMEOUT: {{ .Values.trap.webhookTimeout | quote }}
+  POWER_MONITOR_ENABLED: {{ .Values.powerMonitor.enabled | quote }}
+  POWER_MONITOR_INTERVAL: {{ .Values.powerMonitor.interval | quote }}
+  POWER_MONITOR_CRON: {{ .Values.powerMonitor.cron | quote }}
+  POWER_MONITOR_TIMEZONE: {{ .Values.powerMonitor.timezone | quote }}
+  RX_POWER_HIGH_THRESHOLD: {{ .Values.powerMonitor.rxPowerHighThreshold | quote }}
+  RX_POWER_LOW_THRESHOLD: {{ .Values.powerMonitor.rxPowerLowThreshold | quote }}
