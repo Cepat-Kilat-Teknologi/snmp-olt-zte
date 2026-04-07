@@ -28,7 +28,7 @@ func TestNewPonRepository(t *testing.T) {
 	}
 
 	// Verify it implements the interface
-	var _ SnmpRepositoryInterface = repo
+	_ = SnmpRepositoryInterface(repo)
 }
 
 func TestNewPonRepository_DifferentParameters(t *testing.T) {
@@ -450,10 +450,10 @@ func newConnectedTestConn(t *testing.T, port uint16) *gosnmp.GoSNMP {
 
 func TestSnmpRepository_Get_Connected(t *testing.T) {
 	listener, port := startFakeSNMPAgent(t)
-	defer listener.Close()
+	defer func() { _ = listener.Close() }()
 
 	conn := newConnectedTestConn(t, port)
-	defer conn.Conn.Close()
+	defer func() { _ = conn.Conn.Close() }()
 
 	repo := NewPonRepository(conn)
 	result, err := repo.Get([]string{"1.3.6.1.2.1.1.1.0"})
@@ -465,10 +465,10 @@ func TestSnmpRepository_Get_Connected(t *testing.T) {
 
 func TestSnmpRepository_Walk_Connected(t *testing.T) {
 	listener, port := startFakeSNMPAgent(t)
-	defer listener.Close()
+	defer func() { _ = listener.Close() }()
 
 	conn := newConnectedTestConn(t, port)
-	defer conn.Conn.Close()
+	defer func() { _ = conn.Conn.Close() }()
 
 	repo := NewPonRepository(conn)
 	err := repo.Walk("1.3.6.1.2.1.1", func(pdu gosnmp.SnmpPDU) error {
@@ -486,10 +486,10 @@ func TestSnmpRepository_Close(t *testing.T) {
 
 func TestSnmpRepository_BulkWalk_Connected(t *testing.T) {
 	listener, port := startFakeSNMPAgent(t)
-	defer listener.Close()
+	defer func() { _ = listener.Close() }()
 
 	conn := newConnectedTestConn(t, port)
-	defer conn.Conn.Close()
+	defer func() { _ = conn.Conn.Close() }()
 
 	repo := NewPonRepository(conn)
 	err := repo.BulkWalk("1.3.6.1.2.1.1", func(pdu gosnmp.SnmpPDU) error {

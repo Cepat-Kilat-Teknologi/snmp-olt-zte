@@ -174,7 +174,7 @@ func TestNewOnuUsecase(t *testing.T) {
 	}
 
 	// Verify it implements the interface
-	var _ OnuUseCaseInterface = usecase
+	_ = OnuUseCaseInterface(usecase)
 }
 
 func TestNewOnuUsecase_InitializesFields(t *testing.T) {

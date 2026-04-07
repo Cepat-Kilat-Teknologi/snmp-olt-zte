@@ -2,7 +2,6 @@ package snmp
 
 import (
 	"net"
-	"os"
 	"strconv"
 	"testing"
 
@@ -11,16 +10,10 @@ import (
 
 func TestSetupSnmpConnection_FromEnvironment(t *testing.T) {
 	// Set environment variables
-	os.Setenv("APP_ENV", "production")
-	os.Setenv("SNMP_HOST", "192.168.1.1")
-	os.Setenv("SNMP_PORT", "161")
-	os.Setenv("SNMP_COMMUNITY", "public")
-	defer func() {
-		os.Unsetenv("APP_ENV")
-		os.Unsetenv("SNMP_HOST")
-		os.Unsetenv("SNMP_PORT")
-		os.Unsetenv("SNMP_COMMUNITY")
-	}()
+	t.Setenv("APP_ENV", "production")
+	t.Setenv("SNMP_HOST", "192.168.1.1")
+	t.Setenv("SNMP_PORT", "161")
+	t.Setenv("SNMP_COMMUNITY", "public")
 
 	cfg := &config.Config{}
 
@@ -74,8 +67,7 @@ func TestSetupSnmpConnection_FromEnvironment(t *testing.T) {
 
 func TestSetupSnmpConnection_FromConfig(t *testing.T) {
 	// Ensure no environment variables set
-	os.Setenv("APP_ENV", "test")
-	defer os.Unsetenv("APP_ENV")
+	t.Setenv("APP_ENV", "test")
 
 	cfg := &config.Config{
 		SnmpCfg: config.SnmpConfig{
@@ -116,16 +108,10 @@ func TestSetupSnmpConnection_FromConfig(t *testing.T) {
 
 func TestSetupSnmpConnection_InvalidConfig(t *testing.T) {
 	// Set invalid environment
-	os.Setenv("APP_ENV", "production")
-	os.Setenv("SNMP_HOST", "")
-	os.Setenv("SNMP_PORT", "0")
-	os.Setenv("SNMP_COMMUNITY", "")
-	defer func() {
-		os.Unsetenv("APP_ENV")
-		os.Unsetenv("SNMP_HOST")
-		os.Unsetenv("SNMP_PORT")
-		os.Unsetenv("SNMP_COMMUNITY")
-	}()
+	t.Setenv("APP_ENV", "production")
+	t.Setenv("SNMP_HOST", "")
+	t.Setenv("SNMP_PORT", "0")
+	t.Setenv("SNMP_COMMUNITY", "")
 
 	cfg := &config.Config{}
 
@@ -141,16 +127,10 @@ func TestSetupSnmpConnection_InvalidConfig(t *testing.T) {
 }
 
 func TestSetupSnmpConnection_MissingHost(t *testing.T) {
-	os.Setenv("APP_ENV", "production")
-	os.Setenv("SNMP_HOST", "")
-	os.Setenv("SNMP_PORT", "161")
-	os.Setenv("SNMP_COMMUNITY", "public")
-	defer func() {
-		os.Unsetenv("APP_ENV")
-		os.Unsetenv("SNMP_HOST")
-		os.Unsetenv("SNMP_PORT")
-		os.Unsetenv("SNMP_COMMUNITY")
-	}()
+	t.Setenv("APP_ENV", "production")
+	t.Setenv("SNMP_HOST", "")
+	t.Setenv("SNMP_PORT", "161")
+	t.Setenv("SNMP_COMMUNITY", "public")
 
 	cfg := &config.Config{}
 
@@ -166,16 +146,10 @@ func TestSetupSnmpConnection_MissingHost(t *testing.T) {
 }
 
 func TestSetupSnmpConnection_MissingPort(t *testing.T) {
-	os.Setenv("APP_ENV", "production")
-	os.Setenv("SNMP_HOST", "192.168.1.1")
-	os.Setenv("SNMP_PORT", "0")
-	os.Setenv("SNMP_COMMUNITY", "public")
-	defer func() {
-		os.Unsetenv("APP_ENV")
-		os.Unsetenv("SNMP_HOST")
-		os.Unsetenv("SNMP_PORT")
-		os.Unsetenv("SNMP_COMMUNITY")
-	}()
+	t.Setenv("APP_ENV", "production")
+	t.Setenv("SNMP_HOST", "192.168.1.1")
+	t.Setenv("SNMP_PORT", "0")
+	t.Setenv("SNMP_COMMUNITY", "public")
 
 	cfg := &config.Config{}
 
@@ -191,16 +165,10 @@ func TestSetupSnmpConnection_MissingPort(t *testing.T) {
 }
 
 func TestSetupSnmpConnection_MissingCommunity(t *testing.T) {
-	os.Setenv("APP_ENV", "production")
-	os.Setenv("SNMP_HOST", "192.168.1.1")
-	os.Setenv("SNMP_PORT", "161")
-	os.Setenv("SNMP_COMMUNITY", "")
-	defer func() {
-		os.Unsetenv("APP_ENV")
-		os.Unsetenv("SNMP_HOST")
-		os.Unsetenv("SNMP_PORT")
-		os.Unsetenv("SNMP_COMMUNITY")
-	}()
+	t.Setenv("APP_ENV", "production")
+	t.Setenv("SNMP_HOST", "192.168.1.1")
+	t.Setenv("SNMP_PORT", "161")
+	t.Setenv("SNMP_COMMUNITY", "")
 
 	cfg := &config.Config{}
 
@@ -225,8 +193,7 @@ func TestSetupSnmpConnection_Success(t *testing.T) {
 
 	addr := listener.LocalAddr().(*net.UDPAddr)
 
-	os.Setenv("APP_ENV", "test")
-	defer os.Unsetenv("APP_ENV")
+	t.Setenv("APP_ENV", "test")
 
 	cfg := &config.Config{
 		SnmpCfg: config.SnmpConfig{
@@ -268,8 +235,7 @@ func TestSetupSnmpConnection_Success(t *testing.T) {
 
 func TestSetupSnmpConnection_ConnectFailure(t *testing.T) {
 	// Valid config but using a hostname that causes Connect() to fail
-	os.Setenv("APP_ENV", "test")
-	defer os.Unsetenv("APP_ENV")
+	t.Setenv("APP_ENV", "test")
 
 	cfg := &config.Config{
 		SnmpCfg: config.SnmpConfig{
@@ -303,16 +269,10 @@ func TestSetupSnmpConnection_Development(t *testing.T) {
 	addr := listener.LocalAddr().(*net.UDPAddr)
 	port := strconv.Itoa(addr.Port)
 
-	os.Setenv("APP_ENV", "development")
-	os.Setenv("SNMP_HOST", "127.0.0.1")
-	os.Setenv("SNMP_PORT", port)
-	os.Setenv("SNMP_COMMUNITY", "test")
-	defer func() {
-		os.Unsetenv("APP_ENV")
-		os.Unsetenv("SNMP_HOST")
-		os.Unsetenv("SNMP_PORT")
-		os.Unsetenv("SNMP_COMMUNITY")
-	}()
+	t.Setenv("APP_ENV", "development")
+	t.Setenv("SNMP_HOST", "127.0.0.1")
+	t.Setenv("SNMP_PORT", port)
+	t.Setenv("SNMP_COMMUNITY", "test")
 
 	cfg := &config.Config{}
 

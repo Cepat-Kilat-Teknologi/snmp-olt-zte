@@ -145,7 +145,7 @@ func (r *snmpRepository) Close() {
 	close(r.pool)
 	for conn := range r.pool {
 		if conn.Conn != nil {
-			conn.Conn.Close()
+			_ = conn.Conn.Close()
 		}
 	}
 }

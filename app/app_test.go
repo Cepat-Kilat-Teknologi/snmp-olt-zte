@@ -3,7 +3,6 @@ package app
 import (
 	"context"
 	"net"
-	"os"
 	"strconv"
 	"testing"
 	"time"
@@ -37,8 +36,8 @@ func TestNew_ReturnsAppStruct(t *testing.T) {
 }
 
 func TestApp_Start_MissingConfig(t *testing.T) {
-	os.Unsetenv("SNMP_HOST")
-	os.Unsetenv("SNMP_COMMUNITY")
+	t.Setenv("SNMP_HOST", "")
+	t.Setenv("SNMP_COMMUNITY", "")
 
 	app := New()
 	ctx, cancel := context.WithCancel(context.Background())
@@ -58,20 +57,12 @@ func TestApp_Start_SNMPSetupFailure(t *testing.T) {
 	}
 	defer mr.Close()
 
-	os.Setenv("SNMP_HOST", "invalid-host-!@#")
-	os.Setenv("SNMP_COMMUNITY", "public")
-	os.Setenv("SNMP_PORT", "161")
-	os.Setenv("REDIS_HOST", mr.Host())
-	os.Setenv("REDIS_PORT", mr.Port())
-	os.Setenv("REDIS_PASSWORD", "")
-	defer func() {
-		os.Unsetenv("SNMP_HOST")
-		os.Unsetenv("SNMP_COMMUNITY")
-		os.Unsetenv("SNMP_PORT")
-		os.Unsetenv("REDIS_HOST")
-		os.Unsetenv("REDIS_PORT")
-		os.Unsetenv("REDIS_PASSWORD")
-	}()
+	t.Setenv("SNMP_HOST", "invalid-host-!@#")
+	t.Setenv("SNMP_COMMUNITY", "public")
+	t.Setenv("SNMP_PORT", "161")
+	t.Setenv("REDIS_HOST", mr.Host())
+	t.Setenv("REDIS_PORT", mr.Port())
+	t.Setenv("REDIS_PASSWORD", "")
 
 	app := New()
 	ctx, cancel := context.WithCancel(context.Background())
@@ -102,22 +93,13 @@ func TestApp_Start_RedisPingFailure(t *testing.T) {
 	defer func() { _ = udpListener.Close() }()
 	snmpAddr := udpListener.LocalAddr().(*net.UDPAddr)
 
-	os.Setenv("SNMP_HOST", "127.0.0.1")
-	os.Setenv("SNMP_COMMUNITY", "public")
-	os.Setenv("SNMP_PORT", strconv.Itoa(snmpAddr.Port))
-	os.Setenv("REDIS_HOST", host)
-	os.Setenv("REDIS_PORT", port)
-	os.Setenv("REDIS_PASSWORD", "")
-	os.Setenv("CACHE_PREWARM", "false")
-	defer func() {
-		os.Unsetenv("SNMP_HOST")
-		os.Unsetenv("SNMP_COMMUNITY")
-		os.Unsetenv("SNMP_PORT")
-		os.Unsetenv("REDIS_HOST")
-		os.Unsetenv("REDIS_PORT")
-		os.Unsetenv("REDIS_PASSWORD")
-		os.Unsetenv("CACHE_PREWARM")
-	}()
+	t.Setenv("SNMP_HOST", "127.0.0.1")
+	t.Setenv("SNMP_COMMUNITY", "public")
+	t.Setenv("SNMP_PORT", strconv.Itoa(snmpAddr.Port))
+	t.Setenv("REDIS_HOST", host)
+	t.Setenv("REDIS_PORT", port)
+	t.Setenv("REDIS_PASSWORD", "")
+	t.Setenv("CACHE_PREWARM", "false")
 
 	app := New()
 	ctx, cancel := context.WithCancel(context.Background())
@@ -145,30 +127,17 @@ func TestApp_Start_WithTrapEnabled(t *testing.T) {
 	defer func() { _ = udpListener.Close() }()
 	snmpAddr := udpListener.LocalAddr().(*net.UDPAddr)
 
-	os.Setenv("SNMP_HOST", "127.0.0.1")
-	os.Setenv("SNMP_COMMUNITY", "public")
-	os.Setenv("SNMP_PORT", strconv.Itoa(snmpAddr.Port))
-	os.Setenv("REDIS_HOST", mr.Host())
-	os.Setenv("REDIS_PORT", mr.Port())
-	os.Setenv("REDIS_PASSWORD", "")
-	os.Setenv("TRAP_ENABLED", "true")
-	os.Setenv("TRAP_PORT", "0")
-	os.Setenv("TRAP_WEBHOOK_URL", "http://localhost:19999/test")
-	os.Setenv("POWER_MONITOR_ENABLED", "false")
-	os.Setenv("CACHE_PREWARM", "false")
-	defer func() {
-		os.Unsetenv("SNMP_HOST")
-		os.Unsetenv("SNMP_COMMUNITY")
-		os.Unsetenv("SNMP_PORT")
-		os.Unsetenv("REDIS_HOST")
-		os.Unsetenv("REDIS_PORT")
-		os.Unsetenv("REDIS_PASSWORD")
-		os.Unsetenv("TRAP_ENABLED")
-		os.Unsetenv("TRAP_PORT")
-		os.Unsetenv("TRAP_WEBHOOK_URL")
-		os.Unsetenv("POWER_MONITOR_ENABLED")
-		os.Unsetenv("CACHE_PREWARM")
-	}()
+	t.Setenv("SNMP_HOST", "127.0.0.1")
+	t.Setenv("SNMP_COMMUNITY", "public")
+	t.Setenv("SNMP_PORT", strconv.Itoa(snmpAddr.Port))
+	t.Setenv("REDIS_HOST", mr.Host())
+	t.Setenv("REDIS_PORT", mr.Port())
+	t.Setenv("REDIS_PASSWORD", "")
+	t.Setenv("TRAP_ENABLED", "true")
+	t.Setenv("TRAP_PORT", "0")
+	t.Setenv("TRAP_WEBHOOK_URL", "http://localhost:19999/test")
+	t.Setenv("POWER_MONITOR_ENABLED", "false")
+	t.Setenv("CACHE_PREWARM", "false")
 
 	app := New()
 	ctx, cancel := context.WithCancel(context.Background())
@@ -194,26 +163,18 @@ func TestApp_Start_WithTrapAndPowerMonitor(t *testing.T) {
 	defer func() { _ = udpListener.Close() }()
 	snmpAddr := udpListener.LocalAddr().(*net.UDPAddr)
 
-	os.Setenv("SNMP_HOST", "127.0.0.1")
-	os.Setenv("SNMP_COMMUNITY", "public")
-	os.Setenv("SNMP_PORT", strconv.Itoa(snmpAddr.Port))
-	os.Setenv("REDIS_HOST", mr.Host())
-	os.Setenv("REDIS_PORT", mr.Port())
-	os.Setenv("REDIS_PASSWORD", "")
-	os.Setenv("TRAP_ENABLED", "true")
-	os.Setenv("TRAP_PORT", "0")
-	os.Setenv("TRAP_WEBHOOK_URL", "http://localhost:19999/test")
-	os.Setenv("POWER_MONITOR_ENABLED", "true")
-	os.Setenv("POWER_MONITOR_INTERVAL", "9999")
-	os.Setenv("CACHE_PREWARM", "false")
-	defer func() {
-		for _, k := range []string{"SNMP_HOST", "SNMP_COMMUNITY", "SNMP_PORT",
-			"REDIS_HOST", "REDIS_PORT", "REDIS_PASSWORD",
-			"TRAP_ENABLED", "TRAP_PORT", "TRAP_WEBHOOK_URL",
-			"POWER_MONITOR_ENABLED", "POWER_MONITOR_INTERVAL", "CACHE_PREWARM"} {
-			os.Unsetenv(k)
-		}
-	}()
+	t.Setenv("SNMP_HOST", "127.0.0.1")
+	t.Setenv("SNMP_COMMUNITY", "public")
+	t.Setenv("SNMP_PORT", strconv.Itoa(snmpAddr.Port))
+	t.Setenv("REDIS_HOST", mr.Host())
+	t.Setenv("REDIS_PORT", mr.Port())
+	t.Setenv("REDIS_PASSWORD", "")
+	t.Setenv("TRAP_ENABLED", "true")
+	t.Setenv("TRAP_PORT", "0")
+	t.Setenv("TRAP_WEBHOOK_URL", "http://localhost:19999/test")
+	t.Setenv("POWER_MONITOR_ENABLED", "true")
+	t.Setenv("POWER_MONITOR_INTERVAL", "9999")
+	t.Setenv("CACHE_PREWARM", "false")
 
 	app := New()
 	ctx, cancel := context.WithCancel(context.Background())
@@ -240,30 +201,17 @@ func TestApp_Start_WithTrapNoWebhook(t *testing.T) {
 	defer func() { _ = udpListener.Close() }()
 	snmpAddr := udpListener.LocalAddr().(*net.UDPAddr)
 
-	os.Setenv("SNMP_HOST", "127.0.0.1")
-	os.Setenv("SNMP_COMMUNITY", "public")
-	os.Setenv("SNMP_PORT", strconv.Itoa(snmpAddr.Port))
-	os.Setenv("REDIS_HOST", mr.Host())
-	os.Setenv("REDIS_PORT", mr.Port())
-	os.Setenv("REDIS_PASSWORD", "")
-	os.Setenv("TRAP_ENABLED", "true")
-	os.Setenv("TRAP_PORT", "0")
-	os.Setenv("TRAP_WEBHOOK_URL", "")
-	os.Setenv("POWER_MONITOR_ENABLED", "true")
-	os.Setenv("CACHE_PREWARM", "false")
-	defer func() {
-		os.Unsetenv("SNMP_HOST")
-		os.Unsetenv("SNMP_COMMUNITY")
-		os.Unsetenv("SNMP_PORT")
-		os.Unsetenv("REDIS_HOST")
-		os.Unsetenv("REDIS_PORT")
-		os.Unsetenv("REDIS_PASSWORD")
-		os.Unsetenv("TRAP_ENABLED")
-		os.Unsetenv("TRAP_PORT")
-		os.Unsetenv("TRAP_WEBHOOK_URL")
-		os.Unsetenv("POWER_MONITOR_ENABLED")
-		os.Unsetenv("CACHE_PREWARM")
-	}()
+	t.Setenv("SNMP_HOST", "127.0.0.1")
+	t.Setenv("SNMP_COMMUNITY", "public")
+	t.Setenv("SNMP_PORT", strconv.Itoa(snmpAddr.Port))
+	t.Setenv("REDIS_HOST", mr.Host())
+	t.Setenv("REDIS_PORT", mr.Port())
+	t.Setenv("REDIS_PASSWORD", "")
+	t.Setenv("TRAP_ENABLED", "true")
+	t.Setenv("TRAP_PORT", "0")
+	t.Setenv("TRAP_WEBHOOK_URL", "")
+	t.Setenv("POWER_MONITOR_ENABLED", "true")
+	t.Setenv("CACHE_PREWARM", "false")
 
 	app := New()
 	ctx, cancel := context.WithCancel(context.Background())
@@ -289,20 +237,14 @@ func TestApp_Start_RedisCloseError(t *testing.T) {
 	defer func() { _ = udpListener.Close() }()
 	snmpAddr := udpListener.LocalAddr().(*net.UDPAddr)
 
-	os.Setenv("SNMP_HOST", "127.0.0.1")
-	os.Setenv("SNMP_COMMUNITY", "public")
-	os.Setenv("SNMP_PORT", strconv.Itoa(snmpAddr.Port))
-	os.Setenv("REDIS_HOST", mr.Host())
-	os.Setenv("REDIS_PORT", mr.Port())
-	os.Setenv("REDIS_PASSWORD", "")
-	os.Setenv("SERVER_PORT", "0")
-	os.Setenv("CACHE_PREWARM", "false")
-	defer func() {
-		for _, k := range []string{"SNMP_HOST", "SNMP_COMMUNITY", "SNMP_PORT",
-			"REDIS_HOST", "REDIS_PORT", "REDIS_PASSWORD", "SERVER_PORT", "CACHE_PREWARM"} {
-			os.Unsetenv(k)
-		}
-	}()
+	t.Setenv("SNMP_HOST", "127.0.0.1")
+	t.Setenv("SNMP_COMMUNITY", "public")
+	t.Setenv("SNMP_PORT", strconv.Itoa(snmpAddr.Port))
+	t.Setenv("REDIS_HOST", mr.Host())
+	t.Setenv("REDIS_PORT", mr.Port())
+	t.Setenv("REDIS_PASSWORD", "")
+	t.Setenv("SERVER_PORT", "0")
+	t.Setenv("CACHE_PREWARM", "false")
 
 	app := New()
 	ctx, cancel := context.WithCancel(context.Background())
@@ -333,23 +275,14 @@ func TestApp_Start_FullLifecycle(t *testing.T) {
 	defer func() { _ = udpListener.Close() }()
 	snmpAddr := udpListener.LocalAddr().(*net.UDPAddr)
 
-	os.Setenv("SNMP_HOST", "127.0.0.1")
-	os.Setenv("SNMP_COMMUNITY", "public")
-	os.Setenv("SNMP_PORT", strconv.Itoa(snmpAddr.Port))
-	os.Setenv("REDIS_HOST", mr.Host())
-	os.Setenv("REDIS_PORT", mr.Port())
-	os.Setenv("REDIS_PASSWORD", "")
-	os.Setenv("CACHE_PREWARM", "false")
+	t.Setenv("SNMP_HOST", "127.0.0.1")
+	t.Setenv("SNMP_COMMUNITY", "public")
+	t.Setenv("SNMP_PORT", strconv.Itoa(snmpAddr.Port))
+	t.Setenv("REDIS_HOST", mr.Host())
+	t.Setenv("REDIS_PORT", mr.Port())
+	t.Setenv("REDIS_PASSWORD", "")
+	t.Setenv("CACHE_PREWARM", "false")
 	// Don't set SERVER_PORT — let it fall back to default "8081" to cover that branch
-	defer func() {
-		os.Unsetenv("SNMP_HOST")
-		os.Unsetenv("SNMP_COMMUNITY")
-		os.Unsetenv("SNMP_PORT")
-		os.Unsetenv("REDIS_HOST")
-		os.Unsetenv("REDIS_PORT")
-		os.Unsetenv("REDIS_PASSWORD")
-		os.Unsetenv("CACHE_PREWARM")
-	}()
 
 	app := New()
 	ctx, cancel := context.WithCancel(context.Background())

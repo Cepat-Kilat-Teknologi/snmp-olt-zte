@@ -507,7 +507,7 @@ func TestPowerMonitor_InvalidTimezone(t *testing.T) {
 		t.Error("Expected cronRunner to be set even with invalid timezone (fallback to local)")
 	}
 
-	pm.Close()
+	_ = pm.Close()
 }
 
 func TestPowerMonitor_CronWithTimezone(t *testing.T) {
@@ -528,5 +528,5 @@ func TestPowerMonitor_CronWithTimezone(t *testing.T) {
 		t.Error("Expected cronRunner to be set")
 	}
 
-	pm.Close()
+	_ = pm.Close()
 }

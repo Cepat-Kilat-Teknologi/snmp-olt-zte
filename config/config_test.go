@@ -1,7 +1,6 @@
 package config
 
 import (
-	"os"
 	"testing"
 )
 
@@ -10,6 +9,7 @@ func TestGetEnv(t *testing.T) {
 		name         string
 		key          string
 		envValue     string
+		setEnv       bool
 		defaultValue string
 		expected     string
 	}{
@@ -17,6 +17,7 @@ func TestGetEnv(t *testing.T) {
 			name:         "Environment variable exists",
 			key:          "TEST_ENV",
 			envValue:     "test_value",
+			setEnv:       true,
 			defaultValue: "default",
 			expected:     "test_value",
 		},
@@ -24,6 +25,7 @@ func TestGetEnv(t *testing.T) {
 			name:         "Environment variable empty - use default",
 			key:          "TEST_ENV",
 			envValue:     "",
+			setEnv:       false,
 			defaultValue: "default",
 			expected:     "default",
 		},
@@ -31,6 +33,7 @@ func TestGetEnv(t *testing.T) {
 			name:         "Environment variable not set - use default",
 			key:          "TEST_ENV_NOT_SET",
 			envValue:     "",
+			setEnv:       false,
 			defaultValue: "default",
 			expected:     "default",
 		},
@@ -38,12 +41,11 @@ func TestGetEnv(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if tt.envValue != "" {
+			if tt.setEnv {
 				t.Setenv(tt.key, tt.envValue)
 			} else {
-				_ = os.Unsetenv(tt.key)
+				t.Setenv(tt.key, "")
 			}
-			defer func() { _ = os.Unsetenv(tt.key) }()
 
 			result := getEnv(tt.key, tt.defaultValue)
 
@@ -59,6 +61,7 @@ func TestGetEnvAsInt(t *testing.T) {
 		name         string
 		key          string
 		envValue     string
+		setEnv       bool
 		defaultValue int
 		expected     int
 	}{
@@ -66,6 +69,7 @@ func TestGetEnvAsInt(t *testing.T) {
 			name:         "Valid integer",
 			key:          "TEST_INT",
 			envValue:     "42",
+			setEnv:       true,
 			defaultValue: 10,
 			expected:     42,
 		},
@@ -73,6 +77,7 @@ func TestGetEnvAsInt(t *testing.T) {
 			name:         "Empty value - use default",
 			key:          "TEST_INT",
 			envValue:     "",
+			setEnv:       false,
 			defaultValue: 10,
 			expected:     10,
 		},
@@ -80,6 +85,7 @@ func TestGetEnvAsInt(t *testing.T) {
 			name:         "Invalid integer - use default",
 			key:          "TEST_INT",
 			envValue:     "invalid",
+			setEnv:       true,
 			defaultValue: 5,
 			expected:     5,
 		},
@@ -87,6 +93,7 @@ func TestGetEnvAsInt(t *testing.T) {
 			name:         "Negative integer",
 			key:          "TEST_INT",
 			envValue:     "-10",
+			setEnv:       true,
 			defaultValue: 0,
 			expected:     -10,
 		},
@@ -94,6 +101,7 @@ func TestGetEnvAsInt(t *testing.T) {
 			name:         "Zero",
 			key:          "TEST_INT",
 			envValue:     "0",
+			setEnv:       true,
 			defaultValue: 10,
 			expected:     0,
 		},
@@ -101,12 +109,11 @@ func TestGetEnvAsInt(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if tt.envValue != "" {
+			if tt.setEnv {
 				t.Setenv(tt.key, tt.envValue)
 			} else {
-				_ = os.Unsetenv(tt.key)
+				t.Setenv(tt.key, "")
 			}
-			defer func() { _ = os.Unsetenv(tt.key) }()
 
 			result := getEnvAsInt(tt.key, tt.defaultValue)
 
@@ -122,6 +129,7 @@ func TestGetEnvAsUint16(t *testing.T) {
 		name         string
 		key          string
 		envValue     string
+		setEnv       bool
 		defaultValue uint16
 		expected     uint16
 	}{
@@ -129,6 +137,7 @@ func TestGetEnvAsUint16(t *testing.T) {
 			name:         "Valid uint16",
 			key:          "TEST_UINT16",
 			envValue:     "161",
+			setEnv:       true,
 			defaultValue: 100,
 			expected:     161,
 		},
@@ -136,6 +145,7 @@ func TestGetEnvAsUint16(t *testing.T) {
 			name:         "Empty value - use default",
 			key:          "TEST_UINT16",
 			envValue:     "",
+			setEnv:       false,
 			defaultValue: 100,
 			expected:     100,
 		},
@@ -143,6 +153,7 @@ func TestGetEnvAsUint16(t *testing.T) {
 			name:         "Invalid uint16 - use default",
 			key:          "TEST_UINT16",
 			envValue:     "invalid",
+			setEnv:       true,
 			defaultValue: 50,
 			expected:     50,
 		},
@@ -150,6 +161,7 @@ func TestGetEnvAsUint16(t *testing.T) {
 			name:         "Max uint16 value",
 			key:          "TEST_UINT16",
 			envValue:     "65535",
+			setEnv:       true,
 			defaultValue: 100,
 			expected:     65535,
 		},
@@ -157,6 +169,7 @@ func TestGetEnvAsUint16(t *testing.T) {
 			name:         "Zero",
 			key:          "TEST_UINT16",
 			envValue:     "0",
+			setEnv:       true,
 			defaultValue: 100,
 			expected:     0,
 		},
@@ -164,6 +177,7 @@ func TestGetEnvAsUint16(t *testing.T) {
 			name:         "Negative value - use default",
 			key:          "TEST_UINT16",
 			envValue:     "-1",
+			setEnv:       true,
 			defaultValue: 100,
 			expected:     100,
 		},
@@ -171,6 +185,7 @@ func TestGetEnvAsUint16(t *testing.T) {
 			name:         "Value exceeds uint16 - use default",
 			key:          "TEST_UINT16",
 			envValue:     "70000",
+			setEnv:       true,
 			defaultValue: 100,
 			expected:     100,
 		},
@@ -178,12 +193,11 @@ func TestGetEnvAsUint16(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if tt.envValue != "" {
+			if tt.setEnv {
 				t.Setenv(tt.key, tt.envValue)
 			} else {
-				_ = os.Unsetenv(tt.key)
+				t.Setenv(tt.key, "")
 			}
-			defer func() { _ = os.Unsetenv(tt.key) }()
 
 			result := getEnvAsUint16(tt.key, tt.defaultValue)
 
@@ -195,16 +209,14 @@ func TestGetEnvAsUint16(t *testing.T) {
 }
 
 func TestGetEnvAsFloat64(t *testing.T) {
-	os.Setenv("TEST_FLOAT", "3.14")
-	defer os.Unsetenv("TEST_FLOAT")
+	t.Setenv("TEST_FLOAT", "3.14")
 	if v := getEnvAsFloat64("TEST_FLOAT", 0); v != 3.14 {
 		t.Errorf("Expected 3.14, got %f", v)
 	}
 	if v := getEnvAsFloat64("NONEXIST_FLOAT", 1.5); v != 1.5 {
 		t.Errorf("Expected default 1.5, got %f", v)
 	}
-	os.Setenv("TEST_FLOAT_INVALID", "abc")
-	defer os.Unsetenv("TEST_FLOAT_INVALID")
+	t.Setenv("TEST_FLOAT_INVALID", "abc")
 	if v := getEnvAsFloat64("TEST_FLOAT_INVALID", 2.0); v != 2.0 {
 		t.Errorf("Expected default 2.0 for invalid float, got %f", v)
 	}
@@ -212,19 +224,11 @@ func TestGetEnvAsFloat64(t *testing.T) {
 
 func TestLoadConfig(t *testing.T) {
 	// Set required environment variables
-	os.Setenv("SNMP_HOST", "192.168.1.1")
-	os.Setenv("SNMP_PORT", "161")
-	os.Setenv("SNMP_COMMUNITY", "public")
-	os.Setenv("REDIS_HOST", "localhost")
-	os.Setenv("REDIS_PORT", "6379")
-
-	defer func() {
-		os.Unsetenv("SNMP_HOST")
-		os.Unsetenv("SNMP_PORT")
-		os.Unsetenv("SNMP_COMMUNITY")
-		os.Unsetenv("REDIS_HOST")
-		os.Unsetenv("REDIS_PORT")
-	}()
+	t.Setenv("SNMP_HOST", "192.168.1.1")
+	t.Setenv("SNMP_PORT", "161")
+	t.Setenv("SNMP_COMMUNITY", "public")
+	t.Setenv("REDIS_HOST", "localhost")
+	t.Setenv("REDIS_PORT", "6379")
 
 	cfg, err := LoadConfig()
 
@@ -271,20 +275,15 @@ func TestLoadConfig(t *testing.T) {
 
 func TestLoadConfig_DefaultValues(t *testing.T) {
 	// Set required SNMP env vars, clear everything else
-	os.Setenv("SNMP_HOST", "10.0.0.1")
-	os.Setenv("SNMP_COMMUNITY", "public")
-	os.Unsetenv("SNMP_PORT")
-	os.Unsetenv("REDIS_HOST")
-	os.Unsetenv("REDIS_PORT")
-	os.Unsetenv("REDIS_DB")
-	os.Unsetenv("REDIS_MIN_IDLE_CONNECTIONS")
-	os.Unsetenv("REDIS_POOL_SIZE")
-	os.Unsetenv("REDIS_POOL_TIMEOUT")
-
-	defer func() {
-		os.Unsetenv("SNMP_HOST")
-		os.Unsetenv("SNMP_COMMUNITY")
-	}()
+	t.Setenv("SNMP_HOST", "10.0.0.1")
+	t.Setenv("SNMP_COMMUNITY", "public")
+	t.Setenv("SNMP_PORT", "")
+	t.Setenv("REDIS_HOST", "")
+	t.Setenv("REDIS_PORT", "")
+	t.Setenv("REDIS_DB", "")
+	t.Setenv("REDIS_MIN_IDLE_CONNECTIONS", "")
+	t.Setenv("REDIS_POOL_SIZE", "")
+	t.Setenv("REDIS_POOL_TIMEOUT", "")
 
 	cfg, err := LoadConfig()
 
@@ -315,9 +314,8 @@ func TestLoadConfig_DefaultValues(t *testing.T) {
 }
 
 func TestLoadConfig_MissingSNMPHost(t *testing.T) {
-	os.Unsetenv("SNMP_HOST")
-	os.Setenv("SNMP_COMMUNITY", "public")
-	defer os.Unsetenv("SNMP_COMMUNITY")
+	t.Setenv("SNMP_HOST", "")
+	t.Setenv("SNMP_COMMUNITY", "public")
 
 	_, err := LoadConfig()
 	if err == nil {
@@ -330,9 +328,8 @@ func TestLoadConfig_MissingSNMPHost(t *testing.T) {
 }
 
 func TestLoadConfig_MissingSNMPCommunity(t *testing.T) {
-	os.Setenv("SNMP_HOST", "10.0.0.1")
-	os.Unsetenv("SNMP_COMMUNITY")
-	defer os.Unsetenv("SNMP_HOST")
+	t.Setenv("SNMP_HOST", "10.0.0.1")
+	t.Setenv("SNMP_COMMUNITY", "")
 
 	_, err := LoadConfig()
 	if err == nil {
