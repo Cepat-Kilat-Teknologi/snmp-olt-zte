@@ -1,0 +1,132 @@
+# Production Docker Compose -- App + Redis
+# Usage:
+#   1. cp .env.example .env
+#   2. Edit .env with your values
+#   3. docker compose up -d
+
+services:
+  app:
+    image: s4lfanet/snmp-olt-zte-c320:2.1.0
+    container_name: snmp-olt-zte-c320
+    restart: unless-stopped
+
+    environment:
+      # Application
+      APP_ENV: ${APP_ENV:-production}
+      SERVER_PORT: "8081"  # Always 8081 inside container; use ports mapping for host port
+
+      # SNMP
+      SNMP_HOST: ${SNMP_HOST:?SNMP_HOST is required}
+      SNMP_PORT: ${SNMP_PORT:-161}
+      SNMP_COMMUNITY: ${SNMP_COMMUNITY:?SNMP_COMMUNITY is required}
+      SNMP_MAX_CONCURRENT: ${SNMP_MAX_CONCURRENT:-5}
+
+      # Redis (points to the redis service below)
+      REDIS_HOST: redis
+      REDIS_PORT: ${REDIS_PORT:-6379}
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
+      REDIS_DB: ${REDIS_DB:-0}
+      REDIS_MIN_IDLE_CONNECTIONS: ${REDIS_MIN_IDLE_CONNECTIONS:-10}
+      REDIS_POOL_SIZE: ${REDIS_POOL_SIZE:-100}
+      REDIS_POOL_TIMEOUT: ${REDIS_POOL_TIMEOUT:-240}
+
+      # Cache TTLs (seconds)
+      REDIS_ONU_INFO_TTL: ${REDIS_ONU_INFO_TTL:-1800}
+      REDIS_ONU_DETAIL_TTL: ${REDIS_ONU_DETAIL_TTL:-900}
+      REDIS_EMPTY_ONU_ID_TTL: ${REDIS_EMPTY_ONU_ID_TTL:-300}
+      CACHE_PREWARM: ${CACHE_PREWARM:-true}
+
+      # TLS / HTTPS
+      USE_TLS: ${USE_TLS:-false}
+      TLS_CERT_FILE: ${TLS_CERT_FILE:-/certs/cert.pem}
+      TLS_KEY_FILE: ${TLS_KEY_FILE:-/certs/key.pem}
+
+      # CORS
+      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-https://yourdomain.com}
+      CORS_ALLOWED_METHODS: ${CORS_ALLOWED_METHODS:-GET,POST,PUT,DELETE,OPTIONS}
+      CORS_ALLOWED_HEADERS: ${CORS_ALLOWED_HEADERS:-Accept,Authorization,Content-Type,X-API-Key,X-Request-ID}
+      CORS_ALLOW_CREDENTIALS: ${CORS_ALLOW_CREDENTIALS:-true}
+      CORS_MAX_AGE: ${CORS_MAX_AGE:-300}
+
+      # Authentication
+      API_KEY: ${API_KEY:-}
+
+      # SNMP Trap listener
+      TRAP_ENABLED: ${TRAP_ENABLED:-false}
+      TRAP_PORT: ${TRAP_PORT:-1620}
+      TRAP_COMMUNITY: ${TRAP_COMMUNITY:-}
+      TRAP_WEBHOOK_URL: ${TRAP_WEBHOOK_URL:-}
+      TRAP_WEBHOOK_RETRIES: ${TRAP_WEBHOOK_RETRIES:-3}
+      TRAP_WEBHOOK_TIMEOUT: ${TRAP_WEBHOOK_TIMEOUT:-10}
+
+      # RX Power monitor
+      POWER_MONITOR_ENABLED: ${POWER_MONITOR_ENABLED:-false}
+      POWER_MONITOR_INTERVAL: ${POWER_MONITOR_INTERVAL:-300}
+      POWER_MONITOR_CRON: ${POWER_MONITOR_CRON:-}
+      POWER_MONITOR_TIMEZONE: ${POWER_MONITOR_TIMEZONE:-}
+      RX_POWER_HIGH_THRESHOLD: ${RX_POWER_HIGH_THRESHOLD:--8.0}
+      RX_POWER_LOW_THRESHOLD: ${RX_POWER_LOW_THRESHOLD:--25.0}
+
+      # Timezone
+      TZ: ${TZ:-Asia/Jakarta}
+
+    ports:
+      - "${SERVER_PORT:-8081}:8081"
+      - "${TRAP_PORT:-1620}:1620/udp"
+
+    # Uncomment to mount TLS certificates
+    # volumes:
+    #   - ./certs:/certs:ro
+
+    depends_on:
+      redis:
+        condition: service_healthy
+
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8081/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+    networks:
+      - snmp-olt-network
+
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 512M
+
+  redis:
+    image: redis:7.2-alpine
+    container_name: snmp-olt-redis
+    restart: unless-stopped
+    command: >-
+      redis-server
+      --requirepass ${REDIS_PASSWORD:-changeme}
+      --maxmemory 128mb
+      --maxmemory-policy allkeys-lru
+
+    environment:
+      TZ: ${TZ:-Asia/Jakarta}
+
+    volumes:
+      - redis-data:/data
+
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD:-changeme}", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+    networks:
+      - snmp-olt-network
+
+networks:
+  snmp-olt-network:
+    driver: bridge
+
+volumes:
+  redis-data:
+    driver: local

@@ -1,0 +1,36 @@
+Thank you for installing {{ include "snmp-olt-zte-c320.fullname" . }}!
+
+1. Get the application URL:
+{{- if .Values.ingress.enabled }}
+{{- range $host := .Values.ingress.hosts }}
+  http{{ if $.Values.ingress.tls }}s{{ end }}://{{ $host.host }}
+{{- end }}
+{{- else if contains "NodePort" .Values.service.type }}
+  export NODE_PORT=$(kubectl get --namespace {{ .Release.Namespace }} -o jsonpath="{.spec.ports[0].nodePort}" services {{ include "snmp-olt-zte-c320.fullname" . }})
+  export NODE_IP=$(kubectl get nodes --namespace {{ .Release.Namespace }} -o jsonpath="{.items[0].status.addresses[0].address}")
+  echo http://$NODE_IP:$NODE_PORT
+{{- else if contains "LoadBalancer" .Values.service.type }}
+  NOTE: It may take a few minutes for the LoadBalancer IP to be available.
+  Watch status with: kubectl get svc --namespace {{ .Release.Namespace }} -w {{ include "snmp-olt-zte-c320.fullname" . }}
+
+  export SERVICE_IP=$(kubectl get svc --namespace {{ .Release.Namespace }} {{ include "snmp-olt-zte-c320.fullname" . }} --template "{{"{{ range (index .status.loadBalancer.ingress 0) }}{{.}}{{ end }}"}}")
+  echo http://$SERVICE_IP:{{ .Values.service.port }}
+{{- else if contains "ClusterIP" .Values.service.type }}
+  kubectl --namespace {{ .Release.Namespace }} port-forward svc/{{ include "snmp-olt-zte-c320.fullname" . }} {{ .Values.service.port }}:{{ .Values.service.port }}
+  echo "Visit http://127.0.0.1:{{ .Values.service.port }}/health to verify the service is running"
+{{- end }}
+
+2. Health check endpoint:
+  curl http://<SERVICE_URL>:{{ .Values.service.port }}/health
+
+3. API endpoints (requires X-API-Key header if auth.apiKey is set):
+  GET /api/v1/onu                    - List all ONUs
+  GET /api/v1/onu/{board}/{pon}      - List ONUs on a specific board/pon
+  GET /api/v1/onu/{board}/{pon}/{id} - Get ONU detail
+{{- if .Values.trap.enabled }}
+
+4. SNMP Trap listener is enabled on UDP port {{ .Values.trap.port }}.
+{{- if .Values.trap.webhookURL }}
+   Webhook notifications will be sent to: {{ .Values.trap.webhookURL }}
+{{- end }}
+{{- end }}

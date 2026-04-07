@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: olt-config
+  namespace: olt-monitoring
+data:
+  APP_ENV: "development"
+  CACHE_PREWARM: "false"
+  REDIS_ONU_INFO_TTL: "60"
+  REDIS_ONU_DETAIL_TTL: "60"
+  REDIS_EMPTY_ONU_ID_TTL: "30"
+  CORS_ALLOWED_ORIGINS: "*"
+  POWER_MONITOR_INTERVAL: "600"
+  POWER_MONITOR_CRON: "*/10 * * * *"

@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: olt-monitoring
+  labels:
+    app.kubernetes.io/name: olt-monitoring
+    app.kubernetes.io/part-of: snmp-olt-zte-c320
