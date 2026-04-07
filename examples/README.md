@@ -20,12 +20,20 @@ cp .env.example .env
 docker compose up -d
 ```
 
-### Helm
+### Helm (from Repository)
+```bash
+helm repo add snmp-olt https://cepat-kilat-teknologi.github.io/go-snmp-olt-zte-c320/
+helm repo update
+helm install olt-monitor snmp-olt/snmp-olt-zte-c320 \
+  --set snmp.host=192.168.1.1 \
+  --set snmp.community=your-community
+```
+
+### Helm (from Source)
 ```bash
 helm install olt-monitor examples/helm/snmp-olt-zte-c320 \
   --set snmp.host=192.168.1.1 \
-  --set snmp.community=your-community \
-  --set redis.auth.password=your-redis-pass
+  --set snmp.community=your-community
 ```
 
 ### Kustomize
