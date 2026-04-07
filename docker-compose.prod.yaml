@@ -10,7 +10,7 @@
 
 services:
   app:
-    image: cepatkilatteknologi/go-snmp-olt-zte-c320:latest
+    image: s4lfanet/snmp-olt-zte-c320:2.1.0
     container_name: snmp-olt-zte-c320-prod
     restart: unless-stopped
 
@@ -26,6 +26,7 @@ services:
       SNMP_HOST: ${SNMP_HOST}
       SNMP_PORT: ${SNMP_PORT:-161}
       SNMP_COMMUNITY: ${SNMP_COMMUNITY}
+      SNMP_MAX_CONCURRENT: ${SNMP_MAX_CONCURRENT:-5}
 
       # Redis (use Docker service name)
       REDIS_HOST: redis
@@ -35,6 +36,12 @@ services:
       REDIS_MIN_IDLE_CONNECTIONS: ${REDIS_MIN_IDLE_CONNECTIONS:-10}
       REDIS_POOL_SIZE: ${REDIS_POOL_SIZE:-100}
       REDIS_POOL_TIMEOUT: ${REDIS_POOL_TIMEOUT:-240}
+
+      # Cache TTL
+      REDIS_ONU_INFO_TTL: ${REDIS_ONU_INFO_TTL:-1800}
+      REDIS_ONU_DETAIL_TTL: ${REDIS_ONU_DETAIL_TTL:-900}
+      REDIS_EMPTY_ONU_ID_TTL: ${REDIS_EMPTY_ONU_ID_TTL:-300}
+      CACHE_PREWARM: ${CACHE_PREWARM:-true}
 
       # TLS/HTTPS (Recommended for production)
       USE_TLS: ${USE_TLS:-false}
@@ -57,6 +64,14 @@ services:
       TRAP_WEBHOOK_URL: ${TRAP_WEBHOOK_URL:-}
       TRAP_WEBHOOK_RETRIES: ${TRAP_WEBHOOK_RETRIES:-3}
       TRAP_WEBHOOK_TIMEOUT: ${TRAP_WEBHOOK_TIMEOUT:-10}
+
+      # RX Power Monitor
+      POWER_MONITOR_ENABLED: ${POWER_MONITOR_ENABLED:-false}
+      POWER_MONITOR_INTERVAL: ${POWER_MONITOR_INTERVAL:-300}
+      POWER_MONITOR_CRON: ${POWER_MONITOR_CRON:-}
+      POWER_MONITOR_TIMEZONE: ${POWER_MONITOR_TIMEZONE:-Asia/Jakarta}
+      RX_POWER_HIGH_THRESHOLD: ${RX_POWER_HIGH_THRESHOLD:--8.0}
+      RX_POWER_LOW_THRESHOLD: ${RX_POWER_LOW_THRESHOLD:--25.0}
 
       # Timezone
       TZ: ${TZ:-Asia/Jakarta}
