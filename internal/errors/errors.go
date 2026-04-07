@@ -23,7 +23,7 @@ type AppError struct {
 	Type    ErrorType              // Category of the error
 	Message string                 // User-friendly error message
 	Err     error                  // The underlying error (if any)
-	Details map[string]interface{} // Additional context or validation details
+	Details map[string]any // Additional context or validation details
 }
 
 // Error implements the error interface for AppError
@@ -42,7 +42,7 @@ func (e *AppError) Unwrap() error {
 
 // NewValidationError creates a new validation error
 // Used when client input fails validation rules.
-func NewValidationError(message string, details map[string]interface{}) *AppError {
+func NewValidationError(message string, details map[string]any) *AppError {
 	return &AppError{
 		Type:    ErrorTypeValidation,
 		Message: message,
@@ -52,11 +52,11 @@ func NewValidationError(message string, details map[string]interface{}) *AppErro
 
 // NewNotFoundError creates a new not-found error
 // Used when a requested resource cannot be located.
-func NewNotFoundError(resource string, identifier interface{}) *AppError {
+func NewNotFoundError(resource string, identifier any) *AppError {
 	return &AppError{
 		Type:    ErrorTypeNotFound,
 		Message: fmt.Sprintf("%s not found", resource),
-		Details: map[string]interface{}{"identifier": identifier},
+		Details: map[string]any{"identifier": identifier},
 	}
 }
 

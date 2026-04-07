@@ -4,30 +4,21 @@ import (
 	"context"
 
 	"github.com/Cepat-Kilat-Teknologi/go-snmp-olt-zte-c320/app"
+	"github.com/joho/godotenv"
 	"github.com/rs/zerolog/log"
 )
 
 func main() {
-	// Initialize application
-	server := app.New()                                     // Create a new instance of the application
-	ctx, cancel := context.WithCancel(context.Background()) // Create a new context with a cancel function
-	defer cancel()                                          // Cancel context when the main function is finished
+	// Load .env file if present (ignored in production when file doesn't exist)
+	if err := godotenv.Load(); err != nil {
+		log.Debug().Msg("No .env file found, using environment variables")
+	}
 
-	// Start an application server in a goroutine
-	go func() {
-		err := server.Start(ctx) // Start the application server
-		if err != nil {
-			log.Fatal().Err(err).Msg("Failed to start server") // Log error message
-			cancel()                                           // Cancel context if an error occurred
-		}
-	}()
+	server := app.New()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 
-	// Create a channel to wait for a signal to stop the application
-	stopSignal := make(chan struct{})
-
-	// You can replace the select statement with a simple channel receiver
-	<-stopSignal
-
-	// Log that the application is stopping
-	log.Info().Msg("Application is stopping")
+	if err := server.Start(ctx); err != nil {
+		log.Fatal().Err(err).Msg("Failed to start server")
+	}
 }

@@ -89,7 +89,7 @@ func TestErrorBadRequest(t *testing.T) {
 		t.Errorf("Gagal mendecode respons JSON: %v", err)
 	}
 
-	if response.Code != http.StatusBadRequest || response.Status != "Bad Request" || response.Message != err.Error() {
+	if response.Code != http.StatusBadRequest || response.Status != "Bad Request" || response.Error.Message != err.Error() {
 		t.Errorf("Respons JSON tidak sesuai")
 	}
 }
@@ -116,7 +116,7 @@ func TestErrorInternalServerError(t *testing.T) {
 		t.Errorf("Gagal mendecode respons JSON: %v", err)
 	}
 
-	if response.Code != http.StatusInternalServerError || response.Status != "Internal Server Error" || response.Message != err.Error() {
+	if response.Code != http.StatusInternalServerError || response.Status != "Internal Server Error" || response.Error.Message != err.Error() {
 		t.Errorf("Respons JSON tidak sesuai")
 	}
 }
@@ -143,7 +143,7 @@ func TestErrorNotFound(t *testing.T) {
 		t.Errorf("Gagal mendecode respons JSON: %v", err)
 	}
 
-	if response.Code != http.StatusNotFound || response.Status != "Not Found" || response.Message != err.Error() {
+	if response.Code != http.StatusNotFound || response.Status != "Not Found" || response.Error.Message != err.Error() {
 		t.Errorf("Respons JSON tidak sesuai")
 	}
 }

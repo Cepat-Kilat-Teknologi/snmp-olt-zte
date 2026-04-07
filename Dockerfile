@@ -1,9 +1,10 @@
-# Build arguments for multi-arch support
+# Build arguments
 ARG TARGETPLATFORM
 ARG BUILDPLATFORM
+ARG APP_VERSION=dev
 
 # Development stage with hot reload
-FROM golang:1.25.5-alpine AS dev
+FROM golang:1.26-alpine AS dev
 
 # Install air for hot reload
 RUN go install github.com/air-verse/air@latest
@@ -17,28 +18,30 @@ RUN go mod download
 # Copy source code
 COPY . .
 
-# Build binary with optimizations
+# Build argument available in this stage
+ARG APP_VERSION
+
+# Build binary with version from git tag
 RUN CGO_ENABLED=0 GOOS=linux go build \
-    -ldflags="-s -w -X main.Version=1.0.0" \
+    -ldflags="-s -w -X main.Version=${APP_VERSION}" \
     -o /go/bin/app \
     ./cmd/api
 
 # Production stage - minimal distroless image
 FROM gcr.io/distroless/static-debian12 AS prod
 
-# Labels for image metadata
+ARG APP_VERSION
+
+# Labels for image metadata (version from build arg)
 LABEL maintainer="Cepat Kilat Teknologi"
 LABEL description="SNMP OLT Monitoring Service for ZTE C320"
-LABEL version="1.0.0"
+LABEL version="${APP_VERSION}"
 
 # Environment
 ENV APP_ENV=production
 
 # Copy binary from dev stage
 COPY --from=dev /go/bin/app /app
-
-# No config file needed - all configuration from environment variables
-# Board/PON OID mappings are generated dynamically using mathematical formulas
 
 # Expose port
 EXPOSE 8081

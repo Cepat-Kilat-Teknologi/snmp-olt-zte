@@ -1,75 +1,79 @@
 ###############################################
 # Go SNMP OLT ZTE C320 - API Test Collection
 # Base URL: http://localhost:8081
+# OpenAPI Spec: api/openapi.yaml
 ###############################################
 
-### Health Check - Root Endpoint
+### Health Check
+GET http://localhost:8081/health
+Accept: application/json
+
+### Root Endpoint
 GET http://localhost:8081/
 Accept: application/json
 
 ###############################################
 # ONU Information Endpoints
+# Requires X-API-Key header when API_KEY is set
 ###############################################
 
 ### Get All ONUs by Board and PON
-# Retrieves all ONUs for a specific board and PON combination
-# Parameters:
-#   - board_id: Board number (1 or 2)
-#   - pon_id: PON number (1-16)
 GET http://localhost:8081/api/v1/board/2/pon/7
 Accept: application/json
+X-API-Key: {{API_KEY}}
 
 ### Get All ONUs - Board 1 PON 8
 GET http://localhost:8081/api/v1/board/1/pon/8
 Accept: application/json
+X-API-Key: {{API_KEY}}
 
 ### Get Specific ONU by Board, PON, and ONU ID
-# Retrieves detailed information for a specific ONU
-# Parameters:
-#   - board_id: Board number (1 or 2)
-#   - pon_id: PON number (1-16)
-#   - onu_id: ONU ID number
 GET http://localhost:8081/api/v1/board/1/pon/8/onu/11
 Accept: application/json
+X-API-Key: {{API_KEY}}
 
 ### Get Specific ONU - Board 2 PON 7 ONU 4
 GET http://localhost:8081/api/v1/board/2/pon/7/onu/4
 Accept: application/json
+X-API-Key: {{API_KEY}}
 
 ###############################################
 # Empty ONU ID Endpoints
 ###############################################
 
 ### Get Empty ONU IDs
-# Returns all available/empty ONU IDs for a board/PON
 GET http://localhost:8081/api/v1/board/1/pon/8/onu_id/empty
 Accept: application/json
+X-API-Key: {{API_KEY}}
 
 ### Get Empty ONU IDs - Board 2 PON 5
 GET http://localhost:8081/api/v1/board/2/pon/5/onu_id/empty
 Accept: application/json
+X-API-Key: {{API_KEY}}
 
-### Update Empty ONU ID Cache
-# Forces cache refresh for empty ONU IDs
-GET http://localhost:8081/api/v1/board/1/pon/8/onu_id/update
+### Update Empty ONU ID Cache (POST)
+POST http://localhost:8081/api/v1/board/1/pon/8/onu_id/update
 Accept: application/json
+X-API-Key: {{API_KEY}}
 
-### Update Empty ONU IDs - Board 2 PON 5
-GET http://localhost:8081/api/v1/board/2/pon/5/onu_id/update
+### Update Empty ONU IDs - Board 2 PON 5 (POST)
+POST http://localhost:8081/api/v1/board/2/pon/5/onu_id/update
 Accept: application/json
+X-API-Key: {{API_KEY}}
 
 ###############################################
 # ONU ID and Serial Number Endpoint
 ###############################################
 
 ### Get ONU IDs with Serial Numbers
-# Returns list of ONU IDs and their serial numbers
 GET http://localhost:8081/api/v1/board/1/pon/8/onu_id_sn
 Accept: application/json
+X-API-Key: {{API_KEY}}
 
 ### Get ONU IDs with Serial Numbers - Board 2 PON 7
 GET http://localhost:8081/api/v1/board/2/pon/7/onu_id_sn
 Accept: application/json
+X-API-Key: {{API_KEY}}
 
 ###############################################
 # Pagination Endpoints
@@ -78,85 +82,63 @@ Accept: application/json
 ### Get ONUs with Pagination - Default (page 1, limit 10)
 GET http://localhost:8081/api/v1/paginate/board/1/pon/8
 Accept: application/json
-
-### Get ONUs with Pagination - Specific Page
-# Parameters:
-#   - page: Page number (default: 1)
-#   - limit: Items per page (default: 10, max: 100)
-GET http://localhost:8081/api/v1/paginate/board/1/pon/8?page=2
-Accept: application/json
-
-### Get ONUs with Pagination - Custom Limit
-GET http://localhost:8081/api/v1/paginate/board/1/pon/8?limit=5
-Accept: application/json
+X-API-Key: {{API_KEY}}
 
 ### Get ONUs with Pagination - Page 2 with Limit 5
 GET http://localhost:8081/api/v1/paginate/board/1/pon/8?page=2&limit=5
 Accept: application/json
+X-API-Key: {{API_KEY}}
 
 ### Get ONUs with Pagination - Board 2 PON 8
 GET http://localhost:8081/api/v1/paginate/board/2/pon/8?limit=3&page=2
 Accept: application/json
+X-API-Key: {{API_KEY}}
 
 ###############################################
 # Cache Management Endpoints
 ###############################################
 
 ### Delete Cache for Board/PON
-# Clears Redis cache for specific board/PON combination
-DELETE http://localhost:8081/api/v1/board/1/pon/8
+DELETE http://localhost:8081/api/v1/board/1/pon/8/cache/clear
 Accept: application/json
+X-API-Key: {{API_KEY}}
 
 ### Delete Cache - Board 2 PON 7
-DELETE http://localhost:8081/api/v1/board/2/pon/7
+DELETE http://localhost:8081/api/v1/board/2/pon/7/cache/clear
 Accept: application/json
+X-API-Key: {{API_KEY}}
 
 ###############################################
 # Error Testing - Invalid Parameters
 ###############################################
 
-### Invalid Board ID (should return 400)
+### Invalid Board ID (expect 400)
 GET http://localhost:8081/api/v1/board/99/pon/1
 Accept: application/json
+X-API-Key: {{API_KEY}}
 
-### Invalid PON ID (should return 400)
+### Invalid PON ID (expect 400)
 GET http://localhost:8081/api/v1/board/1/pon/99
 Accept: application/json
+X-API-Key: {{API_KEY}}
 
-### Invalid ONU ID (should return 400)
-GET http://localhost:8081/api/v1/board/1/pon/1/onu/abc
+### Invalid ONU ID (expect 400)
+GET http://localhost:8081/api/v1/board/1/pon/1/onu/999
 Accept: application/json
+X-API-Key: {{API_KEY}}
 
-###############################################
-# Performance Testing - Multiple Requests
-###############################################
-
-### Test with Board 1 - All PONs
+### Missing API Key (expect 401 when API_KEY is set)
 GET http://localhost:8081/api/v1/board/1/pon/1
-###
-GET http://localhost:8081/api/v1/board/1/pon/2
-###
-GET http://localhost:8081/api/v1/board/1/pon/3
-###
-GET http://localhost:8081/api/v1/board/1/pon/4
-###
-
-### Test with Board 2 - All PONs
-GET http://localhost:8081/api/v1/board/2/pon/1
-###
-GET http://localhost:8081/api/v1/board/2/pon/2
-###
-GET http://localhost:8081/api/v1/board/2/pon/3
-###
-GET http://localhost:8081/api/v1/board/2/pon/4
-###
+Accept: application/json
 
 ###############################################
 # Notes:
-# - All requests include proper Accept headers
+# - Set {{API_KEY}} variable or leave empty if auth disabled
+# - Health and root endpoints don't require auth
 # - Default timeout: 90 seconds
 # - Rate limit: 100 req/s, burst 200
 # - Cache TTL: 10 minutes
 # - Board IDs: 1 or 2
 # - PON IDs: 1-16
+# - ONU IDs: 1-128
 ###############################################

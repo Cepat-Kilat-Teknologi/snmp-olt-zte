@@ -3,43 +3,72 @@
 [![Go Report Card](https://goreportcard.com/badge/github.com/Cepat-Kilat-Teknologi/go-snmp-olt-zte-c320)](https://goreportcard.com/report/github.com/Cepat-Kilat-Teknologi/go-snmp-olt-zte-c320)
 [![codecov](https://codecov.io/gh/Cepat-Kilat-Teknologi/go-snmp-olt-zte-c320/graph/badge.svg?token=NB3N7GMUX3)](https://codecov.io/gh/Cepat-Kilat-Teknologi/go-snmp-olt-zte-c320)
 
-Service for integration into the C320 OLT with the Go programming language
+REST API service for monitoring ZTE C320 OLT devices via SNMP protocol, built with Go. Provides real-time ONU information including status, optical power levels, uptime, and serial numbers across all board/PON combinations.
 
-#### 👨‍💻 Full list what has been used:
-* [Go](https://go.dev/) - Programming language
-* [Chi](https://github.com/go-chi/chi/) - HTTP Server
-* [GoSNMP](https://github.com/gosnmp/gosnmp) - SNMP library for Go
-* [Redis](https://github.com/redis/go-redis/v9) - Redis client for Go
-* [Zerolog](https://github.com/rs/zerolog) - Logger
-* [Viper](https://github.com/spf13/viper) - Configuration management
-* [Docker](https://www.docker.com/) - Containerization
+### Tech Stack
+* [Go 1.26](https://go.dev/) - Programming language
+* [Chi](https://github.com/go-chi/chi/) - Lightweight HTTP router
+* [GoSNMP](https://github.com/gosnmp/gosnmp) - SNMP library with BulkWalk support
+* [Redis](https://github.com/redis/go-redis/v9) - Caching layer with background refresh
+* [robfig/cron](https://github.com/robfig/cron) - Cron scheduling for power monitor
+* [Zerolog](https://github.com/rs/zerolog) - Structured JSON logger
+* [Godotenv](https://github.com/joho/godotenv) - Environment variable loader
+* [Miniredis](https://github.com/alicebob/miniredis) - In-memory Redis for testing
+* [Docker](https://www.docker.com/) - Containerization with distroless production image
 * [Task](https://github.com/go-task/task) - Task runner
-* [Air](https://github.com/cosmtrek/air) - Live reload for Go apps
+* [Air](https://github.com/cosmtrek/air) - Hot reload for development
+* [k6](https://k6.io/) - Load testing
 
+### Key Features
+- SNMP connection pool (4 connections) with concurrency semaphore (max 5 concurrent ops)
+- Redis caching with configurable TTL and cache pre-warming at startup
+- Cron-based and interval-based scheduling for RX Power monitor
+- API key authentication (optional, via `X-API-Key` header)
+- Singleflight request deduplication to prevent SNMP storms
+- Batched SNMP Get (4 OIDs per request) and BulkWalk for optimal performance
+- Consistent JSON response format with structured error details
+- SNMP Trap listener for real-time ONU offline detection with webhook notification
+- RX Power monitor with configurable high/low thresholds and cron scheduling
+- 98.6% test coverage
 
-#### Note : This service is still in development ⚠️👨‍💻👩‍💻
+### API Documentation
+Full OpenAPI 3.1 specification: [`api/openapi.yaml`](api/openapi.yaml)
 
-## Getting Started 🚀
+## Getting Started
 
-### 👨‍💻Recommendation for local development most comfortable usage:
+### Prerequisites
+- Go 1.26+
+- Docker & Docker Compose
+- Task runner (`go install github.com/go-task/task/v3/cmd/task@latest`)
+- Access to a ZTE C320 OLT device (SNMP v2c)
 
-``` shell
+### Quick Start
+```shell
+# 1. Clone and configure
+cp .env.example .env
+# Edit .env with your OLT IP, SNMP community, and Redis settings
+
+# 2. Start development (Redis in Docker + App with hot reload)
 task dev
+
+# 3. Test
+curl http://localhost:8081/health
+curl http://localhost:8081/api/v1/board/1/pon/1 | jq
 ```
 
-### Docker development usage:
+### Docker Compose (Development)
 ```shell
 task up
 ```
 
+### Docker Compose (Production)
 ```shell
-docker-compose -f docker-compose.local.yaml up -d && air -c .air.toml
+cp .env.example .env.prod
+# Edit .env.prod with production values
+task prod-up
 ```
 
-### Production usage with internal redis in docker:
-```shell
-task docker-run
-```
+### Standalone Docker
 ```shell
 docker network create local-dev && \
 docker run -d --name redis-container \
@@ -47,101 +76,26 @@ docker run -d --name redis-container \
 docker run -d -p 8081:8081 --name go-snmp-olt-zte-c320 \
 --network local-dev -e REDIS_HOST=redis-container \
 -e REDIS_PORT=6379 -e REDIS_DB=0 \
--e REDIS_MIN_IDLE_CONNECTIONS=200 -e REDIS_POOL_SIZE=12000 \
--e REDIS_POOL_TIMEOUT=240 -e SNMP_HOST=x.x.x.x \
+-e REDIS_MIN_IDLE_CONNECTIONS=10 -e REDIS_POOL_SIZE=100 \
+-e REDIS_POOL_TIMEOUT=30 -e SNMP_HOST=x.x.x.x \
 -e SNMP_PORT=161 -e SNMP_COMMUNITY=xxxx \
 cepatkilatteknologi/snmp-olt-zte-c320:latest
 ```
 
-### Production usage without external redis:
+## API Endpoints
+
+### Health Check
 ```shell
-docker run -d -p 8081:8081 --name go-snmp-olt-zte-c320 \
--e REDIS_HOST=redis_host \
--e REDIS_PORT=redis_port \
--e REDIS_DB=redis_db \
--e REDIS_MIN_IDLE_CONNECTIONS=redis_min_idle_connection \
--e REDIS_POOL_SIZE=redis_pool_size \
--e REDIS_POOL_TIMEOUT=redis_pool_timeout \
--e SNMP_HOST=snmp_host \
--e SNMP_PORT=snmp_port \
--e SNMP_COMMUNITY=snmp_community \
-cepatkilatteknologi/snmp-olt-zte-c320:latest
+curl -sS localhost:8081/health | jq
+```
+```json
+{"status":"ok"}
 ```
 
-
-### Available Tasks for this Project:
-
-Run `task --list` or `task help` to see all available tasks.
-
-#### Development Tasks
-
-| Task               | Description                                                     |
-|--------------------|-----------------------------------------------------------------|
-| `task init`        | Initialize the development environment                          |
-| `task dev`         | Start local development (Redis in Docker + App with hot reload)|
-| `task dev-docker`  | Start full development environment in Docker (with hot reload) |
-| `task dev-down`    | Stop local development environment                              |
-| `task dl-deps`     | Install tools required to run/build this app                    |
-
-#### Testing Tasks
-
-| Task                  | Description                                                  |
-|-----------------------|--------------------------------------------------------------|
-| `task test`           | Run all unit tests                                           |
-| `task test-verbose`   | Run all unit tests with verbose output                       |
-| `task test-coverage`  | Run tests and generate coverage report (text)                |
-| `task test-html`      | Generate HTML coverage report and open in browser            |
-| `task test-race`      | Run tests with race detection                                |
-| `task test-short`     | Run short tests (excluding integration tests)                |
-| `task load-test`      | Run k6 load testing                                          |
-| `task benchmark`      | Run benchmarks                                               |
-
-#### Build Tasks
-
-| Task                    | Description                                                |
-|-------------------------|------------------------------------------------------------|
-| `task app-build`        | Build the app binary                                       |
-| `task build-image`      | Build the docker image (local)                             |
-| `task build-image-prod` | Build production docker image (multi-arch)                 |
-| `task push-image`       | Build and push docker image with multi-arch to Docker Hub  |
-| `task pull-image`       | Pull docker image from Docker Hub                          |
-
-#### Docker Development Tasks
-
-| Task             | Description                                                     |
-|------------------|-----------------------------------------------------------------|
-| `task up`        | Start development Docker environment                            |
-| `task down`      | Stop development Docker environment                             |
-| `task restart`   | Restart development Docker environment                          |
-| `task logs`      | View development container logs                                 |
-| `task logs-redis`| View development Redis logs                                     |
-| `task ps`        | Show development containers status                              |
-
-#### Production Deployment Tasks
-
-| Task                 | Description                                                  |
-|----------------------|--------------------------------------------------------------|
-| `task prod-up`       | Start production containers (requires .env.prod)             |
-| `task prod-down`     | Stop production containers                                   |
-| `task prod-restart`  | Restart production containers                                |
-| `task prod-rebuild`  | Rebuild and restart production containers                    |
-| `task prod-logs`     | View production container logs                               |
-| `task prod-logs-redis` | View production Redis logs                                 |
-| `task prod-ps`       | Show production containers status                            |
-
-#### Cleanup Tasks
-
-| Task                | Description                                                   |
-|---------------------|---------------------------------------------------------------|
-| `task tidy`         | Clean up Go dependencies                                      |
-| `task clean`        | Clean up all containers, volumes, and build artifacts         |
-| `task clean-cache`  | Clean Go module cache and build cache                         |
-
-### Test with curl GET method Board 2 Pon 7
-``` shell
+### Get All ONUs by Board and PON
+```shell
 curl -sS localhost:8081/api/v1/board/2/pon/7 | jq
 ```
-### Result
 ```json
 {
   "code": 200,
@@ -156,37 +110,15 @@ curl -sS localhost:8081/api/v1/board/2/pon/7 | jq
       "serial_number": "ZTEGC*******",
       "rx_power": "-22.22",
       "status": "Online"
-    },
-    {
-      "board": 2,
-      "pon": 7,
-      "onu_id": 4,
-      "name": "Customer-002",
-      "onu_type": "F670LV7.1",
-      "serial_number": "ZTEGC*******",
-      "rx_power": "-21.08",
-      "status": "Online"
-    },
-    {
-      "board": 2,
-      "pon": 7,
-      "onu_id": 5,
-      "name": "Customer-003",
-      "onu_type": "F670LV7.1",
-      "serial_number": "ZTEGC*******",
-      "rx_power": "-19.956",
-      "status": "Online"
     }
   ]
 }
 ```
 
-### Test with curl GET method Board 2 Pon 7 Onu 4
+### Get Specific ONU Detail
 ```shell
- curl -sS localhost:8081/api/v1/board/2/pon/7/onu/4 | jq
+curl -sS localhost:8081/api/v1/board/2/pon/7/onu/4 | jq
 ```
-
-### Result
 ```json
 {
   "code": 200,
@@ -213,121 +145,215 @@ curl -sS localhost:8081/api/v1/board/2/pon/7 | jq
 }
 ```
 
-### Test with curl GET method Get Empty ONU_ID in Board 2 Pon 5
+### Get Empty ONU IDs
 ```shell
 curl -sS localhost:8081/api/v1/board/2/pon/5/onu_id/empty | jq
 ```
 
-### Result
-```json
-{
-  "code": 200,
-  "status": "OK",
-  "data": [
-    {
-      "board": 2,
-      "pon": 5,
-      "onu_id": 123
-    },
-    {
-      "board": 2,
-      "pon": 5,
-      "onu_id": 124
-    },
-    {
-      "board": 2,
-      "pon": 5,
-      "onu_id": 125
-    },
-    {
-      "board": 2,
-      "pon": 5,
-      "onu_id": 126
-    }
-  ]
-}
-```
-
-### Test with curl GET method Get Empty ONU_ID After Add ONU in Board 2 Pon 5
+### Get ONU IDs with Serial Numbers
 ```shell
-curl -sS localhost:8081/api/v1/board/2/pon/5/onu_id/update | jq
+curl -sS localhost:8081/api/v1/board/2/pon/7/onu_id_sn | jq
 ```
 
-```json
-{
-  "code": 200,
-  "status": "OK",
-  "data": "Success Update Empty ONU_ID"
-}
+### Update Empty ONU ID Cache
+```shell
+curl -sS -X POST localhost:8081/api/v1/board/2/pon/5/onu_id/update | jq
 ```
 
-### Test with curl GET method Get Onu Information in Board 2 Pon 8 with paginate
+### Paginated ONU List
 ```shell
 curl -sS 'http://localhost:8081/api/v1/paginate/board/2/pon/8?limit=3&page=2' | jq
 ```
-### Result
 ```json
 {
   "code": 200,
   "status": "OK",
-  "page": 2,
-  "limit": 3,
-  "page_count": 23,
-  "total_rows": 69,
   "data": [
-    {
-      "board": 2,
-      "pon": 8,
-      "onu_id": 4,
-      "name": "Customer-004",
-      "onu_type": "F670LV7.1",
-      "serial_number": "ZTEGC*******",
-      "rx_power": "-19.17",
-      "status": "Online"
-    },
-    {
-      "board": 2,
-      "pon": 8,
-      "onu_id": 5,
-      "name": "Customer-005",
-      "onu_type": "F660V6.0",
-      "serial_number": "ZTEGD*******",
-      "rx_power": "-19.54",
-      "status": "Online"
-    },
-    {
-      "board": 2,
-      "pon": 8,
-      "onu_id": 6,
-      "name": "Customer-006",
-      "onu_type": "F670LV7.1",
-      "serial_number": "ZTEGC*******",
-      "rx_power": "-21.81",
-      "status": "Online"
-    }
-  ]
+    {"board": 2, "pon": 8, "onu_id": 4, "name": "Customer-004", "onu_type": "F670LV7.1", "serial_number": "ZTEGC*******", "rx_power": "-19.17", "status": "Online"},
+    {"board": 2, "pon": 8, "onu_id": 5, "name": "Customer-005", "onu_type": "F660V6.0", "serial_number": "ZTEGD*******", "rx_power": "-19.54", "status": "Online"}
+  ],
+  "meta": {
+    "page": 2,
+    "limit": 3,
+    "page_count": 23,
+    "total_rows": 69
+  }
 }
 ```
 
-### Description of Paginate
-| Syntax             | Description                                                     |
-|--------------------|-----------------------------------------------------------------|
-| page               | Page number                                                     |
-| limit              | Limit data per page                                             |
-| page_count         | Total page                                                      |
-| total_rows         | Total rows                                                      |
-| data               | Data of onu                                                     |
-
-#### Default paginate
-``` go
-var (
-	DefaultPageSize = 10 // default page size
-	MaxPageSize     = 100 // max page size
-	PageVar         = "page"
-	PageSizeVar     = "limit"
-)
+### Clear Cache
+```shell
+curl -sS -X DELETE localhost:8081/api/v1/board/2/pon/7/cache/clear | jq
 ```
 
+## Authentication
 
-### LICENSE
+When `API_KEY` environment variable is set, all `/api/v1` routes require the `X-API-Key` header:
+```shell
+curl -sS -H "X-API-Key: your-api-key" localhost:8081/api/v1/board/2/pon/7 | jq
+```
+
+Without a valid API key, the server returns `401 Unauthorized`. If `API_KEY` is not set, authentication is disabled (backward compatible). Health check (`/health`) never requires authentication.
+
+## Response Format
+
+**Success:**
+```json
+{"code": 200, "status": "OK", "data": [...]}
+```
+
+**Success with pagination:**
+```json
+{"code": 200, "status": "OK", "data": [...], "meta": {"page": 1, "limit": 10, "page_count": 7, "total_rows": 69}}
+```
+
+**Error:**
+```json
+{"code": 400, "status": "Bad Request", "error": {"type": "VALIDATION_ERROR", "message": "board_id must be 1 or 2", "details": {"received": "99"}}}
+```
+
+| Pagination Parameter | Default | Max |
+|---------------------|---------|-----|
+| `page` | 1 | - |
+| `limit` | 10 | 100 |
+
+## SNMP Trap Listener
+
+Real-time ONU event detection via SNMP Trap. When an ONU goes offline (LOS, DyingGasp, PowerOff), the trap listener detects it and sends a webhook notification with ONU details.
+
+### Enable Trap Listener
+```env
+TRAP_ENABLED=true
+TRAP_PORT=1620
+TRAP_WEBHOOK_URL=https://your-webhook.example.com/olt-alerts
+```
+
+### Webhook Payload
+```json
+{
+  "timestamp": "2026-04-07T10:30:45+07:00",
+  "source": "192.168.213.174",
+  "board": 1,
+  "pon": 5,
+  "onu_id": 23,
+  "event_type": "LOS",
+  "status": "offline",
+  "name": "Customer-023",
+  "description": "Perumahan Graha Ria Blok F No.6",
+  "onu_type": "F670LV7.1",
+  "serial_number": "ZTEGC12345678"
+}
+```
+
+Events that trigger webhook: `LOS`, `DyingGasp`, `PowerOff`, `Offline`, `AuthFailed`, `LOSi`, `LOFi`.
+
+### RX Power Monitor
+
+Periodic scanning of all ONUs for abnormal optical power levels with webhook alerts.
+
+```env
+# Interval only (every 5 minutes)
+POWER_MONITOR_ENABLED=true
+POWER_MONITOR_INTERVAL=300
+
+# Cron only (specific times)
+POWER_MONITOR_INTERVAL=0
+POWER_MONITOR_CRON=0 8,12,15,17,0 * * *
+POWER_MONITOR_TIMEZONE=Asia/Jakarta
+
+# Both interval + cron
+POWER_MONITOR_INTERVAL=300
+POWER_MONITOR_CRON=0 8,12,15,17,0 * * *
+```
+
+Thresholds: `RX_POWER_HIGH_THRESHOLD=-8.0` (overload), `RX_POWER_LOW_THRESHOLD=-25.0` (weak signal).
+
+### Testing Traps Locally
+```shell
+# Terminal 1: Start app with trap enabled
+# Set in .env: TRAP_ENABLED=true, TRAP_PORT=1620, TRAP_WEBHOOK_URL=http://localhost:9999/test
+task dev
+
+# Terminal 2: Run trap tests (sends 6 fake traps + starts webhook receiver)
+task test-trap
+```
+
+## Architecture
+
+```
+cmd/api/          Entry point (loads .env, starts server)
+app/              HTTP server setup, routing, middleware chain
+config/           Environment-based configuration, OID generation
+internal/
+  handler/        HTTP handlers with request ID correlation
+  middleware/     Auth, CORS, rate limiting, security headers, validation
+  usecase/        Business logic, singleflight, caching strategy, cache pre-warming
+  repository/     SNMP connection pool, Redis operations
+  model/          Data models (ONU info, pagination)
+  trap/           SNMP Trap listener, event handler, webhook notifications
+  errors/         Typed application errors (validation, SNMP, Redis)
+  utils/          OID extractors, power converters, response helpers
+pkg/
+  graceful/       Graceful shutdown with signal handling
+  pagination/     Pagination calculation
+  redis/          Redis client factory
+  snmp/           SNMP connection setup
+api/              OpenAPI 3.1 specification
+scripts/          Trap testing tools
+```
+
+### Performance
+
+Tested with k6 (100 VUs, 1m40s) against a real ZTE C320 OLT:
+
+| Metric | Value |
+|--------|-------|
+| Throughput | 4,624 req/s |
+| p(95) Response Time | 2.06ms |
+| p(99) Response Time | 4.88ms |
+| Median Response Time | 217µs |
+| Iterations (100 VUs) | 51,043 |
+| Real Error Rate | 0.07% |
+| Test Coverage | 98.6% |
+
+### Caching Strategy
+- **ONU list**: 30 min TTL (configurable via `REDIS_ONU_INFO_TTL`), background refresh at 20% expiry
+- **ONU detail**: 15 min TTL (configurable via `REDIS_ONU_DETAIL_TTL`), fallback from cached list
+- **ONU serial numbers**: 30 min TTL, cached in Redis
+- **Empty ONU IDs**: 5 min TTL (configurable via `REDIS_EMPTY_ONU_ID_TTL`)
+- **Cache pre-warming**: All 32 board/pon combos scanned at startup (`CACHE_PREWARM=true`)
+- **SNMP concurrency limit**: Max 5 concurrent operations (`SNMP_MAX_CONCURRENT=5`)
+- **Connection pool**: 4 parallel SNMP connections
+
+## Available Tasks
+
+Run `task --list` or `task help` to see all available tasks.
+
+| Task | Description |
+|------|-------------|
+| `task dev` | Start development (Redis in Docker + hot reload) |
+| `task up` | Start full Docker development environment |
+| `task test` | Run all unit tests |
+| `task test-coverage` | Run tests with coverage report |
+| `task test-html` | Generate HTML coverage report |
+| `task load-test` | Run k6 load testing |
+| `task prod-up` | Start production containers |
+| `task app-build` | Build the app binary |
+| `task build-image` | Build Docker image (local) |
+| `task push-image` | Build and push multi-arch image to Docker Hub |
+| `task clean` | Clean up containers, volumes, artifacts |
+| `task test-trap` | Test SNMP Trap listener with fake traps |
+| `task test-trap-webhook` | Start webhook receiver for manual testing |
+
+### Load Testing
+
+```shell
+# Run load test (wait for cache pre-warm before testing)
+task load-test
+
+# Run with custom base URL and API key
+k6 run -e BASE_URL=http://10.0.0.1:8081 -e API_KEY=your-key scripts/k6-load-test.js
+```
+
+## License
 [MIT License](https://github.com/Cepat-Kilat-Teknologi/go-snmp-olt-zte-c320/blob/main/LICENSE)

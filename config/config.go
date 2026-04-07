@@ -13,15 +13,18 @@ type Config struct { // Define the main configuration struct named Config
 	SnmpCfg     SnmpConfig                      // Field to hold SNMP configuration settings
 	RedisCfg    RedisConfig                     // Field to hold Redis configuration settings
 	OltCfg      OltConfig                       // Field to hold OLT configuration settings
+	TrapCfg     TrapConfig                      // Field to hold SNMP Trap listener configuration
+	CacheCfg    CacheConfig                     // Field to hold cache TTL configuration
 	BoardPonMap map[BoardPonKey]*BoardPonConfig `mapstructure:"-"` // Dynamic map to store configurations for each Board and PON, ignored during direct un-marshaling
 }
 
 // SnmpConfig contains configuration parameters for SNMP connection
 // including target IP address, port, and community string.
 type SnmpConfig struct { // Define the SnmpConfig struct for SNMP settings
-	IP        string `mapstructure:"ip"`        // IP address of the SNMP device, mapped from the "ip" configuration key
-	Port      uint16 `mapstructure:"port"`      // Port number for the SNMP connection, mapped from the "port" configuration key
-	Community string `mapstructure:"community"` // SNMP community string (password), mapped from the "community" configuration key
+	IP            string `mapstructure:"ip"`             // IP address of the SNMP device, mapped from the "ip" configuration key
+	Port          uint16 `mapstructure:"port"`           // Port number for the SNMP connection, mapped from the "port" configuration key
+	Community     string `mapstructure:"community"`      // SNMP community string (password), mapped from the "community" configuration key
+	MaxConcurrent int    `mapstructure:"max_concurrent"` // Maximum concurrent SNMP operations to prevent OLT saturation
 }
 
 // RedisConfig contains configuration parameters for Redis connection,
@@ -35,6 +38,31 @@ type RedisConfig struct { // Define the RedisConfig struct for Redis settings
 	MinIdleConnections int    `mapstructure:"min_idle_connections"` // Minimum number of idle connections in the pool, mapped from "min_idle_connections"
 	PoolSize           int    `mapstructure:"pool_size"`            // Maximum number of connections in the pool, mapped from "pool_size"
 	PoolTimeout        int    `mapstructure:"pool_timeout"`         // Timeout duration for waiting for a connection from the pool, mapped from "pool_timeout"
+}
+
+// TrapConfig contains configuration parameters for the SNMP Trap listener
+// including webhook notification settings for ONU events.
+type TrapConfig struct {
+	Enabled           bool
+	Port              uint16
+	Community         string
+	WebhookURL        string
+	WebhookRetries    int
+	WebhookTimeout    int
+	PowerMonitor      bool    // POWER_MONITOR_ENABLED
+	PowerMonitorInterval int  // POWER_MONITOR_INTERVAL (seconds)
+	PowerMonitorCron     string  // POWER_MONITOR_CRON (cron expression, e.g. "0 8,12,15,17,0 * * *")
+	PowerMonitorTimezone string  // POWER_MONITOR_TIMEZONE (IANA timezone, e.g. "Asia/Jakarta")
+	RxPowerHighThreshold float64 // RX_POWER_HIGH_THRESHOLD (dBm, overload)
+	RxPowerLowThreshold  float64 // RX_POWER_LOW_THRESHOLD (dBm, weak signal)
+}
+
+// CacheConfig contains TTL configuration for Redis cache
+type CacheConfig struct {
+	ONUInfoTTL    int  // REDIS_ONU_INFO_TTL (seconds, default 1800 = 30min)
+	ONUDetailTTL  int  // REDIS_ONU_DETAIL_TTL (seconds, default 900 = 15min)
+	EmptyOnuIDTTL int  // REDIS_EMPTY_ONU_ID_TTL (seconds, default 300 = 5min)
+	PreWarm       bool // CACHE_PREWARM (default true)
 }
 
 // OltConfig contains base OID configurations for OLT device management
@@ -103,6 +131,16 @@ func getEnvAsUint16(key string, defaultValue uint16) uint16 {
 	return defaultValue
 }
 
+// getEnvAsFloat64 retrieves an environment variable as float64 or returns a default value
+func getEnvAsFloat64(key string, defaultValue float64) float64 {
+	if value := os.Getenv(key); value != "" {
+		if floatVal, err := strconv.ParseFloat(value, 64); err == nil {
+			return floatVal
+		}
+	}
+	return defaultValue
+}
+
 // LoadConfig loads configuration from environment variables
 // All sensitive data (SNMP, Redis, Server) MUST come from environment variables
 // Board/PON OID mappings are generated dynamically using mathematical formulas (no config file needed)
@@ -115,9 +153,10 @@ func LoadConfig() (*Config, error) {
 
 	// SNMP Configuration from environment (REQUIRED for production)
 	cfg.SnmpCfg = SnmpConfig{
-		IP:        getEnv("SNMP_HOST", ""),
-		Port:      getEnvAsUint16("SNMP_PORT", 161),
-		Community: getEnv("SNMP_COMMUNITY", ""),
+		IP:            getEnv("SNMP_HOST", ""),
+		Port:          getEnvAsUint16("SNMP_PORT", 161),
+		Community:     getEnv("SNMP_COMMUNITY", ""),
+		MaxConcurrent: getEnvAsInt("SNMP_MAX_CONCURRENT", 5),
 	}
 
 	// Redis Configuration from environment (REQUIRED for production)
@@ -127,8 +166,8 @@ func LoadConfig() (*Config, error) {
 		Password:           getEnv("REDIS_PASSWORD", ""),
 		DB:                 getEnvAsInt("REDIS_DB", 0),
 		DefaultDB:          getEnvAsInt("REDIS_DB", 0),
-		MinIdleConnections: getEnvAsInt("REDIS_MIN_IDLE_CONNECTIONS", 200),
-		PoolSize:           getEnvAsInt("REDIS_POOL_SIZE", 12000),
+		MinIdleConnections: getEnvAsInt("REDIS_MIN_IDLE_CONNECTIONS", 10),
+		PoolSize:           getEnvAsInt("REDIS_POOL_SIZE", 100),
 		PoolTimeout:        getEnvAsInt("REDIS_POOL_TIMEOUT", 240),
 	}
 
@@ -140,6 +179,30 @@ func LoadConfig() (*Config, error) {
 		OnuTypeAllPon:   getEnv("ONU_TYPE_PREFIX", OnuTypePrefix),
 	}
 
+	// SNMP Trap Configuration from environment
+	cfg.TrapCfg = TrapConfig{
+		Enabled:              getEnv("TRAP_ENABLED", "false") == "true",
+		Port:                 getEnvAsUint16("TRAP_PORT", 1620),
+		Community:            getEnv("TRAP_COMMUNITY", cfg.SnmpCfg.Community),
+		WebhookURL:           getEnv("TRAP_WEBHOOK_URL", ""),
+		WebhookRetries:       getEnvAsInt("TRAP_WEBHOOK_RETRIES", 3),
+		WebhookTimeout:       getEnvAsInt("TRAP_WEBHOOK_TIMEOUT", 10),
+		PowerMonitor:         getEnv("POWER_MONITOR_ENABLED", "false") == "true",
+		PowerMonitorInterval: getEnvAsInt("POWER_MONITOR_INTERVAL", 300),
+		PowerMonitorCron:     getEnv("POWER_MONITOR_CRON", ""),
+		PowerMonitorTimezone: getEnv("POWER_MONITOR_TIMEZONE", ""),
+		RxPowerHighThreshold: getEnvAsFloat64("RX_POWER_HIGH_THRESHOLD", -8.0),
+		RxPowerLowThreshold:  getEnvAsFloat64("RX_POWER_LOW_THRESHOLD", -25.0),
+	}
+
+	// Cache TTL Configuration from environment
+	cfg.CacheCfg = CacheConfig{
+		ONUInfoTTL:    getEnvAsInt("REDIS_ONU_INFO_TTL", 1800),
+		ONUDetailTTL:  getEnvAsInt("REDIS_ONU_DETAIL_TTL", 900),
+		EmptyOnuIDTTL: getEnvAsInt("REDIS_EMPTY_ONU_ID_TTL", 300),
+		PreWarm:       getEnv("CACHE_PREWARM", "true") == "true",
+	}
+
 	// ===================================================================
 	// Generate Board/PON OID mappings DYNAMICALLY (no config file needed)
 	// ===================================================================
@@ -148,6 +211,14 @@ func LoadConfig() (*Config, error) {
 	// Note: InitializeBoardPonMap cannot fail since it uses hardcoded valid values
 	// and always creates all 32 board/pon combinations, so ValidateConfig is not needed here
 	cfg.BoardPonMap, _ = InitializeBoardPonMap()
+
+	// Validate required environment variables
+	if cfg.SnmpCfg.IP == "" {
+		return nil, fmt.Errorf("SNMP_HOST environment variable is required")
+	}
+	if cfg.SnmpCfg.Community == "" {
+		return nil, fmt.Errorf("SNMP_COMMUNITY environment variable is required")
+	}
 
 	return &cfg, nil
 }

@@ -103,6 +103,21 @@ tasks:
       - echo "Starting k6 load test..."
       - k6 run k6-load-test.js
 
+  test-trap:
+    desc: Test SNMP Trap listener with fake traps
+    preconditions:
+      - sh: command -v snmptrap
+        msg: "snmptrap not installed. Install with: brew install net-snmp"
+      - sh: curl -s http://localhost:8081/health > /dev/null 2>&1
+        msg: "App not running. Start with: task dev"
+    cmds:
+      - ./scripts/test-trap.sh
+
+  test-trap-webhook:
+    desc: Start webhook receiver only (for manual trap testing)
+    cmds:
+      - ./scripts/test-trap.sh webhook
+
   benchmark:
     desc: Run benchmarks
     cmds:

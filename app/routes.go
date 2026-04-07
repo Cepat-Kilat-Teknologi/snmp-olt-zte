@@ -38,10 +38,12 @@ func loadRoutes(onuHandler *handler.OnuHandler) http.Handler { // Function to co
 	router.Use(middleware.CorsMiddleware()) // Apply Cross-Origin Resource Sharing (CORS) middleware
 
 	// Define a simple root endpoint
-	router.Get("/", rootHandler) // Register the GET handler for the root path "/"
+	router.Get("/", rootHandler)       // Register the GET handler for the root path "/"
+	router.Get("/health", healthHandler) // Register the GET handler for the health check endpoint
 
 	// Create a group for /api/v1/
 	apiV1Group := chi.NewRouter() // Create a new router instance for API version 1 group
+	apiV1Group.Use(middleware.APIKeyAuth)
 
 	// Define routes for /api/v1/
 	apiV1Group.Route("/board", func(r chi.Router) { // Create a route group starting with "/board"
@@ -49,11 +51,11 @@ func loadRoutes(onuHandler *handler.OnuHandler) http.Handler { // Function to co
 			// Apply validation middleware for board_id and pon_id
 			r.Use(middleware.ValidateBoardPonParams) // specific middleware to validate these parameters
 
-			r.Get("/", onuHandler.GetByBoardIDAndPonID)             // GET /board/{board_id}/pon/{pon_id}/ - Fetch ONUs by board and PON
-			r.Delete("/", onuHandler.DeleteCache)                   // DELETE /board/{board_id}/pon/{pon_id}/ - Delete cache for board/pon
+			r.Get("/", onuHandler.GetByBoardIDAndPonID)                // GET /board/{board_id}/pon/{pon_id}/ - Fetch ONUs by board and PON
+			r.Delete("/cache/clear", onuHandler.DeleteCache)           // DELETE .../cache/clear - Clear Redis cache for board/pon
 			r.Get("/onu_id/empty", onuHandler.GetEmptyOnuID)        // GET .../onu_id/empty - Fetch empty ONU IDs
 			r.Get("/onu_id_sn", onuHandler.GetOnuIDAndSerialNumber) // GET .../onu_id_sn - Fetch ONU IDs and serial numbers
-			r.Get("/onu_id/update", onuHandler.UpdateEmptyOnuID)    // GET .../onu_id/update - Update empty ONU IDs (Note: GET used for update seems unusual but following existing code)
+			r.Post("/onu_id/update", onuHandler.UpdateEmptyOnuID)   // POST .../onu_id/update - Update empty ONU IDs
 
 			// Routes with onu_id parameter
 			r.Route("/onu/{onu_id}", func(r chi.Router) { // Nested route group for specific ONU ID
@@ -81,4 +83,11 @@ func loadRoutes(onuHandler *handler.OnuHandler) http.Handler { // Function to co
 func rootHandler(w http.ResponseWriter, _ *http.Request) { // Handler function for the root URL
 	w.WriteHeader(http.StatusOK)                                // Set the HTTP status code to 200 OK
 	_, _ = w.Write([]byte("Hello, this is the root endpoint!")) // Write a simple welcome message to the response body
+}
+
+// healthHandler returns application health status as JSON
+func healthHandler(w http.ResponseWriter, _ *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write([]byte(`{"status":"ok"}`))
 }

@@ -35,7 +35,7 @@ Complete guide for deploying the Go SNMP OLT ZTE C320 service in various environ
 ### Software Requirements
 
 - Docker 20.10+ and Docker Compose 2.0+ (for Docker deployment)
-- Go 1.25.5+ (for binary deployment)
+- Go 1.26+ (for binary deployment)
 - Redis 7.0+ (standalone or external)
 - Network access to ZTE C320 OLT (SNMP port 161)
 
@@ -65,15 +65,22 @@ SERVER_MODE=release
 SNMP_HOST=192.168.1.1        # Your OLT IP address
 SNMP_PORT=161                 # Standard SNMP port
 SNMP_COMMUNITY=public         # SNMP community string (change in production!)
+SNMP_MAX_CONCURRENT=5
 
 # Redis Configuration (REQUIRED)
 REDIS_HOST=redis              # Use 'redis' for Docker Compose, or external Redis IP
 REDIS_PORT=6379
 REDIS_PASSWORD=               # Set strong password in production!
 REDIS_DB=0
-REDIS_MIN_IDLE_CONNECTIONS=200
-REDIS_POOL_SIZE=12000
-REDIS_POOL_TIMEOUT=240
+REDIS_MIN_IDLE_CONNECTIONS=10
+REDIS_POOL_SIZE=100
+REDIS_POOL_TIMEOUT=30
+
+# Cache TTL Configuration
+REDIS_ONU_INFO_TTL=1800           # ONU list cache TTL (30 min)
+REDIS_ONU_DETAIL_TTL=900          # ONU detail cache TTL (15 min)
+REDIS_EMPTY_ONU_ID_TTL=300        # Empty ONU ID cache TTL (5 min)
+CACHE_PREWARM=true                # Pre-warm cache on startup
 
 # TLS/HTTPS Configuration (Production Recommended)
 USE_TLS=false                 # Set to 'true' for HTTPS
@@ -86,6 +93,10 @@ CORS_ALLOWED_METHODS=GET,POST,PUT,DELETE,OPTIONS
 CORS_ALLOWED_HEADERS=Accept,Authorization,Content-Type,X-API-Key,X-Request-ID
 CORS_ALLOW_CREDENTIALS=true
 CORS_MAX_AGE=3600
+
+# API Key Authentication (Optional)
+# Set to enable API key validation on /api/v1 routes
+API_KEY=your-secret-api-key
 ```
 
 ### Security Hardening
@@ -95,6 +106,37 @@ CORS_MAX_AGE=3600
 2. **Redis Password**: Set `REDIS_PASSWORD` with a strong password
 3. **TLS**: Enable HTTPS in production (`USE_TLS=true`)
 4. **CORS**: Restrict `CORS_ALLOWED_ORIGINS` to your domain only
+5. **API Key**: Set `API_KEY` to protect API endpoints
+6. **Trap Webhook**: Use HTTPS for `TRAP_WEBHOOK_URL` in production
+
+### SNMP Trap Configuration
+
+To enable real-time ONU offline detection:
+
+```bash
+# SNMP Trap Configuration
+TRAP_ENABLED=true              # Enable trap listener
+TRAP_PORT=1620                 # UDP port for trap listener (default: 1620)
+TRAP_COMMUNITY=public          # SNMP community for trap validation
+TRAP_WEBHOOK_URL=https://your-webhook.example.com/olt-alerts
+TRAP_WEBHOOK_RETRIES=3         # Max retry attempts for webhook
+TRAP_WEBHOOK_TIMEOUT=10        # Webhook timeout in seconds
+
+# RX Power Monitor (requires TRAP_ENABLED=true and TRAP_WEBHOOK_URL)
+POWER_MONITOR_ENABLED=true
+POWER_MONITOR_INTERVAL=300        # Scan interval in seconds (0 = disable)
+POWER_MONITOR_CRON=0 8,12,15,17,0 * * *  # Cron schedule (empty = disable)
+POWER_MONITOR_TIMEZONE=Asia/Jakarta       # IANA timezone for cron
+RX_POWER_HIGH_THRESHOLD=-8.0      # Overload threshold (dBm)
+RX_POWER_LOW_THRESHOLD=-25.0      # Weak signal threshold (dBm)
+```
+
+**OLT Configuration Required:**
+```
+snmp-server host <APP_SERVER_IP> version 2c <COMMUNITY> udp-port <TRAP_PORT>
+```
+
+The trap listener detects ONU offline events (LOS, DyingGasp, PowerOff) and sends a webhook with ONU details (name, address, serial number, type).
 
 ## Deployment Methods
 
@@ -190,9 +232,9 @@ docker run -d \
   -e REDIS_PORT=6379 \
   -e REDIS_PASSWORD=YOUR_REDIS_PASSWORD \
   -e REDIS_DB=0 \
-  -e REDIS_MIN_IDLE_CONNECTIONS=200 \
-  -e REDIS_POOL_SIZE=12000 \
-  -e REDIS_POOL_TIMEOUT=240 \
+  -e REDIS_MIN_IDLE_CONNECTIONS=10 \
+  -e REDIS_POOL_SIZE=100 \
+  -e REDIS_POOL_TIMEOUT=30 \
   cepatkilatteknologi/snmp-olt-zte-c320:latest
 
 # Verify
@@ -364,11 +406,11 @@ spec:
         - name: REDIS_DB
           value: "0"
         - name: REDIS_MIN_IDLE_CONNECTIONS
-          value: "200"
+          value: "10"
         - name: REDIS_POOL_SIZE
-          value: "12000"
+          value: "100"
         - name: REDIS_POOL_TIMEOUT
-          value: "240"
+          value: "30"
         resources:
           requests:
             memory: "512Mi"
@@ -572,8 +614,8 @@ sudo journalctl -u go-snmp-olt --since "1 hour ago"
 
 - **HTTP Response Time**: p50, p95, p99
 - **SNMP Query Success Rate**: Should be >95%
-- **Redis Cache Hit Rate**: Should be >80%
-- **Error Rate**: Should be <1%
+- **Redis Cache Hit Rate**: Should be >95% (with cache pre-warm)
+- **Error Rate**: Should be <0.1% (with cache pre-warm)
 - **Memory Usage**: Monitor for leaks
 - **CPU Usage**: Should be <60% under normal load
 - **Goroutines**: Monitor for leaks

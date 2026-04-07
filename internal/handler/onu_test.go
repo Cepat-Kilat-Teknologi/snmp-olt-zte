@@ -15,11 +15,11 @@ import (
 // mockOnuUsecase is a mock implementation of OnuUseCaseInterface
 type mockOnuUsecase struct {
 	GetByBoardIDAndPonIDFunc               func(ctx context.Context, boardID, ponID int) ([]model.ONUInfoPerBoard, error)
-	GetByBoardIDPonIDAndOnuIDFunc          func(boardID, ponID, onuID int) (model.ONUCustomerInfo, error)
+	GetByBoardIDPonIDAndOnuIDFunc          func(ctx context.Context, boardID, ponID, onuID int) (model.ONUCustomerInfo, error)
 	GetEmptyOnuIDFunc                      func(ctx context.Context, boardID, ponID int) ([]model.OnuID, error)
-	GetOnuIDAndSerialNumberFunc            func(boardID, ponID int) ([]model.OnuSerialNumber, error)
+	GetOnuIDAndSerialNumberFunc            func(ctx context.Context, boardID, ponID int) ([]model.OnuSerialNumber, error)
 	UpdateEmptyOnuIDFunc                   func(ctx context.Context, boardID, ponID int) error
-	GetByBoardIDAndPonIDWithPaginationFunc func(boardID, ponID, page, pageSize int) ([]model.ONUInfoPerBoard, int)
+	GetByBoardIDAndPonIDWithPaginationFunc func(ctx context.Context, boardID, ponID, page, pageSize int) ([]model.ONUInfoPerBoard, int)
 	DeleteCacheFunc                        func(ctx context.Context, boardID, ponID int) error
 }
 
@@ -30,9 +30,9 @@ func (m *mockOnuUsecase) GetByBoardIDAndPonID(ctx context.Context, boardID, ponI
 	return nil, nil
 }
 
-func (m *mockOnuUsecase) GetByBoardIDPonIDAndOnuID(boardID, ponID, onuID int) (model.ONUCustomerInfo, error) {
+func (m *mockOnuUsecase) GetByBoardIDPonIDAndOnuID(ctx context.Context, boardID, ponID, onuID int) (model.ONUCustomerInfo, error) {
 	if m.GetByBoardIDPonIDAndOnuIDFunc != nil {
-		return m.GetByBoardIDPonIDAndOnuIDFunc(boardID, ponID, onuID)
+		return m.GetByBoardIDPonIDAndOnuIDFunc(ctx, boardID, ponID, onuID)
 	}
 	return model.ONUCustomerInfo{}, nil
 }
@@ -44,9 +44,9 @@ func (m *mockOnuUsecase) GetEmptyOnuID(ctx context.Context, boardID, ponID int) 
 	return nil, nil
 }
 
-func (m *mockOnuUsecase) GetOnuIDAndSerialNumber(boardID, ponID int) ([]model.OnuSerialNumber, error) {
+func (m *mockOnuUsecase) GetOnuIDAndSerialNumber(ctx context.Context, boardID, ponID int) ([]model.OnuSerialNumber, error) {
 	if m.GetOnuIDAndSerialNumberFunc != nil {
-		return m.GetOnuIDAndSerialNumberFunc(boardID, ponID)
+		return m.GetOnuIDAndSerialNumberFunc(ctx, boardID, ponID)
 	}
 	return nil, nil
 }
@@ -58,9 +58,9 @@ func (m *mockOnuUsecase) UpdateEmptyOnuID(ctx context.Context, boardID, ponID in
 	return nil
 }
 
-func (m *mockOnuUsecase) GetByBoardIDAndPonIDWithPagination(boardID, ponID, page, pageSize int) ([]model.ONUInfoPerBoard, int) {
+func (m *mockOnuUsecase) GetByBoardIDAndPonIDWithPagination(ctx context.Context, boardID, ponID, page, pageSize int) ([]model.ONUInfoPerBoard, int) {
 	if m.GetByBoardIDAndPonIDWithPaginationFunc != nil {
-		return m.GetByBoardIDAndPonIDWithPaginationFunc(boardID, ponID, page, pageSize)
+		return m.GetByBoardIDAndPonIDWithPaginationFunc(ctx, boardID, ponID, page, pageSize)
 	}
 	return nil, 0
 }
@@ -70,6 +70,32 @@ func (m *mockOnuUsecase) DeleteCache(ctx context.Context, boardID, ponID int) er
 		return m.DeleteCacheFunc(ctx, boardID, ponID)
 	}
 	return nil
+}
+
+func (m *mockOnuUsecase) PreWarmCache(ctx context.Context) {}
+
+func TestGetRequestID(t *testing.T) {
+	tests := []struct {
+		name     string
+		headerID string
+		expected string
+	}{
+		{"with X-Request-ID header", "abc-123", "abc-123"},
+		{"without X-Request-ID header", "", ""},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := httptest.NewRequest("GET", "/", nil)
+			if tt.headerID != "" {
+				req.Header.Set("X-Request-ID", tt.headerID)
+			}
+			got := getRequestID(req)
+			if got != tt.expected {
+				t.Errorf("getRequestID() = %q, want %q", got, tt.expected)
+			}
+		})
+	}
 }
 
 func TestNewOnuHandler(t *testing.T) {
@@ -270,7 +296,7 @@ func TestOnuHandler_GetByBoardIDPonIDAndOnuID_Success(t *testing.T) {
 	}
 
 	usecase := &mockOnuUsecase{
-		GetByBoardIDPonIDAndOnuIDFunc: func(boardID, ponID, onuID int) (model.ONUCustomerInfo, error) {
+		GetByBoardIDPonIDAndOnuIDFunc: func(ctx context.Context, boardID, ponID, onuID int) (model.ONUCustomerInfo, error) {
 			return expectedData, nil
 		},
 	}
@@ -293,7 +319,7 @@ func TestOnuHandler_GetByBoardIDPonIDAndOnuID_Success(t *testing.T) {
 
 func TestOnuHandler_GetByBoardIDPonIDAndOnuID_NotFound(t *testing.T) {
 	usecase := &mockOnuUsecase{
-		GetByBoardIDPonIDAndOnuIDFunc: func(boardID, ponID, onuID int) (model.ONUCustomerInfo, error) {
+		GetByBoardIDPonIDAndOnuIDFunc: func(ctx context.Context, boardID, ponID, onuID int) (model.ONUCustomerInfo, error) {
 			// Return empty struct (all zeros)
 			return model.ONUCustomerInfo{}, nil
 		},
@@ -350,7 +376,7 @@ func TestOnuHandler_GetOnuIDAndSerialNumber_Success(t *testing.T) {
 	}
 
 	usecase := &mockOnuUsecase{
-		GetOnuIDAndSerialNumberFunc: func(boardID, ponID int) ([]model.OnuSerialNumber, error) {
+		GetOnuIDAndSerialNumberFunc: func(ctx context.Context, boardID, ponID int) ([]model.OnuSerialNumber, error) {
 			return expectedData, nil
 		},
 	}
@@ -399,7 +425,7 @@ func TestOnuHandler_GetByBoardIDAndPonIDWithPaginate_Success(t *testing.T) {
 	}
 
 	usecase := &mockOnuUsecase{
-		GetByBoardIDAndPonIDWithPaginationFunc: func(boardID, ponID, page, pageSize int) ([]model.ONUInfoPerBoard, int) {
+		GetByBoardIDAndPonIDWithPaginationFunc: func(ctx context.Context, boardID, ponID, page, pageSize int) ([]model.ONUInfoPerBoard, int) {
 			return expectedData, 10
 		},
 	}
@@ -421,7 +447,7 @@ func TestOnuHandler_GetByBoardIDAndPonIDWithPaginate_Success(t *testing.T) {
 
 func TestOnuHandler_GetByBoardIDAndPonIDWithPaginate_NotFound(t *testing.T) {
 	usecase := &mockOnuUsecase{
-		GetByBoardIDAndPonIDWithPaginationFunc: func(boardID, ponID, page, pageSize int) ([]model.ONUInfoPerBoard, int) {
+		GetByBoardIDAndPonIDWithPaginationFunc: func(ctx context.Context, boardID, ponID, page, pageSize int) ([]model.ONUInfoPerBoard, int) {
 			// Return empty list
 			return []model.ONUInfoPerBoard{}, 0
 		},
@@ -488,7 +514,7 @@ func TestOnuHandler_GetByBoardIDAndPonID_Error(t *testing.T) {
 
 func TestOnuHandler_GetByBoardIDPonIDAndOnuID_Error(t *testing.T) {
 	usecase := &mockOnuUsecase{
-		GetByBoardIDPonIDAndOnuIDFunc: func(boardID, ponID, onuID int) (model.ONUCustomerInfo, error) {
+		GetByBoardIDPonIDAndOnuIDFunc: func(ctx context.Context, boardID, ponID, onuID int) (model.ONUCustomerInfo, error) {
 			return model.ONUCustomerInfo{}, errors.New("SNMP error")
 		},
 	}
@@ -533,7 +559,7 @@ func TestOnuHandler_GetEmptyOnuID_Error(t *testing.T) {
 
 func TestOnuHandler_GetOnuIDAndSerialNumber_Error(t *testing.T) {
 	usecase := &mockOnuUsecase{
-		GetOnuIDAndSerialNumberFunc: func(boardID, ponID int) ([]model.OnuSerialNumber, error) {
+		GetOnuIDAndSerialNumberFunc: func(ctx context.Context, boardID, ponID int) ([]model.OnuSerialNumber, error) {
 			return nil, errors.New("SNMP error")
 		},
 	}

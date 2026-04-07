@@ -11,6 +11,14 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
+// getRequestID extracts the request ID from the request header
+func getRequestID(r *http.Request) string {
+	if id := r.Header.Get("X-Request-ID"); id != "" {
+		return id
+	}
+	return ""
+}
+
 // OnuHandlerInterface is an interface that represents the auth's handler contract
 type OnuHandlerInterface interface {
 	GetByBoardIDAndPonID(w http.ResponseWriter, r *http.Request)             // Handler to get ONU info by board and PON
@@ -40,6 +48,7 @@ func (o *OnuHandler) GetByBoardIDAndPonID(w http.ResponseWriter, r *http.Request
 	ponIDInt, _ := middleware.GetPonID(r.Context())     // Retrieve ponID from context
 
 	log.Info().
+		Str("request_id", getRequestID(r)).
 		Int("board_id", boardIDInt).
 		Int("pon_id", ponIDInt).
 		Msg("Getting ONU info by board and PON") // Log the request
@@ -106,13 +115,14 @@ func (o *OnuHandler) GetByBoardIDPonIDAndOnuID(w http.ResponseWriter, r *http.Re
 	onuIDInt, _ := middleware.GetOnuID(r.Context())     // Get onuID
 
 	log.Info().
+		Str("request_id", getRequestID(r)).
 		Int("board_id", boardIDInt).
 		Int("pon_id", ponIDInt).
 		Int("onu_id", onuIDInt).
 		Msg("Getting specific ONU info") // Log request
 
 	// Call usecase to get data from SNMP
-	onuInfoList, err := o.ponUsecase.GetByBoardIDPonIDAndOnuID(boardIDInt, ponIDInt, onuIDInt)
+	onuInfoList, err := o.ponUsecase.GetByBoardIDPonIDAndOnuID(r.Context(), boardIDInt, ponIDInt, onuIDInt)
 	if err != nil {
 		log.Error().
 			Err(err).
@@ -161,6 +171,7 @@ func (o *OnuHandler) GetEmptyOnuID(w http.ResponseWriter, r *http.Request) {
 	ponIDInt, _ := middleware.GetPonID(r.Context())
 
 	log.Info().
+		Str("request_id", getRequestID(r)).
 		Int("board_id", boardIDInt).
 		Int("pon_id", ponIDInt).
 		Msg("Getting empty ONU IDs") // Log request
@@ -201,12 +212,13 @@ func (o *OnuHandler) GetOnuIDAndSerialNumber(w http.ResponseWriter, r *http.Requ
 	ponIDInt, _ := middleware.GetPonID(r.Context())
 
 	log.Info().
+		Str("request_id", getRequestID(r)).
 		Int("board_id", boardIDInt).
 		Int("pon_id", ponIDInt).
 		Msg("Getting ONU IDs and serial numbers") // Log request
 
 	// Call usecase to get Serial Number from SNMP
-	onuSerialNumber, err := o.ponUsecase.GetOnuIDAndSerialNumber(boardIDInt, ponIDInt)
+	onuSerialNumber, err := o.ponUsecase.GetOnuIDAndSerialNumber(r.Context(), boardIDInt, ponIDInt)
 	if err != nil {
 		log.Error().
 			Err(err).
@@ -241,6 +253,7 @@ func (o *OnuHandler) UpdateEmptyOnuID(w http.ResponseWriter, r *http.Request) {
 	ponIDInt, _ := middleware.GetPonID(r.Context())
 
 	log.Info().
+		Str("request_id", getRequestID(r)).
 		Int("board_id", boardIDInt).
 		Int("pon_id", ponIDInt).
 		Msg("Updating empty ONU IDs") // Log request
@@ -283,6 +296,7 @@ func (o *OnuHandler) GetByBoardIDAndPonIDWithPaginate(w http.ResponseWriter, r *
 	pageIndex, pageSize := pagination.GetPaginationParametersFromRequest(r)
 
 	log.Info().
+		Str("request_id", getRequestID(r)).
 		Int("board_id", boardIDInt).
 		Int("pon_id", ponIDInt).
 		Int("page", pageIndex).
@@ -290,7 +304,7 @@ func (o *OnuHandler) GetByBoardIDAndPonIDWithPaginate(w http.ResponseWriter, r *
 		Msg("Getting paginated ONU info") // Log request
 
 	// Call usecase to get paginated data
-	item, count := o.ponUsecase.GetByBoardIDAndPonIDWithPagination(boardIDInt, ponIDInt, pageIndex, pageSize)
+	item, count := o.ponUsecase.GetByBoardIDAndPonIDWithPagination(r.Context(), boardIDInt, ponIDInt, pageIndex, pageSize)
 
 	// Check if no items found
 	if len(item) == 0 {
@@ -322,27 +336,30 @@ func (o *OnuHandler) GetByBoardIDAndPonIDWithPaginate(w http.ResponseWriter, r *
 		Msg("Successfully retrieved paginated ONU info") // Log success
 
 	// Create pagination response
-	responsePagination := pagination.Pages{
-		Code:      http.StatusOK,
-		Status:    "OK",
-		Page:      pages.Page,
-		PageSize:  pages.PageSize,
-		PageCount: pages.PageCount,
-		TotalRows: pages.TotalRows,
-		Data:      item,
+	response := utils.WebResponse{
+		Code:   http.StatusOK,
+		Status: "OK",
+		Data:   item,
+		Meta: &utils.Meta{
+			Page:      pages.Page,
+			Limit:     pages.PageSize,
+			PageCount: pages.PageCount,
+			TotalRows: pages.TotalRows,
+		},
 	}
 
-	utils.SendJSONResponse(w, http.StatusOK, responsePagination) // Send JSON response
+	utils.SendJSONResponse(w, http.StatusOK, response) // Send JSON response
 }
 
 // DeleteCache is a handler to delete cache for specific board and PON
-// example: DELETE http://localhost:8081/api/v1/board/1/pon/1
+// example: DELETE http://localhost:8081/api/v1/board/1/pon/1/cache/clear
 func (o *OnuHandler) DeleteCache(w http.ResponseWriter, r *http.Request) {
 	// Get pre-validated values from context
 	boardIDInt, _ := middleware.GetBoardID(r.Context())
 	ponIDInt, _ := middleware.GetPonID(r.Context())
 
 	log.Info().
+		Str("request_id", getRequestID(r)).
 		Int("board_id", boardIDInt).
 		Int("pon_id", ponIDInt).
 		Msg("Deleting cache for board/pon")

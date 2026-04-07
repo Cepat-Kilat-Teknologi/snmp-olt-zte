@@ -1,7 +1,6 @@
 package redis
 
 import (
-	"os"
 	"testing"
 
 	"github.com/Cepat-Kilat-Teknologi/go-snmp-olt-zte-c320/config"
@@ -9,14 +8,14 @@ import (
 
 func TestNewRedisClient_FromConfig(t *testing.T) {
 	// Clear environment variables to ensure we use config
-	os.Unsetenv("APP_ENV")
-	os.Unsetenv("REDIS_HOST")
-	os.Unsetenv("REDIS_PORT")
-	os.Unsetenv("REDIS_PASSWORD")
-	os.Unsetenv("REDIS_DB")
-	os.Unsetenv("REDIS_MIN_IDLE_CONNECTIONS")
-	os.Unsetenv("REDIS_POOL_SIZE")
-	os.Unsetenv("REDIS_POOL_TIMEOUT")
+	t.Setenv("APP_ENV", "")
+	t.Setenv("REDIS_HOST", "")
+	t.Setenv("REDIS_PORT", "")
+	t.Setenv("REDIS_PASSWORD", "")
+	t.Setenv("REDIS_DB", "")
+	t.Setenv("REDIS_MIN_IDLE_CONNECTIONS", "")
+	t.Setenv("REDIS_POOL_SIZE", "")
+	t.Setenv("REDIS_POOL_TIMEOUT", "")
 
 	cfg := &config.Config{
 		RedisCfg: config.RedisConfig{
@@ -62,25 +61,14 @@ func TestNewRedisClient_FromConfig(t *testing.T) {
 
 func TestNewRedisClient_FromEnvironment_Development(t *testing.T) {
 	// Set environment variables
-	os.Setenv("APP_ENV", "development")
-	os.Setenv("REDIS_HOST", "redis-dev")
-	os.Setenv("REDIS_PORT", "6380")
-	os.Setenv("REDIS_PASSWORD", "devpass")
-	os.Setenv("REDIS_DB", "2")
-	os.Setenv("REDIS_MIN_IDLE_CONNECTIONS", "20")
-	os.Setenv("REDIS_POOL_SIZE", "200")
-	os.Setenv("REDIS_POOL_TIMEOUT", "60")
-
-	defer func() {
-		os.Unsetenv("APP_ENV")
-		os.Unsetenv("REDIS_HOST")
-		os.Unsetenv("REDIS_PORT")
-		os.Unsetenv("REDIS_PASSWORD")
-		os.Unsetenv("REDIS_DB")
-		os.Unsetenv("REDIS_MIN_IDLE_CONNECTIONS")
-		os.Unsetenv("REDIS_POOL_SIZE")
-		os.Unsetenv("REDIS_POOL_TIMEOUT")
-	}()
+	t.Setenv("APP_ENV", "development")
+	t.Setenv("REDIS_HOST", "redis-dev")
+	t.Setenv("REDIS_PORT", "6380")
+	t.Setenv("REDIS_PASSWORD", "devpass")
+	t.Setenv("REDIS_DB", "2")
+	t.Setenv("REDIS_MIN_IDLE_CONNECTIONS", "20")
+	t.Setenv("REDIS_POOL_SIZE", "200")
+	t.Setenv("REDIS_POOL_TIMEOUT", "60")
 
 	cfg := &config.Config{
 		RedisCfg: config.RedisConfig{
@@ -121,25 +109,14 @@ func TestNewRedisClient_FromEnvironment_Development(t *testing.T) {
 
 func TestNewRedisClient_FromEnvironment_Production(t *testing.T) {
 	// Set environment variables for production
-	os.Setenv("APP_ENV", "production")
-	os.Setenv("REDIS_HOST", "redis-prod")
-	os.Setenv("REDIS_PORT", "6381")
-	os.Setenv("REDIS_PASSWORD", "prodpass")
-	os.Setenv("REDIS_DB", "3")
-	os.Setenv("REDIS_MIN_IDLE_CONNECTIONS", "30")
-	os.Setenv("REDIS_POOL_SIZE", "300")
-	os.Setenv("REDIS_POOL_TIMEOUT", "90")
-
-	defer func() {
-		os.Unsetenv("APP_ENV")
-		os.Unsetenv("REDIS_HOST")
-		os.Unsetenv("REDIS_PORT")
-		os.Unsetenv("REDIS_PASSWORD")
-		os.Unsetenv("REDIS_DB")
-		os.Unsetenv("REDIS_MIN_IDLE_CONNECTIONS")
-		os.Unsetenv("REDIS_POOL_SIZE")
-		os.Unsetenv("REDIS_POOL_TIMEOUT")
-	}()
+	t.Setenv("APP_ENV", "production")
+	t.Setenv("REDIS_HOST", "redis-prod")
+	t.Setenv("REDIS_PORT", "6381")
+	t.Setenv("REDIS_PASSWORD", "prodpass")
+	t.Setenv("REDIS_DB", "3")
+	t.Setenv("REDIS_MIN_IDLE_CONNECTIONS", "30")
+	t.Setenv("REDIS_POOL_SIZE", "300")
+	t.Setenv("REDIS_POOL_TIMEOUT", "90")
 
 	cfg := &config.Config{
 		RedisCfg: config.RedisConfig{
@@ -171,7 +148,7 @@ func TestNewRedisClient_FromEnvironment_Production(t *testing.T) {
 }
 
 func TestNewRedisClient_WithEmptyPassword(t *testing.T) {
-	os.Unsetenv("APP_ENV")
+	t.Setenv("APP_ENV", "")
 
 	cfg := &config.Config{
 		RedisCfg: config.RedisConfig{
@@ -197,23 +174,13 @@ func TestNewRedisClient_WithEmptyPassword(t *testing.T) {
 
 func TestNewRedisClient_InvalidEnvironmentIntegers(t *testing.T) {
 	// Set environment with invalid integer values
-	os.Setenv("APP_ENV", "development")
-	os.Setenv("REDIS_HOST", "localhost")
-	os.Setenv("REDIS_PORT", "6379")
-	os.Setenv("REDIS_DB", "invalid")
-	os.Setenv("REDIS_MIN_IDLE_CONNECTIONS", "not-a-number")
-	os.Setenv("REDIS_POOL_SIZE", "abc")
-	os.Setenv("REDIS_POOL_TIMEOUT", "xyz")
-
-	defer func() {
-		os.Unsetenv("APP_ENV")
-		os.Unsetenv("REDIS_HOST")
-		os.Unsetenv("REDIS_PORT")
-		os.Unsetenv("REDIS_DB")
-		os.Unsetenv("REDIS_MIN_IDLE_CONNECTIONS")
-		os.Unsetenv("REDIS_POOL_SIZE")
-		os.Unsetenv("REDIS_POOL_TIMEOUT")
-	}()
+	t.Setenv("APP_ENV", "development")
+	t.Setenv("REDIS_HOST", "localhost")
+	t.Setenv("REDIS_PORT", "6379")
+	t.Setenv("REDIS_DB", "invalid")
+	t.Setenv("REDIS_MIN_IDLE_CONNECTIONS", "not-a-number")
+	t.Setenv("REDIS_POOL_SIZE", "abc")
+	t.Setenv("REDIS_POOL_TIMEOUT", "xyz")
 
 	cfg := &config.Config{}
 

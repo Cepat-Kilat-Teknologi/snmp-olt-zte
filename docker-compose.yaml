@@ -40,8 +40,8 @@ services:
       REDIS_PORT: ${REDIS_PORT:-6379}
       REDIS_PASSWORD: ${REDIS_PASSWORD:-}
       REDIS_DB: ${REDIS_DB:-0}
-      REDIS_MIN_IDLE_CONNECTIONS: ${REDIS_MIN_IDLE_CONNECTIONS:-200}
-      REDIS_POOL_SIZE: ${REDIS_POOL_SIZE:-12000}
+      REDIS_MIN_IDLE_CONNECTIONS: ${REDIS_MIN_IDLE_CONNECTIONS:-10}
+      REDIS_POOL_SIZE: ${REDIS_POOL_SIZE:-100}
       REDIS_POOL_TIMEOUT: ${REDIS_POOL_TIMEOUT:-240}
 
       # TLS/HTTPS
@@ -49,12 +49,22 @@ services:
       TLS_CERT_FILE: ${TLS_CERT_FILE:-/certs/cert.pem}
       TLS_KEY_FILE: ${TLS_KEY_FILE:-/certs/key.pem}
 
+      # Authentication
+      API_KEY: ${API_KEY:-}
+
       # CORS
       CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-*}
       CORS_ALLOWED_METHODS: ${CORS_ALLOWED_METHODS:-GET,POST,PUT,DELETE,OPTIONS}
       CORS_ALLOWED_HEADERS: ${CORS_ALLOWED_HEADERS:-Accept,Authorization,Content-Type,X-API-Key,X-Request-ID}
       CORS_ALLOW_CREDENTIALS: ${CORS_ALLOW_CREDENTIALS:-true}
       CORS_MAX_AGE: ${CORS_MAX_AGE:-300}
+
+      # SNMP Trap
+      TRAP_ENABLED: ${TRAP_ENABLED:-false}
+      TRAP_PORT: ${TRAP_PORT:-1620}
+      TRAP_WEBHOOK_URL: ${TRAP_WEBHOOK_URL:-}
+      TRAP_WEBHOOK_RETRIES: ${TRAP_WEBHOOK_RETRIES:-3}
+      TRAP_WEBHOOK_TIMEOUT: ${TRAP_WEBHOOK_TIMEOUT:-10}
 
       # Timezone
       TZ: ${TZ:-Asia/Jakarta}
@@ -68,9 +78,16 @@ services:
 
     ports:
       - "${SERVER_PORT:-8081}:8081"
+      - "${TRAP_PORT:-1620}:1620/udp"
 
     networks:
       - snmp-olt-network
+
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 512M
 
   redis:
     image: redis:7.2-alpine

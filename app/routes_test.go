@@ -17,7 +17,7 @@ func (m *mockOnuUsecase) GetByBoardIDAndPonID(ctx context.Context, boardID, ponI
 	return nil, nil
 }
 
-func (m *mockOnuUsecase) GetByBoardIDPonIDAndOnuID(boardID, ponID, onuID int) (model.ONUCustomerInfo, error) {
+func (m *mockOnuUsecase) GetByBoardIDPonIDAndOnuID(ctx context.Context, boardID, ponID, onuID int) (model.ONUCustomerInfo, error) {
 	return model.ONUCustomerInfo{}, nil
 }
 
@@ -25,7 +25,7 @@ func (m *mockOnuUsecase) GetEmptyOnuID(ctx context.Context, boardID, ponID int) 
 	return nil, nil
 }
 
-func (m *mockOnuUsecase) GetOnuIDAndSerialNumber(boardID, ponID int) ([]model.OnuSerialNumber, error) {
+func (m *mockOnuUsecase) GetOnuIDAndSerialNumber(ctx context.Context, boardID, ponID int) ([]model.OnuSerialNumber, error) {
 	return nil, nil
 }
 
@@ -33,13 +33,15 @@ func (m *mockOnuUsecase) UpdateEmptyOnuID(ctx context.Context, boardID, ponID in
 	return nil
 }
 
-func (m *mockOnuUsecase) GetByBoardIDAndPonIDWithPagination(boardID, ponID, page, pageSize int) ([]model.ONUInfoPerBoard, int) {
+func (m *mockOnuUsecase) GetByBoardIDAndPonIDWithPagination(ctx context.Context, boardID, ponID, page, pageSize int) ([]model.ONUInfoPerBoard, int) {
 	return nil, 0
 }
 
 func (m *mockOnuUsecase) DeleteCache(ctx context.Context, boardID, ponID int) error {
 	return nil
 }
+
+func (m *mockOnuUsecase) PreWarmCache(ctx context.Context) {}
 
 func TestRootHandler(t *testing.T) {
 	req := httptest.NewRequest("GET", "/", nil)
@@ -52,6 +54,27 @@ func TestRootHandler(t *testing.T) {
 	}
 
 	expectedBody := "Hello, this is the root endpoint!"
+	if rr.Body.String() != expectedBody {
+		t.Errorf("Expected body '%s', got '%s'", expectedBody, rr.Body.String())
+	}
+}
+
+func TestHealthHandler(t *testing.T) {
+	req := httptest.NewRequest("GET", "/health", nil)
+	rr := httptest.NewRecorder()
+
+	healthHandler(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Errorf("Expected status OK, got %d", rr.Code)
+	}
+
+	expectedContentType := "application/json"
+	if ct := rr.Header().Get("Content-Type"); ct != expectedContentType {
+		t.Errorf("Expected Content-Type '%s', got '%s'", expectedContentType, ct)
+	}
+
+	expectedBody := `{"status":"ok"}`
 	if rr.Body.String() != expectedBody {
 		t.Errorf("Expected body '%s', got '%s'", expectedBody, rr.Body.String())
 	}

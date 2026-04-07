@@ -3,18 +3,17 @@ package middleware
 import (
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"strings"
 	"testing"
 )
 
 func TestCorsMiddleware_DefaultConfig(t *testing.T) {
 	// Clear environment variables
-	os.Unsetenv("CORS_ALLOWED_ORIGINS")
-	os.Unsetenv("CORS_ALLOWED_METHODS")
-	os.Unsetenv("CORS_ALLOWED_HEADERS")
-	os.Unsetenv("CORS_ALLOW_CREDENTIALS")
-	os.Unsetenv("CORS_MAX_AGE")
+	t.Setenv("CORS_ALLOWED_ORIGINS", "")
+	t.Setenv("CORS_ALLOWED_METHODS", "")
+	t.Setenv("CORS_ALLOWED_HEADERS", "")
+	t.Setenv("CORS_ALLOW_CREDENTIALS", "")
+	t.Setenv("CORS_MAX_AGE", "")
 
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
@@ -39,8 +38,7 @@ func TestCorsMiddleware_DefaultConfig(t *testing.T) {
 }
 
 func TestCorsMiddleware_CustomOrigins(t *testing.T) {
-	os.Setenv("CORS_ALLOWED_ORIGINS", "https://example.com,https://test.com")
-	defer os.Unsetenv("CORS_ALLOWED_ORIGINS")
+	t.Setenv("CORS_ALLOWED_ORIGINS", "https://example.com,https://test.com")
 
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
@@ -61,8 +59,7 @@ func TestCorsMiddleware_CustomOrigins(t *testing.T) {
 }
 
 func TestCorsMiddleware_CustomMethods(t *testing.T) {
-	os.Setenv("CORS_ALLOWED_METHODS", "GET,POST,PUT")
-	defer os.Unsetenv("CORS_ALLOWED_METHODS")
+	t.Setenv("CORS_ALLOWED_METHODS", "GET,POST,PUT")
 
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
@@ -84,8 +81,7 @@ func TestCorsMiddleware_CustomMethods(t *testing.T) {
 }
 
 func TestCorsMiddleware_CustomHeaders(t *testing.T) {
-	os.Setenv("CORS_ALLOWED_HEADERS", "Authorization,Content-Type,X-Custom-Header")
-	defer os.Unsetenv("CORS_ALLOWED_HEADERS")
+	t.Setenv("CORS_ALLOWED_HEADERS", "Authorization,Content-Type,X-Custom-Header")
 
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
@@ -106,8 +102,7 @@ func TestCorsMiddleware_CustomHeaders(t *testing.T) {
 }
 
 func TestCorsMiddleware_AllowCredentials(t *testing.T) {
-	os.Setenv("CORS_ALLOW_CREDENTIALS", "true")
-	defer os.Unsetenv("CORS_ALLOW_CREDENTIALS")
+	t.Setenv("CORS_ALLOW_CREDENTIALS", "true")
 
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
@@ -128,8 +123,7 @@ func TestCorsMiddleware_AllowCredentials(t *testing.T) {
 }
 
 func TestCorsMiddleware_MaxAge(t *testing.T) {
-	os.Setenv("CORS_MAX_AGE", "600")
-	defer os.Unsetenv("CORS_MAX_AGE")
+	t.Setenv("CORS_MAX_AGE", "600")
 
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
@@ -154,6 +148,7 @@ func TestGetEnvAsSlice(t *testing.T) {
 		name         string
 		key          string
 		envValue     string
+		setEnv       bool
 		defaultValue []string
 		expected     []string
 	}{
@@ -161,6 +156,7 @@ func TestGetEnvAsSlice(t *testing.T) {
 			name:         "Valid comma-separated values",
 			key:          "TEST_SLICE",
 			envValue:     "value1,value2,value3",
+			setEnv:       true,
 			defaultValue: []string{"default"},
 			expected:     []string{"value1", "value2", "value3"},
 		},
@@ -168,6 +164,7 @@ func TestGetEnvAsSlice(t *testing.T) {
 			name:         "Empty environment variable - use default",
 			key:          "TEST_SLICE",
 			envValue:     "",
+			setEnv:       false,
 			defaultValue: []string{"default1", "default2"},
 			expected:     []string{"default1", "default2"},
 		},
@@ -175,6 +172,7 @@ func TestGetEnvAsSlice(t *testing.T) {
 			name:         "Values with spaces - should trim",
 			key:          "TEST_SLICE",
 			envValue:     " value1 , value2 , value3 ",
+			setEnv:       true,
 			defaultValue: []string{"default"},
 			expected:     []string{"value1", "value2", "value3"},
 		},
@@ -182,6 +180,7 @@ func TestGetEnvAsSlice(t *testing.T) {
 			name:         "Single value",
 			key:          "TEST_SLICE",
 			envValue:     "single",
+			setEnv:       true,
 			defaultValue: []string{"default"},
 			expected:     []string{"single"},
 		},
@@ -189,6 +188,7 @@ func TestGetEnvAsSlice(t *testing.T) {
 			name:         "Values with empty entries - should skip",
 			key:          "TEST_SLICE",
 			envValue:     "value1,,value2,  ,value3",
+			setEnv:       true,
 			defaultValue: []string{"default"},
 			expected:     []string{"value1", "value2", "value3"},
 		},
@@ -196,12 +196,11 @@ func TestGetEnvAsSlice(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if tt.envValue != "" {
-				os.Setenv(tt.key, tt.envValue)
+			if tt.setEnv {
+				t.Setenv(tt.key, tt.envValue)
 			} else {
-				os.Unsetenv(tt.key)
+				t.Setenv(tt.key, "")
 			}
-			defer os.Unsetenv(tt.key)
 
 			result := getEnvAsSlice(tt.key, tt.defaultValue)
 
@@ -223,6 +222,7 @@ func TestGetEnvAsBool(t *testing.T) {
 		name         string
 		key          string
 		envValue     string
+		setEnv       bool
 		defaultValue bool
 		expected     bool
 	}{
@@ -230,6 +230,7 @@ func TestGetEnvAsBool(t *testing.T) {
 			name:         "True value",
 			key:          "TEST_BOOL",
 			envValue:     "true",
+			setEnv:       true,
 			defaultValue: false,
 			expected:     true,
 		},
@@ -237,6 +238,7 @@ func TestGetEnvAsBool(t *testing.T) {
 			name:         "False value",
 			key:          "TEST_BOOL",
 			envValue:     "false",
+			setEnv:       true,
 			defaultValue: true,
 			expected:     false,
 		},
@@ -244,6 +246,7 @@ func TestGetEnvAsBool(t *testing.T) {
 			name:         "1 value - parsed as true",
 			key:          "TEST_BOOL",
 			envValue:     "1",
+			setEnv:       true,
 			defaultValue: false,
 			expected:     true,
 		},
@@ -251,6 +254,7 @@ func TestGetEnvAsBool(t *testing.T) {
 			name:         "0 value - parsed as false",
 			key:          "TEST_BOOL",
 			envValue:     "0",
+			setEnv:       true,
 			defaultValue: true,
 			expected:     false,
 		},
@@ -258,6 +262,7 @@ func TestGetEnvAsBool(t *testing.T) {
 			name:         "Empty value - use default",
 			key:          "TEST_BOOL",
 			envValue:     "",
+			setEnv:       false,
 			defaultValue: true,
 			expected:     true,
 		},
@@ -265,6 +270,7 @@ func TestGetEnvAsBool(t *testing.T) {
 			name:         "Invalid value - use default",
 			key:          "TEST_BOOL",
 			envValue:     "invalid",
+			setEnv:       true,
 			defaultValue: false,
 			expected:     false,
 		},
@@ -272,12 +278,11 @@ func TestGetEnvAsBool(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if tt.envValue != "" {
-				os.Setenv(tt.key, tt.envValue)
+			if tt.setEnv {
+				t.Setenv(tt.key, tt.envValue)
 			} else {
-				os.Unsetenv(tt.key)
+				t.Setenv(tt.key, "")
 			}
-			defer os.Unsetenv(tt.key)
 
 			result := getEnvAsBool(tt.key, tt.defaultValue)
 
@@ -293,6 +298,7 @@ func TestGetEnvAsInt(t *testing.T) {
 		name         string
 		key          string
 		envValue     string
+		setEnv       bool
 		defaultValue int
 		expected     int
 	}{
@@ -300,6 +306,7 @@ func TestGetEnvAsInt(t *testing.T) {
 			name:         "Valid integer",
 			key:          "TEST_INT",
 			envValue:     "42",
+			setEnv:       true,
 			defaultValue: 10,
 			expected:     42,
 		},
@@ -307,6 +314,7 @@ func TestGetEnvAsInt(t *testing.T) {
 			name:         "Empty value - use default",
 			key:          "TEST_INT",
 			envValue:     "",
+			setEnv:       false,
 			defaultValue: 10,
 			expected:     10,
 		},
@@ -314,6 +322,7 @@ func TestGetEnvAsInt(t *testing.T) {
 			name:         "Invalid value - use default",
 			key:          "TEST_INT",
 			envValue:     "invalid",
+			setEnv:       true,
 			defaultValue: 5,
 			expected:     5,
 		},
@@ -321,6 +330,7 @@ func TestGetEnvAsInt(t *testing.T) {
 			name:         "Negative integer",
 			key:          "TEST_INT",
 			envValue:     "-10",
+			setEnv:       true,
 			defaultValue: 0,
 			expected:     -10,
 		},
@@ -328,6 +338,7 @@ func TestGetEnvAsInt(t *testing.T) {
 			name:         "Zero",
 			key:          "TEST_INT",
 			envValue:     "0",
+			setEnv:       true,
 			defaultValue: 10,
 			expected:     0,
 		},
@@ -335,12 +346,11 @@ func TestGetEnvAsInt(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if tt.envValue != "" {
-				os.Setenv(tt.key, tt.envValue)
+			if tt.setEnv {
+				t.Setenv(tt.key, tt.envValue)
 			} else {
-				os.Unsetenv(tt.key)
+				t.Setenv(tt.key, "")
 			}
-			defer os.Unsetenv(tt.key)
 
 			result := getEnvAsInt(tt.key, tt.defaultValue)
 
@@ -352,7 +362,7 @@ func TestGetEnvAsInt(t *testing.T) {
 }
 
 func TestCorsMiddleware_ActualRequest(t *testing.T) {
-	os.Unsetenv("CORS_ALLOWED_ORIGINS")
+	t.Setenv("CORS_ALLOWED_ORIGINS", "")
 
 	testHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)

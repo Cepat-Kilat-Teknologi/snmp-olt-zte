@@ -51,13 +51,9 @@ func TestShutdown_ContextCancellation(t *testing.T) {
 
 func TestShutdown_InvalidTLSConfig(t *testing.T) {
 	// Set TLS enabled but without cert/key files
-	os.Setenv("USE_TLS", "true")
-	os.Unsetenv("TLS_CERT_FILE")
-	os.Unsetenv("TLS_KEY_FILE")
-
-	defer func() {
-		os.Unsetenv("USE_TLS")
-	}()
+	t.Setenv("USE_TLS", "true")
+	t.Setenv("TLS_CERT_FILE", "")
+	t.Setenv("TLS_KEY_FILE", "")
 
 	mux := http.NewServeMux()
 	server := &http.Server{
@@ -81,7 +77,7 @@ func TestShutdown_InvalidTLSConfig(t *testing.T) {
 
 func TestShutdown_HTTPMode(t *testing.T) {
 	// Ensure TLS is disabled
-	os.Unsetenv("USE_TLS")
+	t.Setenv("USE_TLS", "")
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/test", func(w http.ResponseWriter, r *http.Request) {
@@ -123,7 +119,7 @@ func TestShutdown_SignalHandling(t *testing.T) {
 		t.Skip("Skipping signal handling test in short mode")
 	}
 
-	os.Unsetenv("USE_TLS")
+	t.Setenv("USE_TLS", "")
 
 	mux := http.NewServeMux()
 	server := &http.Server{
@@ -165,15 +161,9 @@ func TestShutdown_SignalHandling(t *testing.T) {
 func TestShutdown_TLSConfigPresent(t *testing.T) {
 	// This test would require actual cert/key files
 	// For now, we just verify the configuration is read correctly
-	os.Setenv("USE_TLS", "true")
-	os.Setenv("TLS_CERT_FILE", "/path/to/cert.pem")
-	os.Setenv("TLS_KEY_FILE", "/path/to/key.pem")
-
-	defer func() {
-		os.Unsetenv("USE_TLS")
-		os.Unsetenv("TLS_CERT_FILE")
-		os.Unsetenv("TLS_KEY_FILE")
-	}()
+	t.Setenv("USE_TLS", "true")
+	t.Setenv("TLS_CERT_FILE", "/path/to/cert.pem")
+	t.Setenv("TLS_KEY_FILE", "/path/to/key.pem")
 
 	mux := http.NewServeMux()
 	server := &http.Server{
@@ -206,7 +196,7 @@ func TestShutdown_TLSConfigPresent(t *testing.T) {
 }
 
 func TestShutdown_ServerStartFailure(t *testing.T) {
-	os.Unsetenv("USE_TLS")
+	t.Setenv("USE_TLS", "")
 
 	mux := http.NewServeMux()
 
@@ -247,14 +237,7 @@ func TestShutdown_MultipleShutdownMethods(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if tt.useTLS == "true" {
-				os.Setenv("USE_TLS", "true")
-				// Don't set cert/key to trigger error
-			} else {
-				os.Unsetenv("USE_TLS")
-			}
-
-			defer os.Unsetenv("USE_TLS")
+			t.Setenv("USE_TLS", tt.useTLS)
 
 			mux := http.NewServeMux()
 			server := &http.Server{
