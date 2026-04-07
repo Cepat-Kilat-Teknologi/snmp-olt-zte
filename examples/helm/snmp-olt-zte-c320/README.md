@@ -9,6 +9,19 @@ Helm chart for deploying the SNMP OLT ZTE C320 monitoring application on Kuberne
 
 ## Quick Start
 
+### Option 1: Install from Helm Repository (Recommended)
+
+```bash
+helm repo add snmp-olt https://cepat-kilat-teknologi.github.io/go-snmp-olt-zte-c320/
+helm repo update
+
+helm install olt-monitor snmp-olt/snmp-olt-zte-c320 \
+  --set snmp.host=192.168.1.1 \
+  --set snmp.community=your-community
+```
+
+### Option 2: Install from Source
+
 ```bash
 # Add Bitnami repo (for Redis dependency)
 helm repo add bitnami https://charts.bitnami.com/bitnami
@@ -19,9 +32,9 @@ cd examples/helm/snmp-olt-zte-c320
 helm dependency build
 
 # Install with required values
-helm install my-olt ./examples/helm/snmp-olt-zte-c320 \
+helm install olt-monitor . \
   --set snmp.host=192.168.1.1 \
-  --set snmp.community=public
+  --set snmp.community=your-community
 ```
 
 ## Configuration
