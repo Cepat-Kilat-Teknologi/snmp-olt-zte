@@ -64,9 +64,10 @@ task up
 
 ### Docker Compose (Production)
 ```shell
-cp .env.example .env.prod
-# Edit .env.prod with production values
-task prod-up
+cd examples/docker
+cp .env.example .env
+# Edit .env with production values
+docker compose up -d
 ```
 
 ### Standalone Docker
@@ -80,7 +81,7 @@ docker run -d -p 8081:8081 --name go-snmp-olt-zte-c320 \
 -e REDIS_MIN_IDLE_CONNECTIONS=10 -e REDIS_POOL_SIZE=100 \
 -e REDIS_POOL_TIMEOUT=30 -e SNMP_HOST=x.x.x.x \
 -e SNMP_PORT=161 -e SNMP_COMMUNITY=xxxx \
-s4lfanet/snmp-olt-zte-c320:2.1.0
+cepatkilatteknologi/snmp-olt-zte-c320:2.1.0
 ```
 
 ## API Endpoints

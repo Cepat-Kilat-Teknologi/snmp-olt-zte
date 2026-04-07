@@ -26,7 +26,7 @@ spec:
         fsGroup: 1000
       containers:
         - name: snmp-olt-zte-c320
-          image: s4lfanet/snmp-olt-zte-c320:2.1.0
+          image: cepatkilatteknologi/snmp-olt-zte-c320:2.1.0
           ports:
             - name: http
               containerPort: 8081
