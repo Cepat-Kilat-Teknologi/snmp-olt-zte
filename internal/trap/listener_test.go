@@ -133,6 +133,38 @@ func TestParseOnuIndex(t *testing.T) {
 			wantPON:   1,
 			wantOnuID: 42,
 		},
+		{
+			name:      "default_branch_non_numeric_last_part",
+			fullOID:   OIDOnuStatus + ".999999999.abc",
+			prefix:    OIDOnuStatus,
+			wantBoard: 0,
+			wantPON:   0,
+			wantOnuID: 0,
+		},
+		{
+			name:      "board1_pon16",
+			fullOID:   OIDOnuStatus + ".285278480.1",
+			prefix:    OIDOnuStatus,
+			wantBoard: 1,
+			wantPON:   16,
+			wantOnuID: 1,
+		},
+		{
+			name:      "board2_pon16",
+			fullOID:   OIDOnuStatus + ".285278736.1",
+			prefix:    OIDOnuStatus,
+			wantBoard: 2,
+			wantPON:   16,
+			wantOnuID: 1,
+		},
+		{
+			name:      "board1_pon1_non_numeric_onuid",
+			fullOID:   OIDOnuStatus + ".285278465.xyz",
+			prefix:    OIDOnuStatus,
+			wantBoard: 1,
+			wantPON:   1,
+			wantOnuID: 0,
+		},
 	}
 
 	for _, tt := range tests {

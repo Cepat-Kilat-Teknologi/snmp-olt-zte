@@ -72,6 +72,8 @@ func (m *mockOnuUsecase) DeleteCache(ctx context.Context, boardID, ponID int) er
 	return nil
 }
 
+func (m *mockOnuUsecase) PreWarmCache(ctx context.Context) {}
+
 func TestGetRequestID(t *testing.T) {
 	tests := []struct {
 		name     string

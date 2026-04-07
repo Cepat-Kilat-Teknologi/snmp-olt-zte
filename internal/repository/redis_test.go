@@ -651,6 +651,132 @@ func TestGetONUDetail_CacheMiss(t *testing.T) {
 	}
 }
 
+func TestSaveONUSerialList_Success(t *testing.T) {
+	db, mock := redismock.NewClientMock()
+	repo := NewOnuRedisRepo(db)
+
+	ctx := context.Background()
+	key := "test_key"
+	seconds := 600
+	data := []model.OnuSerialNumber{
+		{Board: 1, PON: 1, ID: 1, SerialNumber: "ZTEGC1234"},
+	}
+
+	dataBytes, _ := json.Marshal(data)
+	mock.ExpectSet(key, dataBytes, time.Duration(seconds)*time.Second).SetVal("OK")
+
+	err := repo.SaveONUSerialList(ctx, key, seconds, data)
+
+	if err != nil {
+		t.Errorf("Expected no error, got %v", err)
+	}
+
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Errorf("Unmet expectations: %v", err)
+	}
+}
+
+func TestSaveONUSerialList_RedisError(t *testing.T) {
+	db, mock := redismock.NewClientMock()
+	repo := NewOnuRedisRepo(db)
+
+	ctx := context.Background()
+	key := "test_key"
+	seconds := 600
+	data := []model.OnuSerialNumber{
+		{Board: 1, PON: 1, ID: 1, SerialNumber: "ZTEGC1234"},
+	}
+
+	dataBytes, _ := json.Marshal(data)
+	mock.ExpectSet(key, dataBytes, time.Duration(seconds)*time.Second).SetErr(errors.New("redis error"))
+
+	err := repo.SaveONUSerialList(ctx, key, seconds, data)
+
+	if err == nil {
+		t.Error("Expected error, got nil")
+	}
+
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Errorf("Unmet expectations: %v", err)
+	}
+}
+
+func TestGetONUSerialList_Success(t *testing.T) {
+	db, mock := redismock.NewClientMock()
+	repo := NewOnuRedisRepo(db)
+
+	ctx := context.Background()
+	key := "test_key"
+	expectedData := []model.OnuSerialNumber{
+		{Board: 1, PON: 1, ID: 1, SerialNumber: "ZTEGC1234"},
+	}
+
+	dataBytes, _ := json.Marshal(expectedData)
+	mock.ExpectGet(key).SetVal(string(dataBytes))
+
+	result, err := repo.GetONUSerialList(ctx, key)
+
+	if err != nil {
+		t.Errorf("Expected no error, got %v", err)
+	}
+
+	if len(result) != len(expectedData) {
+		t.Errorf("Expected %d items, got %d", len(expectedData), len(result))
+	}
+
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Errorf("Unmet expectations: %v", err)
+	}
+}
+
+func TestGetONUSerialList_CacheMiss(t *testing.T) {
+	db, mock := redismock.NewClientMock()
+	repo := NewOnuRedisRepo(db)
+
+	ctx := context.Background()
+	key := "test_key"
+
+	mock.ExpectGet(key).RedisNil()
+
+	result, err := repo.GetONUSerialList(ctx, key)
+
+	if err == nil {
+		t.Error("Expected error, got nil")
+	}
+
+	if result != nil {
+		t.Errorf("Expected nil result, got %v", result)
+	}
+
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Errorf("Unmet expectations: %v", err)
+	}
+}
+
+func TestGetONUSerialList_UnmarshalError(t *testing.T) {
+	db, mock := redismock.NewClientMock()
+	repo := NewOnuRedisRepo(db)
+
+	ctx := context.Background()
+	key := "test_key"
+
+	mock.ExpectGet(key).SetVal("invalid json")
+
+	result, err := repo.GetONUSerialList(ctx, key)
+
+	if err == nil {
+		t.Error("Expected error, got nil")
+	}
+
+	if result != nil {
+		t.Errorf("Expected nil result, got %v", result)
+	}
+
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Errorf("Unmet expectations: %v", err)
+	}
+}
+
 func TestGetONUDetail_InvalidJSON(t *testing.T) {
 	db, mock := redismock.NewClientMock()
 	repo := NewOnuRedisRepo(db)

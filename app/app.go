@@ -78,7 +78,7 @@ func (a *App) Start(ctx context.Context) error { // Method to start the applicat
 	log.Info().Msg("SNMP server successfully connected")
 
 	// Initialize repository (creates connection pool from seed connection)
-	snmpRepo := repository.NewPonRepository(snmpConn)
+	snmpRepo := repository.NewPonRepositoryWithConcurrency(snmpConn, cfg.SnmpCfg.MaxConcurrent)
 
 	// Close all pool connections on shutdown
 	defer snmpRepo.Close()
@@ -89,6 +89,11 @@ func (a *App) Start(ctx context.Context) error { // Method to start the applicat
 
 	// Initialize handler
 	onuHandler := handler.NewOnuHandler(onuUsecase) // Create new ONU handler with usecase
+
+	// Pre-warm cache in background
+	if cfg.CacheCfg.PreWarm {
+		go onuUsecase.PreWarmCache(ctx)
+	}
 
 	// Start SNMP Trap listener if enabled
 	if cfg.TrapCfg.Enabled {
@@ -123,6 +128,8 @@ func (a *App) Start(ctx context.Context) error { // Method to start the applicat
 		if cfg.TrapCfg.PowerMonitor && webhookClient != nil {
 			powerMonitor := trap.NewPowerMonitor(trap.PowerMonitorConfig{
 				Interval:      time.Duration(cfg.TrapCfg.PowerMonitorInterval) * time.Second,
+				Cron:          cfg.TrapCfg.PowerMonitorCron,
+				Timezone:      cfg.TrapCfg.PowerMonitorTimezone,
 				HighThreshold: cfg.TrapCfg.RxPowerHighThreshold,
 				LowThreshold:  cfg.TrapCfg.RxPowerLowThreshold,
 				Source:        cfg.SnmpCfg.IP,
@@ -133,6 +140,8 @@ func (a *App) Start(ctx context.Context) error { // Method to start the applicat
 				Float64("high_threshold", cfg.TrapCfg.RxPowerHighThreshold).
 				Float64("low_threshold", cfg.TrapCfg.RxPowerLowThreshold).
 				Int("interval_sec", cfg.TrapCfg.PowerMonitorInterval).
+				Str("cron", cfg.TrapCfg.PowerMonitorCron).
+				Str("timezone", cfg.TrapCfg.PowerMonitorTimezone).
 				Msg("RX Power monitor started")
 		}
 	}

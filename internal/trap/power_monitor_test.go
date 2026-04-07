@@ -236,6 +236,113 @@ func TestPowerMonitor_Close(t *testing.T) {
 	}
 }
 
+func TestPowerMonitor_InvalidRxPower_Skipped(t *testing.T) {
+	var webhookCalls atomic.Int32
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		webhookCalls.Add(1)
+		w.WriteHeader(200)
+	}))
+	defer server.Close()
+
+	fetcher := &mockONUListFetcher{
+		onus: map[string][]model.ONUInfoPerBoard{
+			"1-1": {
+				{Board: 1, PON: 1, ID: 1, Name: "BadData", RXPower: "not-a-number", Status: "Online"},
+			},
+		},
+	}
+
+	webhook := NewWebhookClient(server.URL, 0, 5)
+	pm := NewPowerMonitor(PowerMonitorConfig{
+		Interval:      1 * time.Second,
+		HighThreshold: -8.0,
+		LowThreshold:  -25.0,
+		Source:        "test",
+	}, fetcher, webhook)
+
+	pm.scan()
+	time.Sleep(200 * time.Millisecond)
+
+	if webhookCalls.Load() != 0 {
+		t.Errorf("Expected 0 webhook calls for invalid rx_power, got %d", webhookCalls.Load())
+	}
+}
+
+func TestPowerMonitor_SafeScan_RecoversPanic(t *testing.T) {
+	// Create a power monitor with a fetcher that panics
+	fetcher := &panicFetcher{}
+
+	pm := NewPowerMonitor(PowerMonitorConfig{
+		Interval:      1 * time.Second,
+		HighThreshold: -8.0,
+		LowThreshold:  -25.0,
+		Source:        "test",
+	}, fetcher, nil)
+
+	// safeScan should recover from panic without crashing
+	pm.safeScan() // Should not panic
+}
+
+// panicFetcher implements ONUListFetcher and panics on GetByBoardIDAndPonID
+type panicFetcher struct{}
+
+func (p *panicFetcher) GetByBoardIDAndPonID(_ context.Context, _, _ int) ([]model.ONUInfoPerBoard, error) {
+	panic("simulated panic in fetcher")
+}
+
+func TestPowerMonitor_NormalPower_ClearsAlert(t *testing.T) {
+	var webhookCalls atomic.Int32
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		webhookCalls.Add(1)
+		w.WriteHeader(200)
+	}))
+	defer server.Close()
+
+	webhook := NewWebhookClient(server.URL, 0, 5)
+
+	// First scan: ONU has high power -> triggers alert
+	fetcher := &mockONUListFetcher{
+		onus: map[string][]model.ONUInfoPerBoard{
+			"1-1": {
+				{Board: 1, PON: 1, ID: 1, Name: "ONU1", RXPower: "-5.00", Status: "Online"},
+			},
+		},
+	}
+
+	pm := NewPowerMonitor(PowerMonitorConfig{
+		Interval:      1 * time.Second,
+		HighThreshold: -8.0,
+		LowThreshold:  -25.0,
+		Source:        "test",
+	}, fetcher, webhook)
+
+	pm.scan()
+	time.Sleep(200 * time.Millisecond)
+
+	// Verify alert was set
+	if _, exists := pm.alerted["1-1-1"]; !exists {
+		t.Error("Expected alert state to be set for 1-1-1")
+	}
+
+	// Now change the ONU to normal power
+	fetcher.onus["1-1"] = []model.ONUInfoPerBoard{
+		{Board: 1, PON: 1, ID: 1, Name: "ONU1", RXPower: "-15.00", Status: "Online"},
+	}
+
+	// Manually clear alert time so it can re-alert if needed
+	pm.alerted["1-1-1"] = time.Time{}
+
+	pm.scan()
+	time.Sleep(200 * time.Millisecond)
+
+	// After normal power scan, the alert should be cleared
+	if _, exists := pm.alerted["1-1-1"]; exists {
+		t.Error("Expected alert state to be cleared after normal power")
+	}
+}
+
 func TestShouldAlert(t *testing.T) {
 	pm := &PowerMonitor{
 		alerted: make(map[string]time.Time),
@@ -255,4 +362,171 @@ func TestShouldAlert(t *testing.T) {
 	if !pm.shouldAlert("1-1-2") {
 		t.Error("Expected different key to pass")
 	}
+}
+
+func TestPowerMonitor_CronOnly(t *testing.T) {
+	fetcher := &mockONUListFetcher{
+		onus: map[string][]model.ONUInfoPerBoard{
+			"1-1": {
+				{Board: 1, PON: 1, ID: 1, Name: "ONU1", RXPower: "-15.00", Status: "Online"},
+			},
+		},
+	}
+
+	pm := NewPowerMonitor(PowerMonitorConfig{
+		Interval:      0,
+		Cron:          "* * * * *",
+		Timezone:      "",
+		HighThreshold: -8.0,
+		LowThreshold:  -25.0,
+		Source:        "test",
+	}, fetcher, nil)
+
+	if pm.cronRunner == nil {
+		t.Error("Expected cronRunner to be set when Cron is configured")
+	}
+
+	// Start in cron-only mode (should block until Close)
+	go pm.Start()
+	time.Sleep(200 * time.Millisecond)
+
+	pm.safeScan()
+
+	err := pm.Close()
+	if err != nil {
+		t.Errorf("Expected no error on close, got %v", err)
+	}
+}
+
+func TestPowerMonitor_IntervalAndCron(t *testing.T) {
+	fetcher := &mockONUListFetcher{
+		onus: map[string][]model.ONUInfoPerBoard{},
+	}
+
+	pm := NewPowerMonitor(PowerMonitorConfig{
+		Interval:      100 * time.Millisecond,
+		Cron:          "* * * * *",
+		Timezone:      "Asia/Jakarta",
+		HighThreshold: -8.0,
+		LowThreshold:  -25.0,
+		Source:        "test",
+	}, fetcher, nil)
+
+	if pm.cronRunner == nil {
+		t.Error("Expected cronRunner to be set")
+	}
+
+	go pm.Start()
+	time.Sleep(300 * time.Millisecond)
+	pm.Close()
+}
+
+func TestPowerMonitor_IntervalOnly_BackwardCompat(t *testing.T) {
+	fetcher := &mockONUListFetcher{
+		onus: map[string][]model.ONUInfoPerBoard{},
+	}
+
+	pm := NewPowerMonitor(PowerMonitorConfig{
+		Interval:      100 * time.Millisecond,
+		Cron:          "",
+		HighThreshold: -8.0,
+		LowThreshold:  -25.0,
+		Source:        "test",
+	}, fetcher, nil)
+
+	if pm.cronRunner != nil {
+		t.Error("Expected cronRunner to be nil when no cron configured")
+	}
+
+	go pm.Start()
+	time.Sleep(300 * time.Millisecond)
+	pm.Close()
+}
+
+func TestPowerMonitor_BothDisabled(t *testing.T) {
+	fetcher := &mockONUListFetcher{
+		onus: map[string][]model.ONUInfoPerBoard{},
+	}
+
+	pm := NewPowerMonitor(PowerMonitorConfig{
+		Interval:      0,
+		Cron:          "",
+		HighThreshold: -8.0,
+		LowThreshold:  -25.0,
+		Source:        "test",
+	}, fetcher, nil)
+
+	done := make(chan struct{})
+	go func() {
+		pm.Start()
+		close(done)
+	}()
+
+	select {
+	case <-done:
+		// OK
+	case <-time.After(2 * time.Second):
+		t.Error("Expected Start to return immediately when both disabled")
+		pm.Close()
+	}
+}
+
+func TestPowerMonitor_InvalidCron(t *testing.T) {
+	fetcher := &mockONUListFetcher{
+		onus: map[string][]model.ONUInfoPerBoard{},
+	}
+
+	pm := NewPowerMonitor(PowerMonitorConfig{
+		Interval:      0,
+		Cron:          "invalid cron expression",
+		HighThreshold: -8.0,
+		LowThreshold:  -25.0,
+		Source:        "test",
+	}, fetcher, nil)
+
+	if pm.cronRunner != nil {
+		t.Error("Expected cronRunner to be nil for invalid cron expression")
+	}
+}
+
+func TestPowerMonitor_InvalidTimezone(t *testing.T) {
+	fetcher := &mockONUListFetcher{
+		onus: map[string][]model.ONUInfoPerBoard{},
+	}
+
+	pm := NewPowerMonitor(PowerMonitorConfig{
+		Interval:      0,
+		Cron:          "0 8 * * *",
+		Timezone:      "Invalid/Timezone",
+		HighThreshold: -8.0,
+		LowThreshold:  -25.0,
+		Source:        "test",
+	}, fetcher, nil)
+
+	if pm.cronRunner == nil {
+		t.Error("Expected cronRunner to be set even with invalid timezone (fallback to local)")
+	}
+
+	pm.Close()
+}
+
+func TestPowerMonitor_CronWithTimezone(t *testing.T) {
+	fetcher := &mockONUListFetcher{
+		onus: map[string][]model.ONUInfoPerBoard{},
+	}
+
+	pm := NewPowerMonitor(PowerMonitorConfig{
+		Interval:      0,
+		Cron:          "0 8,12,15,17,0 * * *",
+		Timezone:      "Asia/Jakarta",
+		HighThreshold: -8.0,
+		LowThreshold:  -25.0,
+		Source:        "test",
+	}, fetcher, nil)
+
+	if pm.cronRunner == nil {
+		t.Error("Expected cronRunner to be set")
+	}
+
+	pm.Close()
 }

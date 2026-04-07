@@ -65,6 +65,7 @@ SERVER_MODE=release
 SNMP_HOST=192.168.1.1        # Your OLT IP address
 SNMP_PORT=161                 # Standard SNMP port
 SNMP_COMMUNITY=public         # SNMP community string (change in production!)
+SNMP_MAX_CONCURRENT=5
 
 # Redis Configuration (REQUIRED)
 REDIS_HOST=redis              # Use 'redis' for Docker Compose, or external Redis IP
@@ -74,6 +75,12 @@ REDIS_DB=0
 REDIS_MIN_IDLE_CONNECTIONS=10
 REDIS_POOL_SIZE=100
 REDIS_POOL_TIMEOUT=30
+
+# Cache TTL Configuration
+REDIS_ONU_INFO_TTL=1800           # ONU list cache TTL (30 min)
+REDIS_ONU_DETAIL_TTL=900          # ONU detail cache TTL (15 min)
+REDIS_EMPTY_ONU_ID_TTL=300        # Empty ONU ID cache TTL (5 min)
+CACHE_PREWARM=true                # Pre-warm cache on startup
 
 # TLS/HTTPS Configuration (Production Recommended)
 USE_TLS=false                 # Set to 'true' for HTTPS
@@ -114,6 +121,14 @@ TRAP_COMMUNITY=public          # SNMP community for trap validation
 TRAP_WEBHOOK_URL=https://your-webhook.example.com/olt-alerts
 TRAP_WEBHOOK_RETRIES=3         # Max retry attempts for webhook
 TRAP_WEBHOOK_TIMEOUT=10        # Webhook timeout in seconds
+
+# RX Power Monitor (requires TRAP_ENABLED=true and TRAP_WEBHOOK_URL)
+POWER_MONITOR_ENABLED=true
+POWER_MONITOR_INTERVAL=300        # Scan interval in seconds (0 = disable)
+POWER_MONITOR_CRON=0 8,12,15,17,0 * * *  # Cron schedule (empty = disable)
+POWER_MONITOR_TIMEZONE=Asia/Jakarta       # IANA timezone for cron
+RX_POWER_HIGH_THRESHOLD=-8.0      # Overload threshold (dBm)
+RX_POWER_LOW_THRESHOLD=-25.0      # Weak signal threshold (dBm)
 ```
 
 **OLT Configuration Required:**
@@ -391,11 +406,11 @@ spec:
         - name: REDIS_DB
           value: "0"
         - name: REDIS_MIN_IDLE_CONNECTIONS
-          value: "200"
+          value: "10"
         - name: REDIS_POOL_SIZE
-          value: "12000"
+          value: "100"
         - name: REDIS_POOL_TIMEOUT
-          value: "240"
+          value: "30"
         resources:
           requests:
             memory: "512Mi"
@@ -599,8 +614,8 @@ sudo journalctl -u go-snmp-olt --since "1 hour ago"
 
 - **HTTP Response Time**: p50, p95, p99
 - **SNMP Query Success Rate**: Should be >95%
-- **Redis Cache Hit Rate**: Should be >80%
-- **Error Rate**: Should be <1%
+- **Redis Cache Hit Rate**: Should be >95% (with cache pre-warm)
+- **Error Rate**: Should be <0.1% (with cache pre-warm)
 - **Memory Usage**: Monitor for leaks
 - **CPU Usage**: Should be <60% under normal load
 - **Goroutines**: Monitor for leaks

@@ -2,6 +2,9 @@ package trap
 
 import (
 	"context"
+	"net/http"
+	"net/http/httptest"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -232,6 +235,131 @@ func TestHandleEvent_FetcherError(t *testing.T) {
 
 	// Should not panic even when fetcher returns error
 	handler.HandleEvent(event)
+}
+
+func TestHandleEvent_FetcherReturnsZeroID(t *testing.T) {
+	// When fetcher returns a result with ID=0, enrichment should be skipped
+	fetcher := &mockONUDetailFetcher{
+		result: model.ONUCustomerInfo{
+			ID:   0,
+			Name: "Should-Not-Enrich",
+		},
+	}
+
+	handler := NewHandler(nil, fetcher)
+
+	event := model.TrapEvent{
+		Timestamp: time.Now(),
+		Source:    "192.168.213.174",
+		Board:     1,
+		PON:       3,
+		OnuID:     10,
+		EventType: "LOS",
+		Status:    "offline",
+	}
+
+	// Should not panic, fetcher returns ID=0 so enrichment is skipped
+	handler.HandleEvent(event)
+}
+
+func TestHandleEvent_NonNilFetcherButZeroBoardPonOnuID(t *testing.T) {
+	fetcher := &mockONUDetailFetcher{
+		result: model.ONUCustomerInfo{
+			ID:   1,
+			Name: "Should-Not-Be-Called",
+		},
+	}
+
+	handler := NewHandler(nil, fetcher)
+
+	tests := []struct {
+		name  string
+		event model.TrapEvent
+	}{
+		{
+			name: "zero_board",
+			event: model.TrapEvent{
+				Timestamp: time.Now(),
+				Source:    "192.168.213.174",
+				Board:     0,
+				PON:       3,
+				OnuID:     10,
+				EventType: "LOS",
+				Status:    "offline",
+			},
+		},
+		{
+			name: "zero_pon",
+			event: model.TrapEvent{
+				Timestamp: time.Now(),
+				Source:    "192.168.213.174",
+				Board:     1,
+				PON:       0,
+				OnuID:     10,
+				EventType: "LOS",
+				Status:    "offline",
+			},
+		},
+		{
+			name: "zero_onuid",
+			event: model.TrapEvent{
+				Timestamp: time.Now(),
+				Source:    "192.168.213.174",
+				Board:     1,
+				PON:       3,
+				OnuID:     0,
+				EventType: "LOS",
+				Status:    "offline",
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Should not panic, enrichment skipped when board/pon/onuid is 0
+			handler.HandleEvent(tt.event)
+		})
+	}
+}
+
+func TestHandleEvent_WithRealWebhook(t *testing.T) {
+	var webhookCalled atomic.Int32
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		webhookCalled.Add(1)
+		w.WriteHeader(200)
+	}))
+	defer server.Close()
+
+	fetcher := &mockONUDetailFetcher{
+		result: model.ONUCustomerInfo{
+			ID:           1,
+			Name:         "Customer-001",
+			Description:  "Jl. Test No. 1",
+			OnuType:      "F670L",
+			SerialNumber: "ZTEGC11111111",
+		},
+	}
+
+	webhook := NewWebhookClient(server.URL, 0, 5)
+	handler := NewHandler(webhook, fetcher)
+
+	event := model.TrapEvent{
+		Timestamp: time.Now(),
+		Source:    "192.168.213.174",
+		Board:     1,
+		PON:       5,
+		OnuID:     23,
+		EventType: "DyingGasp",
+		Status:    "offline",
+	}
+
+	handler.HandleEvent(event)
+	time.Sleep(500 * time.Millisecond)
+
+	if webhookCalled.Load() != 1 {
+		t.Errorf("Expected webhook to be called once, got %d", webhookCalled.Load())
+	}
 }
 
 func TestNewHandler(t *testing.T) {

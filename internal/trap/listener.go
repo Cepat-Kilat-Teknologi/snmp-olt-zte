@@ -150,9 +150,6 @@ func parseOnuIndex(fullOID, prefix string) (board, pon, onuID int) {
 	suffix = strings.TrimPrefix(suffix, ".")
 
 	parts := strings.Split(suffix, ".")
-	if len(parts) < 1 {
-		return 0, 0, 0
-	}
 
 	// The encoded value contains board and PON info
 	// For ZTE C320: board 1 PON 1 base = 285278465, increment by 1 per PON

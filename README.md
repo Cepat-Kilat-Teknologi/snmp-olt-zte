@@ -10,6 +10,7 @@ REST API service for monitoring ZTE C320 OLT devices via SNMP protocol, built wi
 * [Chi](https://github.com/go-chi/chi/) - Lightweight HTTP router
 * [GoSNMP](https://github.com/gosnmp/gosnmp) - SNMP library with BulkWalk support
 * [Redis](https://github.com/redis/go-redis/v9) - Caching layer with background refresh
+* [robfig/cron](https://github.com/robfig/cron) - Cron scheduling for power monitor
 * [Zerolog](https://github.com/rs/zerolog) - Structured JSON logger
 * [Godotenv](https://github.com/joho/godotenv) - Environment variable loader
 * [Miniredis](https://github.com/alicebob/miniredis) - In-memory Redis for testing
@@ -19,14 +20,16 @@ REST API service for monitoring ZTE C320 OLT devices via SNMP protocol, built wi
 * [k6](https://k6.io/) - Load testing
 
 ### Key Features
-- SNMP connection pool (4 concurrent connections) for parallel OLT queries
-- Redis caching with background refresh (80%+ cache hit rate)
+- SNMP connection pool (4 connections) with concurrency semaphore (max 5 concurrent ops)
+- Redis caching with configurable TTL and cache pre-warming at startup
+- Cron-based and interval-based scheduling for RX Power monitor
 - API key authentication (optional, via `X-API-Key` header)
 - Singleflight request deduplication to prevent SNMP storms
 - Batched SNMP Get (4 OIDs per request) and BulkWalk for optimal performance
 - Consistent JSON response format with structured error details
 - SNMP Trap listener for real-time ONU offline detection with webhook notification
-- 99% test coverage
+- RX Power monitor with configurable high/low thresholds and cron scheduling
+- 98.6% test coverage
 
 ### API Documentation
 Full OpenAPI 3.1 specification: [`api/openapi.yaml`](api/openapi.yaml)
@@ -244,6 +247,27 @@ TRAP_WEBHOOK_URL=https://your-webhook.example.com/olt-alerts
 
 Events that trigger webhook: `LOS`, `DyingGasp`, `PowerOff`, `Offline`, `AuthFailed`, `LOSi`, `LOFi`.
 
+### RX Power Monitor
+
+Periodic scanning of all ONUs for abnormal optical power levels with webhook alerts.
+
+```env
+# Interval only (every 5 minutes)
+POWER_MONITOR_ENABLED=true
+POWER_MONITOR_INTERVAL=300
+
+# Cron only (specific times)
+POWER_MONITOR_INTERVAL=0
+POWER_MONITOR_CRON=0 8,12,15,17,0 * * *
+POWER_MONITOR_TIMEZONE=Asia/Jakarta
+
+# Both interval + cron
+POWER_MONITOR_INTERVAL=300
+POWER_MONITOR_CRON=0 8,12,15,17,0 * * *
+```
+
+Thresholds: `RX_POWER_HIGH_THRESHOLD=-8.0` (overload), `RX_POWER_LOW_THRESHOLD=-25.0` (weak signal).
+
 ### Testing Traps Locally
 ```shell
 # Terminal 1: Start app with trap enabled
@@ -263,7 +287,7 @@ config/           Environment-based configuration, OID generation
 internal/
   handler/        HTTP handlers with request ID correlation
   middleware/     Auth, CORS, rate limiting, security headers, validation
-  usecase/        Business logic, singleflight, caching strategy
+  usecase/        Business logic, singleflight, caching strategy, cache pre-warming
   repository/     SNMP connection pool, Redis operations
   model/          Data models (ONU info, pagination)
   trap/           SNMP Trap listener, event handler, webhook notifications
@@ -278,24 +302,27 @@ api/              OpenAPI 3.1 specification
 scripts/          Trap testing tools
 ```
 
-## Performance
+### Performance
 
-Tested with k6 against a real ZTE C320 OLT (~55 ONUs per PON):
+Tested with k6 (100 VUs, 1m40s) against a real ZTE C320 OLT:
 
 | Metric | Value |
 |--------|-------|
-| Request Rate | 6.75 req/s |
-| Avg Response Time | 571ms |
-| p(95) Response Time | 1,886ms |
-| Cache Hit Rate | 80.8% |
-| Cache Hit Latency | ~3ms |
-| Cold Cache (SNMP) | ~4s avg |
-| Test Coverage | 99% |
+| Throughput | 4,624 req/s |
+| p(95) Response Time | 2.06ms |
+| p(99) Response Time | 4.88ms |
+| Median Response Time | 217µs |
+| Iterations (100 VUs) | 51,043 |
+| Real Error Rate | 0.07% |
+| Test Coverage | 98.6% |
 
 ### Caching Strategy
-- **ONU list**: 10 min TTL, background refresh at 80% expiry
-- **ONU detail**: 2 min TTL
-- **Empty ONU IDs**: 5 min TTL
+- **ONU list**: 30 min TTL (configurable via `REDIS_ONU_INFO_TTL`), background refresh at 20% expiry
+- **ONU detail**: 15 min TTL (configurable via `REDIS_ONU_DETAIL_TTL`), fallback from cached list
+- **ONU serial numbers**: 30 min TTL, cached in Redis
+- **Empty ONU IDs**: 5 min TTL (configurable via `REDIS_EMPTY_ONU_ID_TTL`)
+- **Cache pre-warming**: All 32 board/pon combos scanned at startup (`CACHE_PREWARM=true`)
+- **SNMP concurrency limit**: Max 5 concurrent operations (`SNMP_MAX_CONCURRENT=5`)
 - **Connection pool**: 4 parallel SNMP connections
 
 ## Available Tasks
@@ -318,14 +345,14 @@ Run `task --list` or `task help` to see all available tasks.
 | `task test-trap` | Test SNMP Trap listener with fake traps |
 | `task test-trap-webhook` | Start webhook receiver for manual testing |
 
-## Load Testing
+### Load Testing
 
 ```shell
-# Run with default scenarios (5 scenarios, ~3.5 minutes)
+# Run load test (wait for cache pre-warm before testing)
 task load-test
 
 # Run with custom base URL and API key
-k6 run -e BASE_URL=http://10.0.0.1:8081 -e API_KEY=your-key k6-load-test.js
+k6 run -e BASE_URL=http://10.0.0.1:8081 -e API_KEY=your-key scripts/k6-load-test.js
 ```
 
 ## License

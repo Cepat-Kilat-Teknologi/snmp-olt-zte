@@ -11,9 +11,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **SNMP Trap listener** for real-time ONU offline detection (LOS, DyingGasp, PowerOff)
 - **Webhook notifications** with exponential backoff retry on ONU offline events
 - **Trap event enrichment** — webhook payload includes ONU name, alamat, type, serial number
-- **Configurable trap port** via `TRAP_PORT` environment variable (default 1620)
+- **RX Power monitor** with configurable high/low thresholds and webhook alerts
+- **Cron scheduling** for power monitor via `POWER_MONITOR_CRON` (e.g., `0 8,12,15,17,0 * * *`)
+- **Timezone support** for cron schedule via `POWER_MONITOR_TIMEZONE` (IANA timezone)
+- **Dual scheduling mode** — interval + cron can run simultaneously
+- **SNMP concurrency semaphore** — limits concurrent SNMP operations to prevent OLT saturation (`SNMP_MAX_CONCURRENT`)
+- **Cache pre-warming** — scans all 32 board/pon combos at startup (`CACHE_PREWARM=true`)
+- **Configurable Redis TTL** — `REDIS_ONU_INFO_TTL`, `REDIS_ONU_DETAIL_TTL`, `REDIS_EMPTY_ONU_ID_TTL`
+- **Redis caching for ONU serial numbers** — previously uncached, now stored with configurable TTL
+- **ONU detail fast fallback** — derives basic info from cached ONU list to avoid SNMP query
 - **Trap testing script** (`scripts/test-trap.sh`) with fake SNMP trap sender and webhook receiver
+- **k6 load test script** (`scripts/k6-load-test.js`) with 6 endpoint scenarios
 - **Task commands** `test-trap` and `test-trap-webhook` for trap testing
+
+### Changed
+- **Redis TTL defaults increased** — ONU info from 10min to 30min, ONU detail from 2min to 15min
+- **DeleteCache** now also clears serial number list cache
+
+### Fixed
+- **Race condition** on PowerMonitor `alerted` map — added `sync.Mutex` for concurrent access
+- **Double-close panic** on PowerMonitor `stopCh` — added `sync.Once` guard
+- **Unnecessary SNMP query** for non-existent ONU — now skipped when ONU not found in cached list
+
+### Performance
+- **441x throughput** improvement (10.4 → 4,624 req/s under 100 VU load)
+- **14,563x faster p(95)** latency (30s → 2.06ms)
+- **0.07% error rate** under load (down from 18.49%)
+- **Cache pre-warm** eliminates cold-start latency
 
 ## [3.0.0] - 2026-04-07
 

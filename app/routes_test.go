@@ -41,6 +41,8 @@ func (m *mockOnuUsecase) DeleteCache(ctx context.Context, boardID, ponID int) er
 	return nil
 }
 
+func (m *mockOnuUsecase) PreWarmCache(ctx context.Context) {}
+
 func TestRootHandler(t *testing.T) {
 	req := httptest.NewRequest("GET", "/", nil)
 	rr := httptest.NewRecorder()

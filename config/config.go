@@ -14,15 +14,17 @@ type Config struct { // Define the main configuration struct named Config
 	RedisCfg    RedisConfig                     // Field to hold Redis configuration settings
 	OltCfg      OltConfig                       // Field to hold OLT configuration settings
 	TrapCfg     TrapConfig                      // Field to hold SNMP Trap listener configuration
+	CacheCfg    CacheConfig                     // Field to hold cache TTL configuration
 	BoardPonMap map[BoardPonKey]*BoardPonConfig `mapstructure:"-"` // Dynamic map to store configurations for each Board and PON, ignored during direct un-marshaling
 }
 
 // SnmpConfig contains configuration parameters for SNMP connection
 // including target IP address, port, and community string.
 type SnmpConfig struct { // Define the SnmpConfig struct for SNMP settings
-	IP        string `mapstructure:"ip"`        // IP address of the SNMP device, mapped from the "ip" configuration key
-	Port      uint16 `mapstructure:"port"`      // Port number for the SNMP connection, mapped from the "port" configuration key
-	Community string `mapstructure:"community"` // SNMP community string (password), mapped from the "community" configuration key
+	IP            string `mapstructure:"ip"`             // IP address of the SNMP device, mapped from the "ip" configuration key
+	Port          uint16 `mapstructure:"port"`           // Port number for the SNMP connection, mapped from the "port" configuration key
+	Community     string `mapstructure:"community"`      // SNMP community string (password), mapped from the "community" configuration key
+	MaxConcurrent int    `mapstructure:"max_concurrent"` // Maximum concurrent SNMP operations to prevent OLT saturation
 }
 
 // RedisConfig contains configuration parameters for Redis connection,
@@ -49,8 +51,18 @@ type TrapConfig struct {
 	WebhookTimeout    int
 	PowerMonitor      bool    // POWER_MONITOR_ENABLED
 	PowerMonitorInterval int  // POWER_MONITOR_INTERVAL (seconds)
+	PowerMonitorCron     string  // POWER_MONITOR_CRON (cron expression, e.g. "0 8,12,15,17,0 * * *")
+	PowerMonitorTimezone string  // POWER_MONITOR_TIMEZONE (IANA timezone, e.g. "Asia/Jakarta")
 	RxPowerHighThreshold float64 // RX_POWER_HIGH_THRESHOLD (dBm, overload)
 	RxPowerLowThreshold  float64 // RX_POWER_LOW_THRESHOLD (dBm, weak signal)
+}
+
+// CacheConfig contains TTL configuration for Redis cache
+type CacheConfig struct {
+	ONUInfoTTL    int  // REDIS_ONU_INFO_TTL (seconds, default 1800 = 30min)
+	ONUDetailTTL  int  // REDIS_ONU_DETAIL_TTL (seconds, default 900 = 15min)
+	EmptyOnuIDTTL int  // REDIS_EMPTY_ONU_ID_TTL (seconds, default 300 = 5min)
+	PreWarm       bool // CACHE_PREWARM (default true)
 }
 
 // OltConfig contains base OID configurations for OLT device management
@@ -141,9 +153,10 @@ func LoadConfig() (*Config, error) {
 
 	// SNMP Configuration from environment (REQUIRED for production)
 	cfg.SnmpCfg = SnmpConfig{
-		IP:        getEnv("SNMP_HOST", ""),
-		Port:      getEnvAsUint16("SNMP_PORT", 161),
-		Community: getEnv("SNMP_COMMUNITY", ""),
+		IP:            getEnv("SNMP_HOST", ""),
+		Port:          getEnvAsUint16("SNMP_PORT", 161),
+		Community:     getEnv("SNMP_COMMUNITY", ""),
+		MaxConcurrent: getEnvAsInt("SNMP_MAX_CONCURRENT", 5),
 	}
 
 	// Redis Configuration from environment (REQUIRED for production)
@@ -176,8 +189,18 @@ func LoadConfig() (*Config, error) {
 		WebhookTimeout:       getEnvAsInt("TRAP_WEBHOOK_TIMEOUT", 10),
 		PowerMonitor:         getEnv("POWER_MONITOR_ENABLED", "false") == "true",
 		PowerMonitorInterval: getEnvAsInt("POWER_MONITOR_INTERVAL", 300),
+		PowerMonitorCron:     getEnv("POWER_MONITOR_CRON", ""),
+		PowerMonitorTimezone: getEnv("POWER_MONITOR_TIMEZONE", ""),
 		RxPowerHighThreshold: getEnvAsFloat64("RX_POWER_HIGH_THRESHOLD", -8.0),
 		RxPowerLowThreshold:  getEnvAsFloat64("RX_POWER_LOW_THRESHOLD", -25.0),
+	}
+
+	// Cache TTL Configuration from environment
+	cfg.CacheCfg = CacheConfig{
+		ONUInfoTTL:    getEnvAsInt("REDIS_ONU_INFO_TTL", 1800),
+		ONUDetailTTL:  getEnvAsInt("REDIS_ONU_DETAIL_TTL", 900),
+		EmptyOnuIDTTL: getEnvAsInt("REDIS_EMPTY_ONU_ID_TTL", 300),
+		PreWarm:       getEnv("CACHE_PREWARM", "true") == "true",
 	}
 
 	// ===================================================================

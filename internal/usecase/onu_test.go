@@ -3,6 +3,7 @@ package usecase
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -72,6 +73,11 @@ type mockRedisRepository struct {
 	GetOnuIDCtxFunc     func(ctx context.Context, key string) ([]model.OnuID, error)
 	SetOnuIDCtxFunc     func(ctx context.Context, key string, seconds int, onuID []model.OnuID) error
 	DeleteFunc          func(ctx context.Context, key string) error
+	GetTTLFunc          func(ctx context.Context, key string) (time.Duration, error)
+	SaveONUDetailFunc     func(ctx context.Context, key string, seconds int, detail model.ONUCustomerInfo) error
+	GetONUDetailFunc      func(ctx context.Context, key string) (*model.ONUCustomerInfo, error)
+	GetONUSerialListFunc  func(ctx context.Context, key string) ([]model.OnuSerialNumber, error)
+	SaveONUSerialListFunc func(ctx context.Context, key string, seconds int, list []model.OnuSerialNumber) error
 }
 
 func (m *mockRedisRepository) GetOnuIDCtx(ctx context.Context, key string) ([]model.OnuID, error) {
@@ -115,14 +121,23 @@ func (m *mockRedisRepository) SaveOnlyOnuIDCtx(ctx context.Context, key string, 
 }
 
 func (m *mockRedisRepository) GetTTL(ctx context.Context, key string) (time.Duration, error) {
+	if m.GetTTLFunc != nil {
+		return m.GetTTLFunc(ctx, key)
+	}
 	return 0, errors.New("not supported")
 }
 
 func (m *mockRedisRepository) SaveONUDetail(ctx context.Context, key string, seconds int, detail model.ONUCustomerInfo) error {
+	if m.SaveONUDetailFunc != nil {
+		return m.SaveONUDetailFunc(ctx, key, seconds, detail)
+	}
 	return nil
 }
 
 func (m *mockRedisRepository) GetONUDetail(ctx context.Context, key string) (*model.ONUCustomerInfo, error) {
+	if m.GetONUDetailFunc != nil {
+		return m.GetONUDetailFunc(ctx, key)
+	}
 	return nil, errors.New("not found")
 }
 
@@ -131,6 +146,20 @@ func (m *mockRedisRepository) Delete(ctx context.Context, key string) error {
 		return m.DeleteFunc(ctx, key)
 	}
 	return nil
+}
+
+func (m *mockRedisRepository) SaveONUSerialList(ctx context.Context, key string, seconds int, list []model.OnuSerialNumber) error {
+	if m.SaveONUSerialListFunc != nil {
+		return m.SaveONUSerialListFunc(ctx, key, seconds, list)
+	}
+	return nil
+}
+
+func (m *mockRedisRepository) GetONUSerialList(ctx context.Context, key string) ([]model.OnuSerialNumber, error) {
+	if m.GetONUSerialListFunc != nil {
+		return m.GetONUSerialListFunc(ctx, key)
+	}
+	return nil, errors.New("not found")
 }
 
 func TestNewOnuUsecase(t *testing.T) {
@@ -998,20 +1027,6 @@ func TestConstants_MaxOnuIDPerPon(t *testing.T) {
 	}
 }
 
-func TestConstants_RedisONUInfoTTL(t *testing.T) {
-	// RedisONUInfoTTL should be 600 seconds (10 minutes)
-	if RedisONUInfoTTL != 600 {
-		t.Errorf("Expected RedisONUInfoTTL to be 600, got %d", RedisONUInfoTTL)
-	}
-}
-
-func TestConstants_RedisEmptyOnuIDTTL(t *testing.T) {
-	// RedisEmptyOnuIDTTL should be 300 seconds (5 minutes)
-	if RedisEmptyOnuIDTTL != 300 {
-		t.Errorf("Expected RedisEmptyOnuIDTTL to be 300, got %d", RedisEmptyOnuIDTTL)
-	}
-}
-
 func TestGetEmptyOnuID_VerifyMaxOnuIDConstant(t *testing.T) {
 	cfg := &config.Config{
 		OltCfg: config.OltConfig{
@@ -1104,6 +1119,11 @@ func TestUpdateEmptyOnuID_UsesConstants(t *testing.T) {
 		OltCfg: config.OltConfig{
 			BaseOID1: "1.3.6.1.4.1",
 		},
+		CacheCfg: config.CacheConfig{
+			ONUInfoTTL:    1800,
+			ONUDetailTTL:  900,
+			EmptyOnuIDTTL: 300,
+		},
 		BoardPonMap: make(map[config.BoardPonKey]*config.BoardPonConfig),
 	}
 	cfg.BoardPonMap[config.BoardPonKey{BoardID: 1, PonID: 1}] = &config.BoardPonConfig{
@@ -1131,9 +1151,9 @@ func TestUpdateEmptyOnuID_UsesConstants(t *testing.T) {
 		t.Errorf("Expected no error, got %v", err)
 	}
 
-	// Verify the TTL used matches RedisEmptyOnuIDTTL constant
-	if capturedTTL != RedisEmptyOnuIDTTL {
-		t.Errorf("Expected TTL to be %d (RedisEmptyOnuIDTTL), got %d", RedisEmptyOnuIDTTL, capturedTTL)
+	// Verify the TTL used matches CacheCfg.EmptyOnuIDTTL
+	if capturedTTL != cfg.CacheCfg.EmptyOnuIDTTL {
+		t.Errorf("Expected TTL to be %d (CacheCfg.EmptyOnuIDTTL), got %d", cfg.CacheCfg.EmptyOnuIDTTL, capturedTTL)
 	}
 }
 
@@ -1142,6 +1162,11 @@ func TestGetByBoardIDAndPonID_UsesRedisONUInfoTTL(t *testing.T) {
 		OltCfg: config.OltConfig{
 			BaseOID1: "1.3.6.1.4.1",
 			BaseOID2: "1.3.6.1.4.1",
+		},
+		CacheCfg: config.CacheConfig{
+			ONUInfoTTL:    1800,
+			ONUDetailTTL:  900,
+			EmptyOnuIDTTL: 300,
 		},
 		BoardPonMap: make(map[config.BoardPonKey]*config.BoardPonConfig),
 	}
@@ -1185,9 +1210,9 @@ func TestGetByBoardIDAndPonID_UsesRedisONUInfoTTL(t *testing.T) {
 		t.Errorf("Expected no error, got %v", err)
 	}
 
-	// Verify the TTL used matches RedisONUInfoTTL constant
-	if capturedTTL != RedisONUInfoTTL {
-		t.Errorf("Expected TTL to be %d (RedisONUInfoTTL), got %d", RedisONUInfoTTL, capturedTTL)
+	// Verify the TTL used matches CacheCfg.ONUInfoTTL
+	if capturedTTL != cfg.CacheCfg.ONUInfoTTL {
+		t.Errorf("Expected TTL to be %d (CacheCfg.ONUInfoTTL), got %d", cfg.CacheCfg.ONUInfoTTL, capturedTTL)
 	}
 }
 
@@ -1402,12 +1427,12 @@ func TestDeleteCache_UsesGenerateRedisKey(t *testing.T) {
 		OnuIDNameOID: ".1.1.1",
 	}
 
-	var capturedKey string
+	var capturedKeys []string
 	snmpRepo := &mockSnmpRepository{}
 
 	redisRepo := &mockRedisRepository{
 		DeleteFunc: func(ctx context.Context, key string) error {
-			capturedKey = key
+			capturedKeys = append(capturedKeys, key)
 			return nil
 		},
 	}
@@ -1419,10 +1444,18 @@ func TestDeleteCache_UsesGenerateRedisKey(t *testing.T) {
 		t.Errorf("Expected no error, got %v", err)
 	}
 
-	// Verify the key used matches GenerateRedisKey output
-	expectedKey := GenerateRedisKey(RedisKeyTypeONUInfo, 1, 1)
-	if capturedKey != expectedKey {
-		t.Errorf("Expected Redis key to be %s, got %s", expectedKey, capturedKey)
+	// Verify both ONU info key and serial list key are deleted
+	expectedInfoKey := GenerateRedisKey(RedisKeyTypeONUInfo, 1, 1)
+	expectedSerialKey := fmt.Sprintf("board_%d_pon_%d_serial_list", 1, 1)
+	if len(capturedKeys) != 2 {
+		t.Errorf("Expected 2 delete calls, got %d", len(capturedKeys))
+	} else {
+		if capturedKeys[0] != expectedInfoKey {
+			t.Errorf("Expected first Redis key to be %s, got %s", expectedInfoKey, capturedKeys[0])
+		}
+		if capturedKeys[1] != expectedSerialKey {
+			t.Errorf("Expected second Redis key to be %s, got %s", expectedSerialKey, capturedKeys[1])
+		}
 	}
 }
 
@@ -2682,6 +2715,11 @@ func createTestConfig() *config.Config {
 			BaseOID1: "1.3.6.1.4.1",
 			BaseOID2: "1.3.6.1.4.1",
 		},
+		CacheCfg: config.CacheConfig{
+			ONUInfoTTL:    1800,
+			ONUDetailTTL:  900,
+			EmptyOnuIDTTL: 300,
+		},
 		BoardPonMap: make(map[config.BoardPonKey]*config.BoardPonConfig),
 	}
 	cfg.BoardPonMap[config.BoardPonKey{BoardID: 1, PonID: 1}] = &config.BoardPonConfig{
@@ -2773,6 +2811,49 @@ func TestRefreshONUInfoCache_RedisSaveError(t *testing.T) {
 	uc := NewOnuUsecase(snmpRepo, redisRepo, cfg).(*onuUsecase)
 	oltConfig, _ := uc.getOltConfig(1, 1)
 	// Should not panic even when Redis save fails
+	uc.refreshONUInfoCache(context.Background(), 1, 1, oltConfig, "test_key")
+}
+
+func TestRefreshONUInfoCache_BatchGetError(t *testing.T) {
+	cfg := createTestConfig()
+	snmpRepo := &mockSnmpRepository{
+		BulkWalkFunc: func(oid string, walkFunc func(pdu gosnmp.SnmpPDU) error) error {
+			// Return multiple ONUs in reverse order to trigger sort
+			if err := walkFunc(gosnmp.SnmpPDU{Name: oid + ".3", Type: gosnmp.OctetString, Value: []byte("ONU3")}); err != nil {
+				return err
+			}
+			return walkFunc(gosnmp.SnmpPDU{Name: oid + ".1", Type: gosnmp.OctetString, Value: []byte("ONU1")})
+		},
+		GetFunc: func(oids []string) (*gosnmp.SnmpPacket, error) {
+			return nil, errors.New("SNMP Get error")
+		},
+	}
+	redisRepo := &mockRedisRepository{}
+	uc := NewOnuUsecase(snmpRepo, redisRepo, cfg).(*onuUsecase)
+	oltConfig, _ := uc.getOltConfig(1, 1)
+	// Should still save the list (without enriched fields) even when batch Get fails
+	uc.refreshONUInfoCache(context.Background(), 1, 1, oltConfig, "test_key")
+}
+
+func TestRefreshONUInfoCache_BatchGetPartialResult(t *testing.T) {
+	cfg := createTestConfig()
+	snmpRepo := &mockSnmpRepository{
+		BulkWalkFunc: func(oid string, walkFunc func(pdu gosnmp.SnmpPDU) error) error {
+			return walkFunc(gosnmp.SnmpPDU{Name: oid + ".1", Type: gosnmp.OctetString, Value: []byte("TestONU")})
+		},
+		GetFunc: func(oids []string) (*gosnmp.SnmpPacket, error) {
+			// Return fewer than 4 variables
+			return &gosnmp.SnmpPacket{
+				Variables: []gosnmp.SnmpPDU{
+					{Name: oids[0], Type: gosnmp.OctetString, Value: []byte("F670")},
+				},
+			}, nil
+		},
+	}
+	redisRepo := &mockRedisRepository{}
+	uc := NewOnuUsecase(snmpRepo, redisRepo, cfg).(*onuUsecase)
+	oltConfig, _ := uc.getOltConfig(1, 1)
+	// Should still save the list (without enriched fields) when partial result
 	uc.refreshONUInfoCache(context.Background(), 1, 1, oltConfig, "test_key")
 }
 
@@ -2908,6 +2989,150 @@ func TestGetByBoardIDAndPonID_BatchGetPartialResult(t *testing.T) {
 	}
 }
 
+func TestGetByBoardIDAndPonID_CacheWithLowTTL_TriggersRefresh(t *testing.T) {
+	cfg := &config.Config{
+		OltCfg: config.OltConfig{
+			BaseOID1: "1.3.6.1.4.1",
+			BaseOID2: "1.3.6.1.4.2",
+		},
+		CacheCfg: config.CacheConfig{ONUInfoTTL: 1800, ONUDetailTTL: 900, EmptyOnuIDTTL: 300},
+		BoardPonMap: make(map[config.BoardPonKey]*config.BoardPonConfig),
+	}
+	cfg.BoardPonMap[config.BoardPonKey{BoardID: 1, PonID: 1}] = &config.BoardPonConfig{
+		OnuIDNameOID: ".1.1.1",
+	}
+
+	snmpRepo := &mockSnmpRepository{}
+	redisRepo := &mockRedisRepository{
+		GetONUInfoListFunc: func(ctx context.Context, key string) ([]model.ONUInfoPerBoard, error) {
+			return []model.ONUInfoPerBoard{
+				{Board: 1, PON: 1, ID: 1, Name: "CachedONU"},
+			}, nil
+		},
+		GetTTLFunc: func(ctx context.Context, key string) (time.Duration, error) {
+			// Return TTL below refresh threshold (120s) to trigger background refresh
+			return 60 * time.Second, nil
+		},
+	}
+
+	usecase := NewOnuUsecase(snmpRepo, redisRepo, cfg)
+	result, err := usecase.GetByBoardIDAndPonID(context.Background(), 1, 1)
+
+	if err != nil {
+		t.Errorf("Expected no error, got %v", err)
+	}
+
+	if len(result) == 0 || result[0].Name != "CachedONU" {
+		t.Error("Expected cached data returned")
+	}
+
+	// Allow background goroutine to run
+	time.Sleep(200 * time.Millisecond)
+}
+
+func TestGetByBoardIDAndPonID_CacheWithHighTTL_NoRefresh(t *testing.T) {
+	cfg := &config.Config{
+		OltCfg: config.OltConfig{
+			BaseOID1: "1.3.6.1.4.1",
+		},
+		CacheCfg: config.CacheConfig{ONUInfoTTL: 1800, ONUDetailTTL: 900, EmptyOnuIDTTL: 300},
+		BoardPonMap: make(map[config.BoardPonKey]*config.BoardPonConfig),
+	}
+	cfg.BoardPonMap[config.BoardPonKey{BoardID: 1, PonID: 1}] = &config.BoardPonConfig{
+		OnuIDNameOID: ".1.1.1",
+	}
+
+	snmpRepo := &mockSnmpRepository{}
+	redisRepo := &mockRedisRepository{
+		GetONUInfoListFunc: func(ctx context.Context, key string) ([]model.ONUInfoPerBoard, error) {
+			return []model.ONUInfoPerBoard{
+				{Board: 1, PON: 1, ID: 1, Name: "CachedONU"},
+			}, nil
+		},
+		GetTTLFunc: func(ctx context.Context, key string) (time.Duration, error) {
+			return 500 * time.Second, nil
+		},
+	}
+
+	usecase := NewOnuUsecase(snmpRepo, redisRepo, cfg)
+	result, err := usecase.GetByBoardIDAndPonID(context.Background(), 1, 1)
+
+	if err != nil {
+		t.Errorf("Expected no error, got %v", err)
+	}
+
+	if len(result) == 0 || result[0].Name != "CachedONU" {
+		t.Error("Expected cached data returned")
+	}
+}
+
+func TestGetByBoardIDPonIDAndOnuID_FromCache(t *testing.T) {
+	cfg := &config.Config{
+		OltCfg: config.OltConfig{
+			BaseOID1: "1.3.6.1.4.1",
+		},
+		CacheCfg: config.CacheConfig{ONUInfoTTL: 1800, ONUDetailTTL: 900, EmptyOnuIDTTL: 300},
+		BoardPonMap: make(map[config.BoardPonKey]*config.BoardPonConfig),
+	}
+	cfg.BoardPonMap[config.BoardPonKey{BoardID: 1, PonID: 1}] = &config.BoardPonConfig{
+		OnuIDNameOID: ".1.1.1",
+	}
+
+	cachedDetail := &model.ONUCustomerInfo{
+		Board: 1, PON: 1, ID: 5, Name: "CachedDetail", SerialNumber: "ZTEGC99999999",
+	}
+
+	snmpRepo := &mockSnmpRepository{}
+	redisRepo := &mockRedisRepository{
+		GetONUDetailFunc: func(ctx context.Context, key string) (*model.ONUCustomerInfo, error) {
+			return cachedDetail, nil
+		},
+	}
+
+	usecase := NewOnuUsecase(snmpRepo, redisRepo, cfg)
+	result, err := usecase.GetByBoardIDPonIDAndOnuID(context.Background(), 1, 1, 5)
+
+	if err != nil {
+		t.Errorf("Expected no error, got %v", err)
+	}
+	if result.Name != "CachedDetail" {
+		t.Errorf("Expected CachedDetail, got %s", result.Name)
+	}
+	if result.SerialNumber != "ZTEGC99999999" {
+		t.Errorf("Expected serial ZTEGC99999999, got %s", result.SerialNumber)
+	}
+}
+
+func TestRefreshONUInfoCache_BulkWalkError(t *testing.T) {
+	cfg := &config.Config{
+		OltCfg: config.OltConfig{
+			BaseOID1: "1.3.6.1.4.1",
+			BaseOID2: "1.3.6.1.4.2",
+		},
+		BoardPonMap: make(map[config.BoardPonKey]*config.BoardPonConfig),
+	}
+	cfg.BoardPonMap[config.BoardPonKey{BoardID: 1, PonID: 1}] = &config.BoardPonConfig{
+		OnuIDNameOID: ".1.1.1",
+	}
+
+	snmpRepo := &mockSnmpRepository{
+		BulkWalkFunc: func(oid string, walkFunc func(pdu gosnmp.SnmpPDU) error) error {
+			return errors.New("SNMP bulk walk error")
+		},
+	}
+	redisRepo := &mockRedisRepository{}
+
+	uc := NewOnuUsecase(snmpRepo, redisRepo, cfg)
+
+	oltConfig := &model.OltConfig{
+		BaseOID:      "1.3.6.1.4.1",
+		OnuIDNameOID: ".1.1.1",
+	}
+
+	// Should not panic on BulkWalk error
+	uc.(*onuUsecase).refreshONUInfoCache(context.Background(), 1, 1, oltConfig, "test-key")
+}
+
 // Test GetOnuIDAndSerialNumber with multiple ONUs to trigger sort callback
 func TestGetOnuIDAndSerialNumber_MultipleSortOrder(t *testing.T) {
 	cfg := &config.Config{
@@ -2958,5 +3183,118 @@ func TestGetOnuIDAndSerialNumber_MultipleSortOrder(t *testing.T) {
 			t.Errorf("Expected results to be sorted by ID ascending, got IDs: %d, %d, %d",
 				result[0].ID, result[1].ID, result[2].ID)
 		}
+	}
+}
+
+func TestGetOnuIDAndSerialNumber_FromCache(t *testing.T) {
+	cfg := createTestConfig()
+	snmpRepo := &mockSnmpRepository{}
+	cachedData := []model.OnuSerialNumber{
+		{Board: 1, PON: 1, ID: 1, SerialNumber: "ZTEGC1234"},
+		{Board: 1, PON: 1, ID: 2, SerialNumber: "ZTEGC5678"},
+	}
+	redisRepo := &mockRedisRepository{
+		GetONUSerialListFunc: func(ctx context.Context, key string) ([]model.OnuSerialNumber, error) {
+			return cachedData, nil
+		},
+	}
+	uc := NewOnuUsecase(snmpRepo, redisRepo, cfg)
+	result, err := uc.GetOnuIDAndSerialNumber(context.Background(), 1, 1)
+	if err != nil {
+		t.Errorf("Expected no error, got %v", err)
+	}
+	if len(result) != 2 {
+		t.Errorf("Expected 2 results, got %d", len(result))
+	}
+}
+
+func TestGetByBoardIDPonIDAndOnuID_FallbackFromList(t *testing.T) {
+	cfg := createTestConfig()
+	snmpRepo := &mockSnmpRepository{}
+	redisRepo := &mockRedisRepository{
+		// ONU detail cache miss
+		GetONUDetailFunc: func(ctx context.Context, key string) (*model.ONUCustomerInfo, error) {
+			return nil, errors.New("not found")
+		},
+		// ONU info list cache hit — contains the ONU we're looking for
+		GetONUInfoListFunc: func(ctx context.Context, key string) ([]model.ONUInfoPerBoard, error) {
+			return []model.ONUInfoPerBoard{
+				{Board: 1, PON: 1, ID: 1, Name: "ONU-1", OnuType: "F670L", SerialNumber: "ZTEGC1234", RXPower: "-20.5", Status: "Online"},
+				{Board: 1, PON: 1, ID: 5, Name: "ONU-5", OnuType: "F660V8", SerialNumber: "ZTEGC5678", RXPower: "-18.3", Status: "Online"},
+			}, nil
+		},
+	}
+	uc := NewOnuUsecase(snmpRepo, redisRepo, cfg)
+	result, err := uc.GetByBoardIDPonIDAndOnuID(context.Background(), 1, 1, 5)
+	if err != nil {
+		t.Errorf("Expected no error, got %v", err)
+	}
+	if result.Name != "ONU-5" {
+		t.Errorf("Expected ONU-5, got %s", result.Name)
+	}
+	if result.SerialNumber != "ZTEGC5678" {
+		t.Errorf("Expected ZTEGC5678, got %s", result.SerialNumber)
+	}
+}
+
+func TestGetByBoardIDPonIDAndOnuID_NotFoundInList_SkipsSNMP(t *testing.T) {
+	cfg := createTestConfig()
+	snmpCalled := false
+	snmpRepo := &mockSnmpRepository{
+		BulkWalkFunc: func(oid string, walkFunc func(pdu gosnmp.SnmpPDU) error) error {
+			snmpCalled = true
+			return nil
+		},
+	}
+	redisRepo := &mockRedisRepository{
+		GetONUDetailFunc: func(ctx context.Context, key string) (*model.ONUCustomerInfo, error) {
+			return nil, errors.New("not found")
+		},
+		// Cached list has ONU 1 and 5, but NOT ONU 99
+		GetONUInfoListFunc: func(ctx context.Context, key string) ([]model.ONUInfoPerBoard, error) {
+			return []model.ONUInfoPerBoard{
+				{Board: 1, PON: 1, ID: 1, Name: "ONU-1"},
+				{Board: 1, PON: 1, ID: 5, Name: "ONU-5"},
+			}, nil
+		},
+	}
+	uc := NewOnuUsecase(snmpRepo, redisRepo, cfg)
+	result, err := uc.GetByBoardIDPonIDAndOnuID(context.Background(), 1, 1, 99)
+	if err != nil {
+		t.Errorf("Expected no error, got %v", err)
+	}
+	// Should return empty (zero-value) without calling SNMP
+	if result.ID != 0 {
+		t.Errorf("Expected empty result for non-existent ONU, got ID=%d", result.ID)
+	}
+	if snmpCalled {
+		t.Error("Expected SNMP to NOT be called when ONU not in cached list")
+	}
+}
+
+func TestDeleteCache_DeletesSerialListKey(t *testing.T) {
+	cfg := createTestConfig()
+	var deletedKeys []string
+	snmpRepo := &mockSnmpRepository{}
+	redisRepo := &mockRedisRepository{
+		DeleteFunc: func(ctx context.Context, key string) error {
+			deletedKeys = append(deletedKeys, key)
+			return nil
+		},
+	}
+	uc := NewOnuUsecase(snmpRepo, redisRepo, cfg)
+	err := uc.DeleteCache(context.Background(), 1, 1)
+	if err != nil {
+		t.Errorf("Expected no error, got %v", err)
+	}
+	// Should delete both ONU info key and serial list key
+	foundSerial := false
+	for _, k := range deletedKeys {
+		if k == "board_1_pon_1_serial_list" {
+			foundSerial = true
+		}
+	}
+	if !foundSerial {
+		t.Errorf("Expected serial list key to be deleted, deleted keys: %v", deletedKeys)
 	}
 }

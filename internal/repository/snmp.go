@@ -30,14 +30,23 @@ type snmpConfig struct {
 type snmpRepository struct {
 	pool chan *gosnmp.GoSNMP
 	cfg  snmpConfig
+	sem  chan struct{} // limits concurrent SNMP operations to prevent OLT saturation
 }
 
 // DefaultPoolSize is the default number of SNMP connections in the pool
 const DefaultPoolSize = 4
 
-// NewPonRepository creates a repository with a connection pool.
+// DefaultMaxConcurrent is the default limit for concurrent SNMP operations
+const DefaultMaxConcurrent = 5
+
+// NewPonRepository creates a repository with a connection pool and default concurrency limit.
 // The seed connection is used to extract config, then poolSize connections are created.
 func NewPonRepository(seed *gosnmp.GoSNMP) SnmpRepositoryInterface {
+	return NewPonRepositoryWithConcurrency(seed, DefaultMaxConcurrent)
+}
+
+// NewPonRepositoryWithConcurrency creates a repository with a connection pool and custom concurrency limit.
+func NewPonRepositoryWithConcurrency(seed *gosnmp.GoSNMP, maxConcurrent int) SnmpRepositoryInterface {
 	cfg := snmpConfig{
 		target:    seed.Target,
 		port:      seed.Port,
@@ -63,9 +72,14 @@ func NewPonRepository(seed *gosnmp.GoSNMP) SnmpRepositoryInterface {
 		pool <- conn
 	}
 
+	if maxConcurrent <= 0 {
+		maxConcurrent = DefaultMaxConcurrent
+	}
+
 	return &snmpRepository{
 		pool: pool,
 		cfg:  cfg,
+		sem:  make(chan struct{}, maxConcurrent),
 	}
 }
 
@@ -98,6 +112,9 @@ func (r *snmpRepository) release(conn *gosnmp.GoSNMP) {
 
 // Get retrieves SNMP data for the given OIDs
 func (r *snmpRepository) Get(oids []string) (*gosnmp.SnmpPacket, error) {
+	r.sem <- struct{}{}
+	defer func() { <-r.sem }()
+
 	conn := r.acquire()
 	defer r.release(conn)
 
@@ -110,6 +127,9 @@ func (r *snmpRepository) Get(oids []string) (*gosnmp.SnmpPacket, error) {
 
 // Walk performs SNMP Walk to get all OIDs under the given OID
 func (r *snmpRepository) Walk(oid string, walkFunc func(pdu gosnmp.SnmpPDU) error) error {
+	r.sem <- struct{}{}
+	defer func() { <-r.sem }()
+
 	conn := r.acquire()
 	defer r.release(conn)
 
@@ -132,6 +152,9 @@ func (r *snmpRepository) Close() {
 
 // BulkWalk performs SNMP BulkWalk to get all OIDs under the given OID using GetBulk requests
 func (r *snmpRepository) BulkWalk(oid string, walkFunc func(pdu gosnmp.SnmpPDU) error) error {
+	r.sem <- struct{}{}
+	defer func() { <-r.sem }()
+
 	conn := r.acquire()
 	defer r.release(conn)
 

@@ -25,6 +25,8 @@ type OnuRedisRepositoryInterface interface {
 	GetTTL(ctx context.Context, key string) (time.Duration, error)                                           // Get TTL for a key
 	SaveONUDetail(ctx context.Context, key string, seconds int, detail model.ONUCustomerInfo) error          // Save ONU detail to Redis
 	GetONUDetail(ctx context.Context, key string) (*model.ONUCustomerInfo, error)                            // Get ONU detail from Redis
+	SaveONUSerialList(ctx context.Context, key string, seconds int, list []model.OnuSerialNumber) error     // Save ONU serial number list to Redis
+	GetONUSerialList(ctx context.Context, key string) ([]model.OnuSerialNumber, error)                      // Get ONU serial number list from Redis
 }
 
 // Auth redis repository
@@ -209,4 +211,33 @@ func (r *onuRedisRepo) GetONUDetail(ctx context.Context, key string) (*model.ONU
 	}
 
 	return &detail, nil
+}
+
+// SaveONUSerialList saves ONU serial number list to Redis
+func (r *onuRedisRepo) SaveONUSerialList(ctx context.Context, key string, seconds int, list []model.OnuSerialNumber) error {
+	dataBytes, err := json.Marshal(list)
+	if err != nil {
+		log.Error().Err(err).Msg("Failed to marshal ONU serial list")
+		return apperrors.NewInternalError("failed to marshal ONU serial list", err)
+	}
+	if err := r.redisClient.Set(ctx, key, dataBytes, time.Second*time.Duration(seconds)).Err(); err != nil {
+		log.Error().Err(err).Str("key", key).Msg("Failed to set ONU serial list to redis")
+		return apperrors.NewRedisError("Set", err)
+	}
+	return nil
+}
+
+// GetONUSerialList retrieves ONU serial number list from Redis
+func (r *onuRedisRepo) GetONUSerialList(ctx context.Context, key string) ([]model.OnuSerialNumber, error) {
+	dataBytes, err := r.redisClient.Get(ctx, key).Bytes()
+	if err != nil {
+		log.Debug().Str("key", key).Msg("Cache miss - ONU serial list not found in Redis")
+		return nil, apperrors.NewRedisError("Get", err)
+	}
+	var list []model.OnuSerialNumber
+	if err := json.Unmarshal(dataBytes, &list); err != nil {
+		log.Error().Err(err).Msg("Failed to unmarshal ONU serial list")
+		return nil, apperrors.NewInternalError("failed to unmarshal ONU serial list", err)
+	}
+	return list, nil
 }

@@ -22,12 +22,6 @@ const (
 	// MaxOnuIDPerPon is the maximum number of ONU IDs allowed per PON port
 	MaxOnuIDPerPon = 128
 
-	// RedisONUInfoTTL is the TTL in seconds for ONU info cache (10 minutes)
-	RedisONUInfoTTL = 600
-
-	// RedisEmptyOnuIDTTL is the TTL in seconds for empty ONU ID cache (5 minutes)
-	RedisEmptyOnuIDTTL = 300
-
 	// TimezoneOffsetWIB is the timezone offset for WIB (Western Indonesian Time / UTC+7)
 	// This offset is used to adjust SNMP timestamps which are typically in UTC
 	// to the local timezone (Asia/Jakarta - WIB)
@@ -48,13 +42,6 @@ const (
 	RedisKeyTypeEmptyOnuID = "empty_onu_id"
 	RedisKeyTypeONUDetail  = "onu_detail"
 )
-
-// RedisONUInfoRefreshThreshold is the remaining TTL (in seconds) below which
-// a background refresh is triggered (20% of RedisONUInfoTTL = 120s)
-const RedisONUInfoRefreshThreshold = 120
-
-// RedisONUDetailTTL is the TTL in seconds for ONU detail cache (2 minutes)
-const RedisONUDetailTTL = 120
 
 // GenerateRedisKey creates a consistent Redis key based on key type, board ID, and PON ID
 func GenerateRedisKey(keyType string, boardID, ponID int) string {
@@ -80,6 +67,7 @@ type OnuUseCaseInterface interface {
 	UpdateEmptyOnuID(ctx context.Context, boardID, ponID int) error                                       // Update empty ONU IDs cache
 	GetByBoardIDAndPonIDWithPagination(ctx context.Context, boardID, ponID, page, pageSize int) ([]model.ONUInfoPerBoard, int) // Get paginated ONU info
 	DeleteCache(ctx context.Context, boardID, ponID int) error                                            // Delete cache for specific board/pon
+	PreWarmCache(ctx context.Context)
 }
 
 // onuUsecase represent the auth's usecase
@@ -170,7 +158,7 @@ func (u *onuUsecase) GetByBoardIDAndPonID(ctx context.Context, boardID, ponID in
 
 			// Background refresh if TTL is low
 			ttl, ttlErr := u.redisRepository.GetTTL(ctx, redisKey)
-			if ttlErr == nil && ttl > 0 && ttl < time.Duration(RedisONUInfoRefreshThreshold)*time.Second {
+			if ttlErr == nil && ttl > 0 && ttl < time.Duration(u.cfg.CacheCfg.ONUInfoTTL/5)*time.Second {
 				go func() {
 					log.Info().Str("redis_key", redisKey).Msg("Background cache refresh triggered")
 					u.refreshONUInfoCache(context.Background(), boardID, ponID, oltConfig, redisKey)
@@ -237,7 +225,7 @@ func (u *onuUsecase) GetByBoardIDAndPonID(ctx context.Context, boardID, ponID in
 
 		// Save the ONU information list to Redis with a 10-minute expiration time
 		// Balanced: 600s (10min) - fresh enough while maintaining a good cache hit rate
-		err = u.redisRepository.SaveONUInfoList(ctx, redisKey, RedisONUInfoTTL, onuInformationList)
+		err = u.redisRepository.SaveONUInfoList(ctx, redisKey, u.cfg.CacheCfg.ONUInfoTTL, onuInformationList)
 		if err != nil {
 			log.Error().Err(err).Str("redis_key", redisKey).Msg("Failed to save ONU information to Redis")
 		} else {
@@ -296,7 +284,7 @@ func (u *onuUsecase) refreshONUInfoCache(ctx context.Context, boardID, ponID int
 
 	sort.Slice(list, func(i, j int) bool { return list[i].ID < list[j].ID })
 
-	if err := u.redisRepository.SaveONUInfoList(ctx, redisKey, RedisONUInfoTTL, list); err != nil {
+	if err := u.redisRepository.SaveONUInfoList(ctx, redisKey, u.cfg.CacheCfg.ONUInfoTTL, list); err != nil {
 		log.Error().Err(err).Msg("Background refresh: failed to save to Redis")
 	} else {
 		log.Info().Str("redis_key", redisKey).Msg("Background refresh: cache updated")
@@ -323,6 +311,39 @@ func (u *onuUsecase) GetByBoardIDPonIDAndOnuID(ctx context.Context, boardID, pon
 		if cacheErr == nil && cached != nil {
 			log.Info().Str("redis_key", redisKey).Msg("Retrieved ONU detail from Redis cache")
 			return *cached, nil
+		}
+
+		// Fallback: try to derive basic info from cached ONU info list (pre-warmed)
+		// Fallback: derive basic info from cached ONU info list (pre-warmed).
+		// Note: This returns partial data (no Description, IP, LastOnline, etc.)
+		// but avoids a heavy SNMP query. Full detail is fetched on cache miss below.
+		listKey := GenerateRedisKey(RedisKeyTypeONUInfo, boardID, ponID)
+		cachedList, listErr := u.redisRepository.GetONUInfoList(ctx, listKey)
+		if listErr == nil && cachedList != nil {
+			found := false
+			for _, onu := range cachedList {
+				if onu.ID == onuID {
+					detail := model.ONUCustomerInfo{
+						Board: boardID, PON: ponID, ID: onuID,
+						Name:         onu.Name,
+						OnuType:      onu.OnuType,
+						SerialNumber: onu.SerialNumber,
+						RXPower:      onu.RXPower,
+						Status:       onu.Status,
+					}
+					// Cache this derived detail with shorter TTL
+					_ = u.redisRepository.SaveONUDetail(ctx, redisKey, u.cfg.CacheCfg.ONUDetailTTL, detail)
+					log.Info().Int("onu_id", onuID).Msg("ONU detail derived from cached info list")
+					return detail, nil
+				}
+			}
+			if !found {
+				// ONU not in cached list — it doesn't exist on this board/pon.
+				// Skip expensive SNMP query and return empty immediately.
+				log.Debug().Int("board", boardID).Int("pon", ponID).Int("onu_id", onuID).
+					Msg("ONU not found in cached list, skipping SNMP query")
+				return model.ONUCustomerInfo{}, nil
+			}
 		}
 
 		var onuInformationList model.ONUCustomerInfo   // Create a variable to store ONU information
@@ -426,7 +447,7 @@ func (u *onuUsecase) GetByBoardIDPonIDAndOnuID(ctx context.Context, boardID, pon
 		}
 
 		// Save ONU detail to Redis cache
-		_ = u.redisRepository.SaveONUDetail(ctx, redisKey, RedisONUDetailTTL, onuInformationList)
+		_ = u.redisRepository.SaveONUDetail(ctx, redisKey, u.cfg.CacheCfg.ONUDetailTTL, onuInformationList)
 
 		return onuInformationList, nil // Return the ONU information list
 	})
@@ -510,7 +531,7 @@ func (u *onuUsecase) GetEmptyOnuID(ctx context.Context, boardID, ponID int) ([]m
 		})
 
 		// Set data to Redis
-		err = u.redisRepository.SetOnuIDCtx(ctx, redisKey, RedisEmptyOnuIDTTL, emptyOnuIDList)
+		err = u.redisRepository.SetOnuIDCtx(ctx, redisKey, u.cfg.CacheCfg.EmptyOnuIDTTL, emptyOnuIDList)
 		if err != nil {
 			log.Error().Err(err).Str("redis_key", redisKey).Msg("Failed to save empty ONU IDs to Redis")
 			return nil, err
@@ -540,6 +561,14 @@ func (u *onuUsecase) GetOnuIDAndSerialNumber(ctx context.Context, boardID, ponID
 		if err != nil {
 			log.Error().Err(err).Int("board_id", boardID).Int("pon_id", ponID).Msg("Failed to get OLT Config")
 			return nil, err
+		}
+
+		// Check Redis cache first
+		redisKey := fmt.Sprintf("board_%d_pon_%d_serial_list", boardID, ponID)
+		cached, cacheErr := u.redisRepository.GetONUSerialList(ctx, redisKey)
+		if cacheErr == nil && cached != nil {
+			log.Info().Str("redis_key", redisKey).Msg("Retrieved ONU serial list from Redis cache")
+			return cached, nil
 		}
 
 		// Perform SNMP Walk to get ONU ID
@@ -584,6 +613,11 @@ func (u *onuUsecase) GetOnuIDAndSerialNumber(ctx context.Context, boardID, ponID
 		sort.Slice(onuSerialNumberList, func(i, j int) bool {
 			return onuSerialNumberList[i].ID < onuSerialNumberList[j].ID
 		})
+
+		// Save to Redis cache
+		if err := u.redisRepository.SaveONUSerialList(ctx, redisKey, u.cfg.CacheCfg.ONUInfoTTL, onuSerialNumberList); err != nil {
+			log.Error().Err(err).Str("redis_key", redisKey).Msg("Failed to save ONU serial list to Redis")
+		}
 
 		return onuSerialNumberList, nil
 	})
@@ -654,7 +688,7 @@ func (u *onuUsecase) UpdateEmptyOnuID(ctx context.Context, boardID, ponID int) e
 
 		// Set data to Redis using the SetOnuIDCtx method and helper function
 		redisKey := GenerateRedisKey(RedisKeyTypeEmptyOnuID, boardID, ponID)
-		err = u.redisRepository.SetOnuIDCtx(ctx, redisKey, RedisEmptyOnuIDTTL, emptyOnuIDList)
+		err = u.redisRepository.SetOnuIDCtx(ctx, redisKey, u.cfg.CacheCfg.EmptyOnuIDTTL, emptyOnuIDList)
 		if err != nil {
 			log.Error().Err(err).Str("redis_key", redisKey).Msg("Failed to update empty ONU IDs in Redis")
 			return nil, apperrors.NewRedisError("Set", err) // Return Redis error
@@ -902,6 +936,12 @@ func (u *onuUsecase) DeleteCache(ctx context.Context, boardID, ponID int) error 
 			Str("redis_key", redisKey).
 			Msg("Failed to delete cache from Redis")
 		return apperrors.NewRedisError("delete cache", err)
+	}
+
+	// Also delete serial list cache
+	serialKey := fmt.Sprintf("board_%d_pon_%d_serial_list", boardID, ponID)
+	if err := u.redisRepository.Delete(ctx, serialKey); err != nil {
+		log.Debug().Err(err).Str("key", serialKey).Msg("Failed to delete serial list cache")
 	}
 
 	log.Info().
