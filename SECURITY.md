@@ -390,7 +390,7 @@ gosec ./...
 **3. Container Scanning:**
 ```bash
 # Using Trivy
-trivy image cepatkilatteknologi/snmp-olt-zte-c320:2.1.0
+trivy image cepatkilatteknologi/snmp-olt-zte-c320:2.1.1
 ```
 
 ## Additional Resources
