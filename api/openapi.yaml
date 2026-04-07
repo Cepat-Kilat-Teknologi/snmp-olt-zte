@@ -5,7 +5,7 @@ info:
     REST API for monitoring ZTE C320 OLT (Optical Line Terminal) via SNMP.
     Provides endpoints to query ONU status, optical power levels, serial numbers,
     and manage cache for board/PON combinations.
-  version: 1.0.0
+  version: 2.1.0
   contact:
     name: API Support
   license:
