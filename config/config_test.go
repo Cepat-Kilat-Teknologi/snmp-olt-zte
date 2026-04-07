@@ -194,6 +194,22 @@ func TestGetEnvAsUint16(t *testing.T) {
 	}
 }
 
+func TestGetEnvAsFloat64(t *testing.T) {
+	os.Setenv("TEST_FLOAT", "3.14")
+	defer os.Unsetenv("TEST_FLOAT")
+	if v := getEnvAsFloat64("TEST_FLOAT", 0); v != 3.14 {
+		t.Errorf("Expected 3.14, got %f", v)
+	}
+	if v := getEnvAsFloat64("NONEXIST_FLOAT", 1.5); v != 1.5 {
+		t.Errorf("Expected default 1.5, got %f", v)
+	}
+	os.Setenv("TEST_FLOAT_INVALID", "abc")
+	defer os.Unsetenv("TEST_FLOAT_INVALID")
+	if v := getEnvAsFloat64("TEST_FLOAT_INVALID", 2.0); v != 2.0 {
+		t.Errorf("Expected default 2.0 for invalid float, got %f", v)
+	}
+}
+
 func TestLoadConfig(t *testing.T) {
 	// Set required environment variables
 	os.Setenv("SNMP_HOST", "192.168.1.1")

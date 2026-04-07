@@ -54,13 +54,10 @@ func (pm *PowerMonitor) Start() {
 	ticker := time.NewTicker(pm.config.Interval)
 	defer ticker.Stop()
 
-	// Run immediately on start, then on interval
-	pm.scan()
-
 	for {
 		select {
 		case <-ticker.C:
-			pm.scan()
+			pm.safeScan()
 		case <-pm.stopCh:
 			log.Info().Msg("Power monitor stopped")
 			return
@@ -72,6 +69,16 @@ func (pm *PowerMonitor) Start() {
 func (pm *PowerMonitor) Close() error {
 	close(pm.stopCh)
 	return nil
+}
+
+// safeScan wraps scan with panic recovery to prevent goroutine crashes
+func (pm *PowerMonitor) safeScan() {
+	defer func() {
+		if r := recover(); r != nil {
+			log.Error().Interface("panic", r).Msg("Power monitor: scan panicked, recovered")
+		}
+	}()
+	pm.scan()
 }
 
 // scan checks all board/PON combinations for abnormal RX power

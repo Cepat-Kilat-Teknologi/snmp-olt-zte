@@ -2694,6 +2694,88 @@ func createTestConfig() *config.Config {
 	return cfg
 }
 
+func TestRefreshONUInfoCache_Success(t *testing.T) {
+	cfg := createTestConfig()
+	snmpRepo := &mockSnmpRepository{
+		BulkWalkFunc: func(oid string, walkFunc func(pdu gosnmp.SnmpPDU) error) error {
+			return walkFunc(gosnmp.SnmpPDU{Name: oid + ".1", Type: gosnmp.OctetString, Value: []byte("TestONU")})
+		},
+		GetFunc: func(oids []string) (*gosnmp.SnmpPacket, error) {
+			return &gosnmp.SnmpPacket{
+				Variables: []gosnmp.SnmpPDU{
+					{Name: oids[0], Type: gosnmp.OctetString, Value: []byte("F670")},
+					{Name: oids[0], Type: gosnmp.OctetString, Value: []byte("SN123")},
+					{Name: oids[0], Type: gosnmp.Integer, Value: 1000},
+					{Name: oids[0], Type: gosnmp.Integer, Value: 4},
+				},
+			}, nil
+		},
+	}
+	saved := false
+	redisRepo := &mockRedisRepository{
+		SaveONUInfoListFunc: func(ctx context.Context, key string, seconds int, list []model.ONUInfoPerBoard) error {
+			saved = true
+			return nil
+		},
+	}
+	uc := NewOnuUsecase(snmpRepo, redisRepo, cfg).(*onuUsecase)
+	oltConfig, _ := uc.getOltConfig(1, 1)
+	uc.refreshONUInfoCache(context.Background(), 1, 1, oltConfig, "test_key")
+	if !saved {
+		t.Error("Expected Redis save to be called")
+	}
+}
+
+func TestRefreshONUInfoCache_SNMPError(t *testing.T) {
+	cfg := createTestConfig()
+	snmpRepo := &mockSnmpRepository{
+		BulkWalkFunc: func(oid string, walkFunc func(pdu gosnmp.SnmpPDU) error) error {
+			return errors.New("snmp error")
+		},
+	}
+	saved := false
+	redisRepo := &mockRedisRepository{
+		SaveONUInfoListFunc: func(ctx context.Context, key string, seconds int, list []model.ONUInfoPerBoard) error {
+			saved = true
+			return nil
+		},
+	}
+	uc := NewOnuUsecase(snmpRepo, redisRepo, cfg).(*onuUsecase)
+	oltConfig, _ := uc.getOltConfig(1, 1)
+	uc.refreshONUInfoCache(context.Background(), 1, 1, oltConfig, "test_key")
+	if saved {
+		t.Error("Expected Redis save NOT to be called on SNMP error")
+	}
+}
+
+func TestRefreshONUInfoCache_RedisSaveError(t *testing.T) {
+	cfg := createTestConfig()
+	snmpRepo := &mockSnmpRepository{
+		BulkWalkFunc: func(oid string, walkFunc func(pdu gosnmp.SnmpPDU) error) error {
+			return walkFunc(gosnmp.SnmpPDU{Name: oid + ".1", Type: gosnmp.OctetString, Value: []byte("TestONU")})
+		},
+		GetFunc: func(oids []string) (*gosnmp.SnmpPacket, error) {
+			return &gosnmp.SnmpPacket{
+				Variables: []gosnmp.SnmpPDU{
+					{Name: oids[0], Type: gosnmp.OctetString, Value: []byte("F670")},
+					{Name: oids[0], Type: gosnmp.OctetString, Value: []byte("SN123")},
+					{Name: oids[0], Type: gosnmp.Integer, Value: 1000},
+					{Name: oids[0], Type: gosnmp.Integer, Value: 4},
+				},
+			}, nil
+		},
+	}
+	redisRepo := &mockRedisRepository{
+		SaveONUInfoListFunc: func(ctx context.Context, key string, seconds int, list []model.ONUInfoPerBoard) error {
+			return errors.New("redis save error")
+		},
+	}
+	uc := NewOnuUsecase(snmpRepo, redisRepo, cfg).(*onuUsecase)
+	oltConfig, _ := uc.getOltConfig(1, 1)
+	// Should not panic even when Redis save fails
+	uc.refreshONUInfoCache(context.Background(), 1, 1, oltConfig, "test_key")
+}
+
 func TestGetLastOnline_InvalidType(t *testing.T) {
 	cfg := &config.Config{
 		OltCfg: config.OltConfig{

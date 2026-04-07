@@ -477,6 +477,13 @@ func TestSnmpRepository_Walk_Connected(t *testing.T) {
 	_ = err
 }
 
+func TestSnmpRepository_Close(t *testing.T) {
+	conn := newTestConn("localhost", "public", 161)
+	repo := NewPonRepository(conn)
+	// Close should not panic
+	repo.Close()
+}
+
 func TestSnmpRepository_BulkWalk_Connected(t *testing.T) {
 	listener, port := startFakeSNMPAgent(t)
 	defer listener.Close()

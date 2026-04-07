@@ -1,7 +1,12 @@
 package trap
 
 import (
+	"net"
 	"testing"
+	"time"
+
+	"github.com/Cepat-Kilat-Teknologi/go-snmp-olt-zte-c320/internal/model"
+	"github.com/gosnmp/gosnmp"
 )
 
 func TestNewListener(t *testing.T) {
@@ -223,4 +228,264 @@ func TestClose_WithoutStart(t *testing.T) {
 	if err != nil {
 		t.Errorf("expected no error on close, got %v", err)
 	}
+}
+
+func TestHandleTrap_ONUStatus(t *testing.T) {
+	var received model.TrapEvent
+	listener := NewListener(ListenerConfig{
+		Port:      1620,
+		Community: "public",
+		OnEvent: func(event model.TrapEvent) {
+			received = event
+		},
+	})
+
+	addr := &net.UDPAddr{IP: net.ParseIP("192.168.1.1"), Port: 162}
+	packet := &gosnmp.SnmpPacket{
+		Variables: []gosnmp.SnmpPDU{
+			{
+				Name:  ".1.3.6.1.4.1.3902.1082.500.10.2.3.8.1.4.285278465.23",
+				Type:  gosnmp.Integer,
+				Value: 2, // LOS
+			},
+		},
+	}
+
+	listener.handleTrap(packet, addr)
+
+	if received.Board != 1 || received.PON != 1 || received.OnuID != 23 {
+		t.Errorf("Expected board=1 pon=1 onu=23, got board=%d pon=%d onu=%d", received.Board, received.PON, received.OnuID)
+	}
+	if received.EventType != "LOS" {
+		t.Errorf("Expected LOS, got %s", received.EventType)
+	}
+	if received.Source != "192.168.1.1" {
+		t.Errorf("Expected source 192.168.1.1, got %s", received.Source)
+	}
+}
+
+func TestHandleTrap_ONUOfflineReason(t *testing.T) {
+	var received model.TrapEvent
+	listener := NewListener(ListenerConfig{
+		Port:      1620,
+		Community: "public",
+		OnEvent: func(event model.TrapEvent) {
+			received = event
+		},
+	})
+
+	addr := &net.UDPAddr{IP: net.ParseIP("10.0.0.1"), Port: 162}
+	packet := &gosnmp.SnmpPacket{
+		Variables: []gosnmp.SnmpPDU{
+			{
+				Name:  ".1.3.6.1.4.1.3902.1082.500.10.2.3.8.1.4.285278465.10",
+				Type:  gosnmp.Integer,
+				Value: 5, // DyingGasp
+			},
+			{
+				Name:  ".1.3.6.1.4.1.3902.1082.500.10.2.3.8.1.7.285278465.10",
+				Type:  gosnmp.Integer,
+				Value: 9, // PowerOff
+			},
+		},
+	}
+
+	listener.handleTrap(packet, addr)
+
+	if received.EventType != "PowerOff" {
+		t.Errorf("Expected PowerOff from offline reason, got %s", received.EventType)
+	}
+	if received.Board != 1 || received.PON != 1 || received.OnuID != 10 {
+		t.Errorf("Expected board=1 pon=1 onu=10, got board=%d pon=%d onu=%d", received.Board, received.PON, received.OnuID)
+	}
+}
+
+func TestHandleTrap_ONUIndex_ByteName(t *testing.T) {
+	var received model.TrapEvent
+	listener := NewListener(ListenerConfig{
+		Port:      1620,
+		Community: "public",
+		OnEvent: func(event model.TrapEvent) {
+			received = event
+		},
+	})
+
+	addr := &net.UDPAddr{IP: net.ParseIP("192.168.1.1"), Port: 162}
+	packet := &gosnmp.SnmpPacket{
+		Variables: []gosnmp.SnmpPDU{
+			{
+				Name:  ".1.3.6.1.4.1.3902.1082.500.10.2.3.3.1.2.285278721.5",
+				Type:  gosnmp.OctetString,
+				Value: []byte("ONU-Customer-1"),
+			},
+		},
+	}
+
+	listener.handleTrap(packet, addr)
+
+	if received.Board != 2 || received.PON != 1 || received.OnuID != 5 {
+		t.Errorf("Expected board=2 pon=1 onu=5, got board=%d pon=%d onu=%d", received.Board, received.PON, received.OnuID)
+	}
+	if received.Description != "ONU-Customer-1" {
+		t.Errorf("Expected description ONU-Customer-1, got %s", received.Description)
+	}
+}
+
+func TestHandleTrap_ONUIndex_StringName(t *testing.T) {
+	var received model.TrapEvent
+	listener := NewListener(ListenerConfig{
+		Port:      1620,
+		Community: "public",
+		OnEvent: func(event model.TrapEvent) {
+			received = event
+		},
+	})
+
+	addr := &net.UDPAddr{IP: net.ParseIP("192.168.1.1"), Port: 162}
+	packet := &gosnmp.SnmpPacket{
+		Variables: []gosnmp.SnmpPDU{
+			{
+				Name:  ".1.3.6.1.4.1.3902.1082.500.10.2.3.3.1.2.285278470.3",
+				Type:  gosnmp.OctetString,
+				Value: "ONU-String-Name",
+			},
+		},
+	}
+
+	listener.handleTrap(packet, addr)
+
+	if received.Board != 1 || received.PON != 6 || received.OnuID != 3 {
+		t.Errorf("Expected board=1 pon=6 onu=3, got board=%d pon=%d onu=%d", received.Board, received.PON, received.OnuID)
+	}
+	if received.Description != "ONU-String-Name" {
+		t.Errorf("Expected description ONU-String-Name, got %s", received.Description)
+	}
+}
+
+func TestHandleTrap_UnknownOIDs(t *testing.T) {
+	var received model.TrapEvent
+	listener := NewListener(ListenerConfig{
+		Port:      1620,
+		Community: "public",
+		OnEvent: func(event model.TrapEvent) {
+			received = event
+		},
+	})
+
+	addr := &net.UDPAddr{IP: net.ParseIP("10.0.0.5"), Port: 162}
+	packet := &gosnmp.SnmpPacket{
+		Variables: []gosnmp.SnmpPDU{
+			{
+				Name:  ".1.3.6.1.2.1.1.3.0",
+				Type:  gosnmp.TimeTicks,
+				Value: 12345,
+			},
+		},
+	}
+
+	listener.handleTrap(packet, addr)
+
+	if received.EventType != "unknown" {
+		t.Errorf("Expected event_type unknown, got %s", received.EventType)
+	}
+	if received.Source != "10.0.0.5" {
+		t.Errorf("Expected source 10.0.0.5, got %s", received.Source)
+	}
+}
+
+func TestHandleTrap_EmptyVariables(t *testing.T) {
+	var received model.TrapEvent
+	listener := NewListener(ListenerConfig{
+		Port:      1620,
+		Community: "public",
+		OnEvent: func(event model.TrapEvent) {
+			received = event
+		},
+	})
+
+	addr := &net.UDPAddr{IP: net.ParseIP("192.168.1.1"), Port: 162}
+	packet := &gosnmp.SnmpPacket{
+		Variables: []gosnmp.SnmpPDU{},
+	}
+
+	listener.handleTrap(packet, addr)
+
+	if received.EventType != "unknown" {
+		t.Errorf("Expected event_type unknown for empty vars, got %s", received.EventType)
+	}
+}
+
+func TestHandleTrap_NilOnEvent(t *testing.T) {
+	listener := NewListener(ListenerConfig{
+		Port:      1620,
+		Community: "public",
+		OnEvent:   nil,
+	})
+
+	addr := &net.UDPAddr{IP: net.ParseIP("192.168.1.1"), Port: 162}
+	packet := &gosnmp.SnmpPacket{
+		Variables: []gosnmp.SnmpPDU{
+			{
+				Name:  ".1.3.6.1.4.1.3902.1082.500.10.2.3.8.1.4.285278465.1",
+				Type:  gosnmp.Integer,
+				Value: 4,
+			},
+		},
+	}
+
+	// Should not panic even with nil OnEvent
+	listener.handleTrap(packet, addr)
+}
+
+func TestHandleTrap_StatusWithDescription(t *testing.T) {
+	// Test the auto-generated description branch (board > 0 but no description set)
+	var received model.TrapEvent
+	listener := NewListener(ListenerConfig{
+		Port:      1620,
+		Community: "public",
+		OnEvent: func(event model.TrapEvent) {
+			received = event
+		},
+	})
+
+	addr := &net.UDPAddr{IP: net.ParseIP("192.168.1.1"), Port: 162}
+	packet := &gosnmp.SnmpPacket{
+		Variables: []gosnmp.SnmpPDU{
+			{
+				Name:  ".1.3.6.1.4.1.3902.1082.500.10.2.3.8.1.4.285278465.1",
+				Type:  gosnmp.Integer,
+				Value: 4, // Online
+			},
+		},
+	}
+
+	listener.handleTrap(packet, addr)
+
+	if received.Description != "ONU 1/1/1 Online detected" {
+		t.Errorf("Expected auto-generated description, got %s", received.Description)
+	}
+}
+
+func TestListener_StartAndClose(t *testing.T) {
+	listener := NewListener(ListenerConfig{
+		Port:      0,
+		Community: "public",
+		OnEvent:   func(event model.TrapEvent) {},
+	})
+
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- listener.Start()
+	}()
+
+	// Wait for listener to be ready
+	select {
+	case <-listener.Listening():
+		// OK - listener is ready
+	case <-time.After(5 * time.Second):
+		t.Fatal("Listener did not start within 5 seconds")
+	}
+
+	// Close should stop it
+	listener.Close()
 }
