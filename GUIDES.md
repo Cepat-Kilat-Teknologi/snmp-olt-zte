@@ -100,6 +100,28 @@ API_KEY=your-secret-api-key
 3. **TLS**: Enable HTTPS in production (`USE_TLS=true`)
 4. **CORS**: Restrict `CORS_ALLOWED_ORIGINS` to your domain only
 5. **API Key**: Set `API_KEY` to protect API endpoints
+6. **Trap Webhook**: Use HTTPS for `TRAP_WEBHOOK_URL` in production
+
+### SNMP Trap Configuration
+
+To enable real-time ONU offline detection:
+
+```bash
+# SNMP Trap Configuration
+TRAP_ENABLED=true              # Enable trap listener
+TRAP_PORT=1620                 # UDP port for trap listener (default: 1620)
+TRAP_COMMUNITY=public          # SNMP community for trap validation
+TRAP_WEBHOOK_URL=https://your-webhook.example.com/olt-alerts
+TRAP_WEBHOOK_RETRIES=3         # Max retry attempts for webhook
+TRAP_WEBHOOK_TIMEOUT=10        # Webhook timeout in seconds
+```
+
+**OLT Configuration Required:**
+```
+snmp-server host <APP_SERVER_IP> version 2c <COMMUNITY> udp-port <TRAP_PORT>
+```
+
+The trap listener detects ONU offline events (LOS, DyingGasp, PowerOff) and sends a webhook with ONU details (name, address, serial number, type).
 
 ## Deployment Methods
 

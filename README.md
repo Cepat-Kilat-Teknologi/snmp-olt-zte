@@ -25,6 +25,7 @@ REST API service for monitoring ZTE C320 OLT devices via SNMP protocol, built wi
 - Singleflight request deduplication to prevent SNMP storms
 - Batched SNMP Get (4 OIDs per request) and BulkWalk for optimal performance
 - Consistent JSON response format with structured error details
+- SNMP Trap listener for real-time ONU offline detection with webhook notification
 - 99% test coverage
 
 ### API Documentation
@@ -243,6 +244,16 @@ TRAP_WEBHOOK_URL=https://your-webhook.example.com/olt-alerts
 
 Events that trigger webhook: `LOS`, `DyingGasp`, `PowerOff`, `Offline`, `AuthFailed`, `LOSi`, `LOFi`.
 
+### Testing Traps Locally
+```shell
+# Terminal 1: Start app with trap enabled
+# Set in .env: TRAP_ENABLED=true, TRAP_PORT=1620, TRAP_WEBHOOK_URL=http://localhost:9999/test
+task dev
+
+# Terminal 2: Run trap tests (sends 6 fake traps + starts webhook receiver)
+task test-trap
+```
+
 ## Architecture
 
 ```
@@ -255,6 +266,7 @@ internal/
   usecase/        Business logic, singleflight, caching strategy
   repository/     SNMP connection pool, Redis operations
   model/          Data models (ONU info, pagination)
+  trap/           SNMP Trap listener, event handler, webhook notifications
   errors/         Typed application errors (validation, SNMP, Redis)
   utils/          OID extractors, power converters, response helpers
 pkg/
@@ -263,6 +275,7 @@ pkg/
   redis/          Redis client factory
   snmp/           SNMP connection setup
 api/              OpenAPI 3.1 specification
+scripts/          Trap testing tools
 ```
 
 ## Performance
@@ -302,6 +315,8 @@ Run `task --list` or `task help` to see all available tasks.
 | `task build-image` | Build Docker image (local) |
 | `task push-image` | Build and push multi-arch image to Docker Hub |
 | `task clean` | Clean up containers, volumes, artifacts |
+| `task test-trap` | Test SNMP Trap listener with fake traps |
+| `task test-trap-webhook` | Start webhook receiver for manual testing |
 
 ## Load Testing
 

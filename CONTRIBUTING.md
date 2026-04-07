@@ -146,8 +146,10 @@ golangci-lint run
 │   ├── middleware/ # Auth, CORS, rate limiting, security, validation
 │   ├── model/      # Data models
 │   ├── repository/ # SNMP connection pool, Redis cache operations
+│   ├── trap/       # SNMP Trap listener, handler, webhook
 │   ├── usecase/    # Business logic, singleflight, background refresh
 │   └── utils/      # OID extractors, power converters, response helpers
+├── scripts/         # Testing scripts (trap testing)
 └── pkg/            # Public libraries
     ├── graceful/   # Graceful shutdown
     ├── pagination/ # Pagination calculation

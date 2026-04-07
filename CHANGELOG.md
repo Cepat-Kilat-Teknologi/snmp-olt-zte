@@ -12,6 +12,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Webhook notifications** with exponential backoff retry on ONU offline events
 - **Trap event enrichment** — webhook payload includes ONU name, alamat, type, serial number
 - **Configurable trap port** via `TRAP_PORT` environment variable (default 1620)
+- **Trap testing script** (`scripts/test-trap.sh`) with fake SNMP trap sender and webhook receiver
+- **Task commands** `test-trap` and `test-trap-webhook` for trap testing
 
 ## [3.0.0] - 2026-04-07
 

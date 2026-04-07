@@ -625,6 +625,58 @@ components:
         - onu_id
         - serial_number
 
+    TrapEvent:
+      type: object
+      description: Webhook payload sent when ONU offline event is detected via SNMP Trap
+      properties:
+        timestamp:
+          type: string
+          format: date-time
+          example: "2026-04-07T10:30:45+07:00"
+        source:
+          type: string
+          description: IP address of the OLT that sent the trap
+          example: "192.168.213.174"
+        board:
+          type: integer
+          example: 1
+        pon:
+          type: integer
+          example: 5
+        onu_id:
+          type: integer
+          example: 23
+        event_type:
+          type: string
+          enum: [LOS, DyingGasp, PowerOff, Offline, AuthFailed, LOSi, LOFi]
+          example: LOS
+        status:
+          type: string
+          enum: [offline, online, logging, syncing, unknown]
+          example: offline
+        name:
+          type: string
+          description: ONU customer name
+          example: "Customer-023"
+        description:
+          type: string
+          description: ONU location/address
+          example: "Perumahan Graha Ria Blok F No.6"
+        onu_type:
+          type: string
+          example: "F670LV7.1"
+        serial_number:
+          type: string
+          example: "ZTEGC12345678"
+      required:
+        - timestamp
+        - source
+        - board
+        - pon
+        - onu_id
+        - event_type
+        - status
+
   responses:
     BadRequest:
       description: Validation error
