@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Deployment examples** — Docker Compose, Helm chart, and Kustomize manifests in `examples/`
+- **Helm chart repository** — published to GitHub Pages via chart-releaser-action
+- **GitHub Release** for v2.1.0 with install instructions
+
+### Changed
+- **Helm chart version** synced to match app version (both 2.1.0)
+- **golangci-lint** upgraded to v2.11.4 for Go 1.26 compatibility
+
+### Fixed
+- **Helm CI** — added Bitnami repo and `skip_existing` for chart-releaser
+- **Docker example** — `SERVER_PORT` hardcoded to 8081 inside container
+
 ## [2.1.0] - 2026-04-07
 
 ### Added
