@@ -556,6 +556,47 @@ nano .env  # Edit configuration
 nohup ./bin/api > logs/app.log 2>&1 &
 ```
 
+## Deployment Examples
+
+Pre-built deployment configurations are available in `examples/`:
+
+### Docker Compose
+```bash
+cd examples/docker
+cp .env.example .env
+# Edit .env with your values
+docker compose up -d
+```
+
+### Helm Chart
+```bash
+# From Helm repository (recommended)
+helm repo add snmp-olt https://cepat-kilat-teknologi.github.io/go-snmp-olt-zte-c320/
+helm install olt-monitor snmp-olt/snmp-olt-zte-c320 \
+  --set snmp.host=192.168.1.1 \
+  --set snmp.community=your-community
+
+# From source
+helm install olt-monitor examples/helm/snmp-olt-zte-c320 \
+  --set snmp.host=192.168.1.1 \
+  --set snmp.community=your-community
+```
+
+### Kustomize
+```bash
+# Edit base config
+vi examples/kustomize/base/configmap.yaml
+vi examples/kustomize/base/secret.yaml
+
+# Deploy production overlay
+kubectl apply -k examples/kustomize/overlays/production/
+
+# Deploy development overlay
+kubectl apply -k examples/kustomize/overlays/development/
+```
+
+See [`examples/README.md`](examples/README.md) for full documentation.
+
 ## Production Checklist
 
 ### Before Deployment
