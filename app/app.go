@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"os"
+	"time"
 
 	"github.com/Cepat-Kilat-Teknologi/go-snmp-olt-zte-c320/config"
 	"github.com/Cepat-Kilat-Teknologi/go-snmp-olt-zte-c320/internal/handler"
@@ -117,6 +118,23 @@ func (a *App) Start(ctx context.Context) error { // Method to start the applicat
 		log.Info().Uint16("port", cfg.TrapCfg.Port).Msg("SNMP Trap listener started")
 
 		defer trapListener.Close()
+
+		// Start RX Power monitor if enabled
+		if cfg.TrapCfg.PowerMonitor && webhookClient != nil {
+			powerMonitor := trap.NewPowerMonitor(trap.PowerMonitorConfig{
+				Interval:      time.Duration(cfg.TrapCfg.PowerMonitorInterval) * time.Second,
+				HighThreshold: cfg.TrapCfg.RxPowerHighThreshold,
+				LowThreshold:  cfg.TrapCfg.RxPowerLowThreshold,
+				Source:        cfg.SnmpCfg.IP,
+			}, onuUsecase, webhookClient)
+			go powerMonitor.Start()
+			defer powerMonitor.Close()
+			log.Info().
+				Float64("high_threshold", cfg.TrapCfg.RxPowerHighThreshold).
+				Float64("low_threshold", cfg.TrapCfg.RxPowerLowThreshold).
+				Int("interval_sec", cfg.TrapCfg.PowerMonitorInterval).
+				Msg("RX Power monitor started")
+		}
 	}
 
 	// Initialize router

@@ -41,12 +41,16 @@ type RedisConfig struct { // Define the RedisConfig struct for Redis settings
 // TrapConfig contains configuration parameters for the SNMP Trap listener
 // including webhook notification settings for ONU events.
 type TrapConfig struct {
-	Enabled        bool
-	Port           uint16
-	Community      string
-	WebhookURL     string
-	WebhookRetries int
-	WebhookTimeout int
+	Enabled           bool
+	Port              uint16
+	Community         string
+	WebhookURL        string
+	WebhookRetries    int
+	WebhookTimeout    int
+	PowerMonitor      bool    // POWER_MONITOR_ENABLED
+	PowerMonitorInterval int  // POWER_MONITOR_INTERVAL (seconds)
+	RxPowerHighThreshold float64 // RX_POWER_HIGH_THRESHOLD (dBm, overload)
+	RxPowerLowThreshold  float64 // RX_POWER_LOW_THRESHOLD (dBm, weak signal)
 }
 
 // OltConfig contains base OID configurations for OLT device management
@@ -115,6 +119,16 @@ func getEnvAsUint16(key string, defaultValue uint16) uint16 {
 	return defaultValue
 }
 
+// getEnvAsFloat64 retrieves an environment variable as float64 or returns a default value
+func getEnvAsFloat64(key string, defaultValue float64) float64 {
+	if value := os.Getenv(key); value != "" {
+		if floatVal, err := strconv.ParseFloat(value, 64); err == nil {
+			return floatVal
+		}
+	}
+	return defaultValue
+}
+
 // LoadConfig loads configuration from environment variables
 // All sensitive data (SNMP, Redis, Server) MUST come from environment variables
 // Board/PON OID mappings are generated dynamically using mathematical formulas (no config file needed)
@@ -154,12 +168,16 @@ func LoadConfig() (*Config, error) {
 
 	// SNMP Trap Configuration from environment
 	cfg.TrapCfg = TrapConfig{
-		Enabled:        getEnv("TRAP_ENABLED", "false") == "true",
-		Port:           getEnvAsUint16("TRAP_PORT", 1620),
-		Community:      getEnv("TRAP_COMMUNITY", cfg.SnmpCfg.Community),
-		WebhookURL:     getEnv("TRAP_WEBHOOK_URL", ""),
-		WebhookRetries: getEnvAsInt("TRAP_WEBHOOK_RETRIES", 3),
-		WebhookTimeout: getEnvAsInt("TRAP_WEBHOOK_TIMEOUT", 10),
+		Enabled:              getEnv("TRAP_ENABLED", "false") == "true",
+		Port:                 getEnvAsUint16("TRAP_PORT", 1620),
+		Community:            getEnv("TRAP_COMMUNITY", cfg.SnmpCfg.Community),
+		WebhookURL:           getEnv("TRAP_WEBHOOK_URL", ""),
+		WebhookRetries:       getEnvAsInt("TRAP_WEBHOOK_RETRIES", 3),
+		WebhookTimeout:       getEnvAsInt("TRAP_WEBHOOK_TIMEOUT", 10),
+		PowerMonitor:         getEnv("POWER_MONITOR_ENABLED", "false") == "true",
+		PowerMonitorInterval: getEnvAsInt("POWER_MONITOR_INTERVAL", 300),
+		RxPowerHighThreshold: getEnvAsFloat64("RX_POWER_HIGH_THRESHOLD", -8.0),
+		RxPowerLowThreshold:  getEnvAsFloat64("RX_POWER_LOW_THRESHOLD", -25.0),
 	}
 
 	// ===================================================================

@@ -98,4 +98,5 @@ type TrapEvent struct {
 	Description  string    `json:"description,omitempty"`
 	OnuType      string    `json:"onu_type,omitempty"`
 	SerialNumber string    `json:"serial_number,omitempty"`
+	RXPower      string    `json:"rx_power,omitempty"`
 }
