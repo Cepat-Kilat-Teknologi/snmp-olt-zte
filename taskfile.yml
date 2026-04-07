@@ -1,7 +1,7 @@
 version: '3'
 
 vars:
-  EXE: s4lfanet/snmp-olt-zte-c320{{exeExt}}
+  EXE: cepatkilatteknologi/snmp-olt-zte-c320{{exeExt}}
 
 tasks:
   default:
@@ -155,19 +155,19 @@ tasks:
 
   # Production deployment tasks
   prod-up:
-    desc: Start production containers (requires .env.prod)
+    desc: Start production containers (requires examples/docker/.env)
     preconditions:
-      - sh: test -f .env.prod
-        msg: ".env.prod not found. Copy .env.example to .env.prod and configure it."
+      - sh: test -f examples/docker/.env
+        msg: "examples/docker/.env not found. Copy examples/docker/.env.example to examples/docker/.env and configure it."
     cmds:
-      - docker compose -f docker-compose.prod.yaml --env-file .env.prod up -d
+      - docker compose -f examples/docker/docker-compose.yaml --env-file examples/docker/.env up -d
       - echo "Production containers started"
-      - docker compose -f docker-compose.prod.yaml ps
+      - docker compose -f examples/docker/docker-compose.yaml ps
 
   prod-down:
     desc: Stop production containers
     cmds:
-      - docker compose -f docker-compose.prod.yaml down
+      - docker compose -f examples/docker/docker-compose.yaml down
       - echo "Production containers stopped"
 
   prod-restart:
@@ -179,24 +179,24 @@ tasks:
   prod-rebuild:
     desc: Rebuild and restart production containers
     cmds:
-      - docker compose -f docker-compose.prod.yaml down
-      - docker compose -f docker-compose.prod.yaml --env-file .env.prod up -d --build
+      - docker compose -f examples/docker/docker-compose.yaml down
+      - docker compose -f examples/docker/docker-compose.yaml --env-file examples/docker/.env up -d --build
       - echo "Production containers rebuilt and started"
 
   prod-logs:
     desc: View production container logs
     cmds:
-      - docker compose -f docker-compose.prod.yaml logs -f app
+      - docker compose -f examples/docker/docker-compose.yaml logs -f app
 
   prod-logs-redis:
     desc: View production Redis logs
     cmds:
-      - docker compose -f docker-compose.prod.yaml logs -f redis
+      - docker compose -f examples/docker/docker-compose.yaml logs -f redis
 
   prod-ps:
     desc: Show production containers status
     cmds:
-      - docker compose -f docker-compose.prod.yaml ps
+      - docker compose -f examples/docker/docker-compose.yaml ps
 
   # Development docker commands (docker-compose.yaml)
   up:
@@ -234,7 +234,7 @@ tasks:
     desc: Clean up all containers, volumes, and build artifacts
     cmds:
       - docker compose down -v
-      - docker compose -f docker-compose.prod.yaml down -v
+      - docker compose -f examples/docker/docker-compose.yaml down -v
       - docker compose -f docker-compose.local.yaml down -v
       - rm -f {{.EXE}}
       - rm -f coverage.out coverage.html

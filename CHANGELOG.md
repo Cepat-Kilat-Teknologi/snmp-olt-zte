@@ -15,10 +15,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 - **Helm chart version** synced to match app version (both 2.1.0)
 - **golangci-lint** upgraded to v2.11.4 for Go 1.26 compatibility
+- **Production deployment** consolidated to `examples/docker/` — removed `docker-compose.prod.yaml` from root
+- **Taskfile prod tasks** now use `examples/docker/docker-compose.yaml`
+- **Docker image name** standardized to `cepatkilatteknologi/snmp-olt-zte-c320` across all files
 
 ### Fixed
 - **Helm CI** — added Bitnami repo and `skip_existing` for chart-releaser
+- **Helm Redis host** — `_helpers.tpl` generated wrong service name (`fullname-redis-master` → `release-redis-master`)
+- **Kustomize secret** — `API_KEY` had placeholder value that enabled auth unintentionally, now defaults to empty
 - **Docker example** — `SERVER_PORT` hardcoded to 8081 inside container
+
+### Removed
+- **`docker-compose.prod.yaml`** — replaced by `examples/docker/docker-compose.yaml`
 
 ## [2.1.0] - 2026-04-07
 

@@ -55,7 +55,7 @@ Redis host - uses subchart service name when enabled, otherwise uses user-provid
 */}}
 {{- define "snmp-olt-zte-c320.redisHost" -}}
 {{- if (index .Values "redis" "enabled") }}
-{{- printf "%s-redis-master" (include "snmp-olt-zte-c320.fullname" .) }}
+{{- printf "%s-redis-master" .Release.Name }}
 {{- else }}
 {{- .Values.redis.host }}
 {{- end }}

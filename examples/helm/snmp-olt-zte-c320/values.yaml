@@ -3,7 +3,7 @@ replicaCount: 1
 
 image:
   # -- Docker image repository
-  repository: s4lfanet/snmp-olt-zte-c320
+  repository: cepatkilatteknologi/snmp-olt-zte-c320
   # -- Image pull policy
   pullPolicy: IfNotPresent
   # -- Image tag (defaults to appVersion from Chart.yaml)
