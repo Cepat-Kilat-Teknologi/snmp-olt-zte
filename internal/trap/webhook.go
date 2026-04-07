@@ -60,7 +60,7 @@ func (w *WebhookClient) Send(event model.TrapEvent) {
 				Msg("Webhook request failed")
 			continue
 		}
-		resp.Body.Close()
+		_ = resp.Body.Close()
 
 		if resp.StatusCode >= 200 && resp.StatusCode < 300 {
 			log.Info().

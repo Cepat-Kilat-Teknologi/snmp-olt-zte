@@ -122,7 +122,7 @@ func (a *App) Start(ctx context.Context) error { // Method to start the applicat
 		<-trapListener.Listening()
 		log.Info().Uint16("port", cfg.TrapCfg.Port).Msg("SNMP Trap listener started")
 
-		defer trapListener.Close()
+		defer func() { _ = trapListener.Close() }()
 
 		// Start RX Power monitor if enabled
 		if cfg.TrapCfg.PowerMonitor && webhookClient != nil {
@@ -135,7 +135,7 @@ func (a *App) Start(ctx context.Context) error { // Method to start the applicat
 				Source:        cfg.SnmpCfg.IP,
 			}, onuUsecase, webhookClient)
 			go powerMonitor.Start()
-			defer powerMonitor.Close()
+			defer func() { _ = powerMonitor.Close() }()
 			log.Info().
 				Float64("high_threshold", cfg.TrapCfg.RxPowerHighThreshold).
 				Float64("low_threshold", cfg.TrapCfg.RxPowerLowThreshold).

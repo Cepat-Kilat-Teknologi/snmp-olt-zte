@@ -99,7 +99,7 @@ func TestApp_Start_RedisPingFailure(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to start UDP listener: %v", err)
 	}
-	defer udpListener.Close()
+	defer func() { _ = udpListener.Close() }()
 	snmpAddr := udpListener.LocalAddr().(*net.UDPAddr)
 
 	os.Setenv("SNMP_HOST", "127.0.0.1")
@@ -142,7 +142,7 @@ func TestApp_Start_WithTrapEnabled(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to start UDP listener: %v", err)
 	}
-	defer udpListener.Close()
+	defer func() { _ = udpListener.Close() }()
 	snmpAddr := udpListener.LocalAddr().(*net.UDPAddr)
 
 	os.Setenv("SNMP_HOST", "127.0.0.1")
@@ -191,7 +191,7 @@ func TestApp_Start_WithTrapAndPowerMonitor(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to start UDP listener: %v", err)
 	}
-	defer udpListener.Close()
+	defer func() { _ = udpListener.Close() }()
 	snmpAddr := udpListener.LocalAddr().(*net.UDPAddr)
 
 	os.Setenv("SNMP_HOST", "127.0.0.1")
@@ -237,7 +237,7 @@ func TestApp_Start_WithTrapNoWebhook(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to start UDP listener: %v", err)
 	}
-	defer udpListener.Close()
+	defer func() { _ = udpListener.Close() }()
 	snmpAddr := udpListener.LocalAddr().(*net.UDPAddr)
 
 	os.Setenv("SNMP_HOST", "127.0.0.1")
@@ -286,7 +286,7 @@ func TestApp_Start_RedisCloseError(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to start UDP listener: %v", err)
 	}
-	defer udpListener.Close()
+	defer func() { _ = udpListener.Close() }()
 	snmpAddr := udpListener.LocalAddr().(*net.UDPAddr)
 
 	os.Setenv("SNMP_HOST", "127.0.0.1")
@@ -330,7 +330,7 @@ func TestApp_Start_FullLifecycle(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to start UDP listener: %v", err)
 	}
-	defer udpListener.Close()
+	defer func() { _ = udpListener.Close() }()
 	snmpAddr := udpListener.LocalAddr().(*net.UDPAddr)
 
 	os.Setenv("SNMP_HOST", "127.0.0.1")

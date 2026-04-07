@@ -44,7 +44,7 @@ func TestSetupSnmpConnection_FromEnvironment(t *testing.T) {
 	}
 
 	if conn != nil {
-		defer conn.Conn.Close()
+		defer func() { _ = conn.Conn.Close() }()
 
 		if conn.Target != "192.168.1.1" {
 			t.Errorf("Expected target 192.168.1.1, got %s", conn.Target)
@@ -98,7 +98,7 @@ func TestSetupSnmpConnection_FromConfig(t *testing.T) {
 
 	// If somehow succeeded, verify configuration
 	if conn != nil {
-		defer conn.Conn.Close()
+		defer func() { _ = conn.Conn.Close() }()
 
 		if conn.Target != "10.0.0.1" {
 			t.Errorf("Expected target 10.0.0.1, got %s", conn.Target)
@@ -221,7 +221,7 @@ func TestSetupSnmpConnection_Success(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to start UDP listener: %v", err)
 	}
-	defer listener.Close()
+	defer func() { _ = listener.Close() }()
 
 	addr := listener.LocalAddr().(*net.UDPAddr)
 
@@ -244,7 +244,7 @@ func TestSetupSnmpConnection_Success(t *testing.T) {
 	if conn == nil {
 		t.Fatal("Expected non-nil connection")
 	}
-	defer conn.Conn.Close()
+	defer func() { _ = conn.Conn.Close() }()
 
 	if conn.Target != "127.0.0.1" {
 		t.Errorf("Expected target 127.0.0.1, got %s", conn.Target)
@@ -283,7 +283,7 @@ func TestSetupSnmpConnection_ConnectFailure(t *testing.T) {
 
 	if err == nil {
 		if conn != nil {
-			conn.Conn.Close()
+			_ = conn.Conn.Close()
 		}
 		t.Error("Expected error for invalid hostname connect failure")
 	}
@@ -298,7 +298,7 @@ func TestSetupSnmpConnection_Development(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to start UDP listener: %v", err)
 	}
-	defer listener.Close()
+	defer func() { _ = listener.Close() }()
 
 	addr := listener.LocalAddr().(*net.UDPAddr)
 	port := strconv.Itoa(addr.Port)
@@ -324,7 +324,7 @@ func TestSetupSnmpConnection_Development(t *testing.T) {
 	if conn == nil {
 		t.Fatal("Expected non-nil connection")
 	}
-	defer conn.Conn.Close()
+	defer func() { _ = conn.Conn.Close() }()
 
 	if conn.Target != "127.0.0.1" {
 		t.Errorf("Expected target 127.0.0.1, got %s", conn.Target)

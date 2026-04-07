@@ -418,7 +418,7 @@ func TestPowerMonitor_IntervalAndCron(t *testing.T) {
 
 	go pm.Start()
 	time.Sleep(300 * time.Millisecond)
-	pm.Close()
+	_ = pm.Close()
 }
 
 func TestPowerMonitor_IntervalOnly_BackwardCompat(t *testing.T) {
@@ -440,7 +440,7 @@ func TestPowerMonitor_IntervalOnly_BackwardCompat(t *testing.T) {
 
 	go pm.Start()
 	time.Sleep(300 * time.Millisecond)
-	pm.Close()
+	_ = pm.Close()
 }
 
 func TestPowerMonitor_BothDisabled(t *testing.T) {
@@ -467,7 +467,7 @@ func TestPowerMonitor_BothDisabled(t *testing.T) {
 		// OK
 	case <-time.After(2 * time.Second):
 		t.Error("Expected Start to return immediately when both disabled")
-		pm.Close()
+		_ = pm.Close()
 	}
 }
 

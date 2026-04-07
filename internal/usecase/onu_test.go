@@ -370,7 +370,7 @@ func TestGetOltConfig_InvalidBoardPon(t *testing.T) {
 
 func TestOnuUsecase_InterfaceCompliance(t *testing.T) {
 	// Verify that onuUsecase implements OnuUseCaseInterface
-	var usecase OnuUseCaseInterface = NewOnuUsecase(
+	usecase := NewOnuUsecase(
 		&mockSnmpRepository{},
 		&mockRedisRepository{},
 		&config.Config{},

@@ -135,9 +135,10 @@ func TestRateLimiter(t *testing.T) {
 			rr := httptest.NewRecorder()
 			handler.ServeHTTP(rr, req)
 
-			if rr.Code == http.StatusOK {
+			switch rr.Code {
+			case http.StatusOK:
 				successCount++
-			} else if rr.Code == http.StatusTooManyRequests {
+			case http.StatusTooManyRequests:
 				blockedCount++
 				// Check response message
 				if !strings.Contains(rr.Body.String(), "Rate limit exceeded") {

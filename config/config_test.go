@@ -39,11 +39,11 @@ func TestGetEnv(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			if tt.envValue != "" {
-				os.Setenv(tt.key, tt.envValue)
+				t.Setenv(tt.key, tt.envValue)
 			} else {
-				os.Unsetenv(tt.key)
+				_ = os.Unsetenv(tt.key)
 			}
-			defer os.Unsetenv(tt.key)
+			defer func() { _ = os.Unsetenv(tt.key) }()
 
 			result := getEnv(tt.key, tt.defaultValue)
 
@@ -102,11 +102,11 @@ func TestGetEnvAsInt(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			if tt.envValue != "" {
-				os.Setenv(tt.key, tt.envValue)
+				t.Setenv(tt.key, tt.envValue)
 			} else {
-				os.Unsetenv(tt.key)
+				_ = os.Unsetenv(tt.key)
 			}
-			defer os.Unsetenv(tt.key)
+			defer func() { _ = os.Unsetenv(tt.key) }()
 
 			result := getEnvAsInt(tt.key, tt.defaultValue)
 
@@ -179,11 +179,11 @@ func TestGetEnvAsUint16(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			if tt.envValue != "" {
-				os.Setenv(tt.key, tt.envValue)
+				t.Setenv(tt.key, tt.envValue)
 			} else {
-				os.Unsetenv(tt.key)
+				_ = os.Unsetenv(tt.key)
 			}
-			defer os.Unsetenv(tt.key)
+			defer func() { _ = os.Unsetenv(tt.key) }()
 
 			result := getEnvAsUint16(tt.key, tt.defaultValue)
 

@@ -519,5 +519,5 @@ func TestListener_StartAndClose(t *testing.T) {
 	}
 
 	// Close should stop it
-	listener.Close()
+	_ = listener.Close()
 }

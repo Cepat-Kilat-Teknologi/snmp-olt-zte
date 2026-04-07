@@ -246,7 +246,7 @@ func TestSnmpRepository_BulkWalk_Success(t *testing.T) {
 func TestSnmpRepository_InterfaceCompliance(t *testing.T) {
 	// Verify that snmpRepository implements SnmpRepositoryInterface
 	conn := newTestConn("invalid-host-that-does-not-exist", "public", 161)
-	var repo SnmpRepositoryInterface = NewPonRepository(conn)
+	repo := NewPonRepository(conn)
 
 	if repo == nil {
 		t.Error("Repository should not be nil")
