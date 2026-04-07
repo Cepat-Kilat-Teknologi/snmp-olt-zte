@@ -51,6 +51,6 @@ kubectl apply -k examples/kustomize/overlays/development/
 
 ## Image
 
-All examples use `cepatkilatteknologi/snmp-olt-zte-c320:2.1.0` by default.
+All examples use `cepatkilatteknologi/snmp-olt-zte-c320:2.1.1` by default.
 
 Available tags: `latest`, `2.1.0`, `2.1`, `2`

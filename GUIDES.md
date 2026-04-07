@@ -184,7 +184,7 @@ version: '3.8'
 
 services:
   app:
-    image: cepatkilatteknologi/snmp-olt-zte-c320:2.1.0
+    image: cepatkilatteknologi/snmp-olt-zte-c320:2.1.1
     environment:
       - REDIS_HOST=external.redis.host  # External Redis
       - REDIS_PORT=6379
@@ -227,7 +227,7 @@ docker run -d \
   -e REDIS_MIN_IDLE_CONNECTIONS=10 \
   -e REDIS_POOL_SIZE=100 \
   -e REDIS_POOL_TIMEOUT=30 \
-  cepatkilatteknologi/snmp-olt-zte-c320:2.1.0
+  cepatkilatteknologi/snmp-olt-zte-c320:2.1.1
 
 # Verify
 docker logs -f go-snmp-olt
@@ -247,7 +247,7 @@ docker run -d \
   -e REDIS_HOST=external.redis.host \
   -e REDIS_PORT=6379 \
   -e REDIS_PASSWORD=YOUR_REDIS_PASSWORD \
-  cepatkilatteknologi/snmp-olt-zte-c320:2.1.0
+  cepatkilatteknologi/snmp-olt-zte-c320:2.1.1
 ```
 
 #### With HTTPS/TLS
@@ -267,7 +267,7 @@ docker run -d \
   -e SNMP_COMMUNITY=your_snmp_community \
   -e REDIS_HOST=redis-olt \
   -e REDIS_PORT=6379 \
-  cepatkilatteknologi/snmp-olt-zte-c320:2.1.0
+  cepatkilatteknologi/snmp-olt-zte-c320:2.1.1
 ```
 
 ### Kubernetes
@@ -371,7 +371,7 @@ spec:
     spec:
       containers:
       - name: go-snmp-olt
-        image: cepatkilatteknologi/snmp-olt-zte-c320:2.1.0
+        image: cepatkilatteknologi/snmp-olt-zte-c320:2.1.1
         ports:
         - containerPort: 8081
         env:
