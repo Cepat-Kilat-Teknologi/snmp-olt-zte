@@ -1,235 +1,122 @@
 # TODO — Agent Integration Readiness
 
-Standardization tasks agar go-snmp-olt-zte-c320 siap diintegrasikan dengan billing-agent.
-Reference format: freeradius-api v1.2.0 + wiki `[[isp-development-requirements]]`.
+> **STATUS: COMPLETED in v3.0.0 (released 2026-04-12)** — see CHANGELOG.md
+>
+> All standardization tasks listed below have been delivered. This file is
+> kept as a historical record of the work that landed in v3.0.0. New tasks
+> should go to GitHub Issues, not back into this file.
 
-**Current readiness: 9.2/10** — Most things already in place, minor tweaks needed.
+## Result
 
-## Priority 1: Response Format — Align with Standard
+`go-snmp-olt-zte-c320 v3.0.0` is now the second compliant adapter (after
+`freeradius-api v1.2.0`) for the [ISP adapter standard](https://github.com/Cepat-Kilat-Teknologi/) — see wiki:
+- `[[go-snmp-olt-zte-c320]]` — entity page
+- `[[isp-adapter-standard]]` — JSON contract
+- `[[isp-logging-standard]]` — zap schema
+- `[[isp-development-requirements]]` — full dev requirements
 
-### 1.1 Rename `error.type` → `error_code` (top-level)
-- **File:** `internal/utils/response.go` (lines 22-32)
-- **Current:**
-  ```json
-  {
-    "code": 400,
-    "status": "Bad Request",
-    "error": {
-      "type": "VALIDATION_ERROR",
-      "message": "...",
-      "details": {}
-    }
-  }
-  ```
-- **Target:**
-  ```json
-  {
-    "code": 400,
-    "status": "Bad Request",
-    "error_code": "VALIDATION_ERROR",
-    "data": "message or details array"
-  }
-  ```
-- **Tasks:**
-  - [ ] Update `ErrorResponse` struct: flatten `error.type` → top-level `error_code`
-  - [ ] Rename `error.message` → `data` (string atau array)
-  - [ ] Update `error.details` → merge into `data`
-  - [ ] Update all handlers yang menggunakan error response
-  - [ ] Update OpenAPI spec (`api/openapi.yaml`)
-  - [ ] Update unit tests
+## Delivered (all priorities below shipped in v3.0.0)
 
-### 1.2 Success response: "OK" → "success"
-- **Current:** `{"code": 200, "status": "OK", "data": {...}}`
-- **Target:** `{"code": 200, "status": "success", "data": {...}}`
-- **Tasks:**
-  - [ ] Update `WebResponse` struct usage in `internal/utils/response.go`
-  - [ ] Update all handlers
-  - [ ] Update OpenAPI spec
-  - [ ] Update tests
+### Priority 1 — Response Format ✅
+- [x] `error_code` flattened from `error.type` to top level
+- [x] `error.message` renamed to `data` (string or `{message,details}` map)
+- [x] Success status `"OK"` → `"success"`
+- [x] All handlers updated, OpenAPI spec regenerated, unit tests updated
 
-## Priority 2: Logging Standardization
+### Priority 2 — Logging ✅
+- [x] Migrated `github.com/rs/zerolog` → `go.uber.org/zap` (146 call sites across 13 files)
+- [x] Centralized `pkg/logger/logger.go` with `Init`, `WithRequestID`, `WithModule`, `SetForTest`
+- [x] Required base fields (`service`, `version`) auto-attached
+- [x] `WithRequestID(ctx)` helper for per-request loggers
+- [x] ISO8601 UTC timestamps with ms precision
+- [x] snake_case keys, `_ms` suffix for durations
+- [x] Standard field names: `request_id`, `operation`, `error_code`, `device_id`, etc.
+- [x] Skip logging `/health`, `/healthz`, `/ready`, `/readyz`, `/metrics` endpoints
+- [x] Audit log middleware for POST/PUT/PATCH/DELETE via `"audit"` named sub-logger
 
-Reference: `[[isp-logging-standard]]` (wiki)
-**Note:** Currently uses `rs/zerolog`. Standard library is `go.uber.org/zap`.
+### Priority 3 — Request ID ✅
+- [x] `request_id` field added to error response body (was header-only)
+- [x] `internal/reqctx` leaf package created to break import cycle
+- [x] Context propagated through usecase → repository layer
+- [x] X-Request-ID echoed in response header AND error body
 
-### 2.1 Migrate from zerolog to zap (consistency across services)
-- **Files:** `app/routes.go`, `internal/middleware/logger.go`, all files using `log.Info/Warn/Error`
-- **Rationale:** Standard across all ISP adapters is zap (freeradius-api, genieacs-relay)
-- **Tasks:**
-  - [ ] Replace `github.com/rs/zerolog` with `go.uber.org/zap`
-  - [ ] Create `pkg/logger/logger.go` centralized init (pattern dari freeradius-api)
-  - [ ] Convert all log calls: `log.Info().Msg(...)` → `logger.Info(...)`
-  - [ ] Convert structured fields: `log.Info().Str("key", val)` → `logger.Info("msg", zap.String("key", val))`
-  - [ ] Update `go.mod` dependencies
+### Priority 4 — Health Endpoints ✅
+- [x] `/health` kept as backwards-compat alias
+- [x] `/healthz` added (k8s liveness probe)
+- [x] `/readyz` added with cached dependency probes (Redis 5s TTL, SNMP 30s TTL)
+- [x] Returns 503 + `{"status":"not_ready", "dependencies":{...}}` when down
+- [x] `/version` endpoint added with build metadata (uses ldflags)
 
-### 2.2 Standardize log schema
-- **Tasks:**
-  - [ ] Add required base fields: `service`, `version`, `module`
-  - [ ] Add `WithRequestID(ctx)` helper function
-  - [ ] Ensure ISO8601 UTC timestamps dengan ms precision
-  - [ ] Audit key names: ensure snake_case (not camelCase)
-  - [ ] Add `_ms` suffix untuk duration fields (e.g., `elapsed_time` → `duration_ms`)
-  - [ ] Use standard field names: `request_id`, `operation`, `error_code`, `device_id`
-  - [ ] Skip logging `/health`, `/healthz`, `/readyz`, `/metrics` endpoints
+### Priority 5 — Prometheus Metrics ✅
+- [x] `pkg/metrics/prometheus.go` created
+- [x] HTTP middleware records request counter + duration histogram + in-flight gauge
+- [x] SNMP operation metrics: `snmp_operations_total`, `snmp_operation_duration_seconds`
+- [x] Cache metrics: `snmp_cache_hits_total`, `snmp_cache_misses_total`
+- [x] `/metrics` endpoint mounted (unauthenticated)
+- [x] Path normalization to avoid label cardinality explosion
 
-### 2.3 Audit log for write operations
-- **Current:** Logger middleware logs all requests; no separate audit log
-- **Tasks:**
-  - [ ] Add audit middleware for POST/DELETE operations
-  - [ ] Log: method, path, status, request_id, api_key (masked), duration_ms
+### Priority 6 — Framework Migration (chi → Fiber)
+- [x] **Decision: SKIP** — chi works fine, JSON contract is what matters
+- Documented in CLAUDE.md §Framework notes for future contributors
 
-## Priority 3: Request ID — Already Good, Minor Tweaks
+### Priority 7 — CI/CD Verification ✅
+- [x] golangci-lint v2 — 0 issues
+- [x] govulncheck — 0 vulnerabilities
+- [x] Multi-arch Docker build (amd64, arm64, arm/v7) verified on Docker Hub
+- [x] Dockerfile ldflags fix: `main.Version` (uppercase, never matched) → `main.version` + `main.commit` + `main.buildTime`
+- [x] CI passes APP_COMMIT and APP_BUILD_TIME to docker build-push-action
 
-### 3.1 Include request_id in error responses
-- **File:** `internal/utils/response.go`
-- **Current:** Request ID in response HEADER only (`X-Request-ID`)
-- **Target:** Include `request_id` field in error JSON response body
-- **Tasks:**
-  - [ ] Add `request_id` field to `ErrorResponse` struct
-  - [ ] Extract from context in error response helper
-  - [ ] Update tests
+### Priority 8 — Documentation ✅
+- [x] CLAUDE.md created (project overview, architecture, import boundaries, patterns)
+- [x] OpenAPI spec updated to v3.0.0 with new ErrorResponse schema + /healthz, /readyz, /version, /metrics paths
+- [x] CHANGELOG.md [3.0.0] section with migration table
+- [x] README.md updated (zerolog → zap in tech stack, v3.0.0 in image tag)
+- [x] test.http updated with new endpoints + error envelope examples + X-Request-ID tracing example
+- [x] k6-load-test.js updated for v3.0.0 (per-scenario thresholds, contract_check scenario, validateErrorEnvelope helper)
+- [x] Wiki entity page `go-snmp-olt-zte-c320` created
+- [x] Wiki `isp-adapter-standard` and `isp-logging-standard` compliance tables updated
 
-### 3.2 Forward X-Request-ID to downstream
-- **Current:** Not applicable — SNMP library doesn't support headers
-- **Tasks:**
-  - [ ] Log request_id di SNMP operation logs untuk tracing
-  - [ ] Pass context through usecase → repository → SNMP layer
+### Priority 9 — Dependencies & Security ✅
+- [x] `go mod tidy` clean
+- [x] `govulncheck ./...` — 0 vulnerabilities
 
-## Priority 4: Health Endpoints
-
-### 4.1 Rename/alias `/health` → `/healthz` + add `/readyz`
-- **Current:** `/health` returns `{"status":"ok"}` (no dependency check)
-- **File:** `app/routes.go` (line 89-93)
-- **Tasks:**
-  - [ ] Keep `/health` for backward compat (alias)
-  - [ ] Add `/healthz` with same minimal response: `{"status":"healthy"}`
-  - [ ] Add `/readyz` endpoint with dependency checks:
-    - Redis connectivity (ping)
-    - SNMP OLT reachability (optional, bisa cached)
-  - [ ] Response: `{"status":"ready","redis":"connected","snmp":"reachable"}` or 503
-
-### 4.2 Enhanced `/health` with full info
-- **Current:** Minimal response
-- **Target:** Include version, uptime, etc. (like freeradius-api)
-- **Tasks:**
-  - [ ] Response format:
-    ```json
-    {
-      "status": "healthy",
-      "version": "2.1.1",
-      "api_version": "v1",
-      "git_commit": "abc1234",
-      "build_time": "...",
-      "uptime": "48h30m"
-    }
-    ```
-  - [ ] Use ldflags untuk inject version info
-
-## Priority 5: Prometheus Metrics (Optional but Recommended)
-
-### 5.1 Add `/metrics` endpoint
-- **Current:** No metrics library
-- **Tasks:**
-  - [ ] Add `github.com/prometheus/client_golang` dependency
-  - [ ] Create `pkg/metrics/prometheus.go` (pattern dari freeradius-api)
-  - [ ] Middleware: record HTTP request metrics
-  - [ ] Record SNMP operation metrics:
-    ```
-    snmp_operations_total{operation, status}
-    snmp_operation_duration_seconds{operation}
-    snmp_cache_hits_total
-    snmp_cache_misses_total
-    snmp_connection_pool_active
-    ```
-  - [ ] Expose at `GET /metrics` (unauthenticated)
-  - [ ] Config: `METRICS_ENABLED=true`, `METRICS_PATH=/metrics`
-
-## Priority 6: Framework Migration (OPTIONAL — nice to have)
-
-### 6.1 Consider migrating chi → Fiber v2 (standardization)
-- **Current:** chi v5.2.5
-- **Rationale:** freeradius-api + billing-agent use Fiber; consistency helps
-- **Impact:** Significant refactor, may not be worth it
-- **Decision:** Leave as chi unless otherwise prioritized — Go interface compatibility makes this low priority
-- **Tasks:**
-  - [ ] Evaluate cost vs benefit (probably skip)
-
-## Priority 7: CI/CD Verification
-
-### 7.1 Verify GitHub Actions alignment with standard
-- **Current:** Has `.github/workflows/ci.yml` (lint + test + build + helm)
-- **Tasks:**
-  - [ ] Verify golangci-lint v2 config format
-  - [ ] Verify govulncheck runs on Go 1.26.2+
-  - [ ] Verify multi-arch Docker build (amd64, arm64, arm/v7) ✅ already present
-  - [ ] Verify Docker Hub push on tag
-  - [ ] Verify secrets in repo environment `ci`
-  - [ ] Ensure release workflow triggers on semver tags
-
-## Priority 8: Documentation
-
-### 8.1 Add CLAUDE.md
-- **Current:** No CLAUDE.md
-- **Tasks:**
-  - [ ] Create `CLAUDE.md` with project overview, architecture, conventions
-  - [ ] Reference `[[isp-development-requirements]]` wiki
-
-### 8.2 Update README.md
-- **Tasks:**
-  - [ ] Add "Agent Integration" section explaining compliance with `[[isp-adapter-standard]]`
-  - [ ] Document new response format
-  - [ ] Document new health endpoints
-
-### 8.3 Regenerate OpenAPI spec
-- **Tasks:**
-  - [ ] Update `api/openapi.yaml` with new error response format
-  - [ ] Verify all endpoints reflect new schema
-
-### 8.4 Update CHANGELOG.md
-- [ ] Add section for standardization changes
-
-## Priority 9: Dependencies & Security
-
-### 9.1 Dependency audit
-- **Tasks:**
-  - [ ] `go mod tidy`
-  - [ ] `govulncheck ./...`
-  - [ ] `go get -u` untuk latest patch versions
-
-## Acceptance Criteria
-
-All items must pass before integration with billing-agent:
+## Acceptance Criteria — all met
 
 ```
-[ ] Response: status/data/code format (success="success", error_code top-level)
-[ ] Logging: zap JSON, standard fields, request_id propagated
-[ ] Health: /healthz (minimal) + /readyz (with deps check)
-[ ] Request ID in error response body
-[ ] Audit log for write operations
-[ ] Tests: >= 95% coverage maintained (currently 98.6%)
-[ ] golangci-lint v2: 0 issues
-[ ] govulncheck: 0 vulnerabilities
-[ ] OpenAPI spec regenerated
-[ ] CLAUDE.md created
-[ ] CI/CD passes end-to-end
+[x] Response: status/data/code format (success="success", error_code top-level)
+[x] Logging: zap JSON, standard fields, request_id propagated
+[x] Health: /healthz (minimal) + /readyz (with deps check)
+[x] Request ID in error response body
+[x] Audit log for write operations
+[x] Tests: 97.9% coverage (vs 98.6% baseline; gap is logger.Fatal os.Exit + Init cfg.Build error path)
+[x] golangci-lint v2: 0 issues
+[x] govulncheck: 0 vulnerabilities
+[x] OpenAPI spec regenerated
+[x] CLAUDE.md created
+[x] CI/CD passes end-to-end (PR #38 merged, v3.0.0 tag CI passed)
 ```
 
-## Reference
+## k6 Load Test Baseline (2026-04-12)
 
-- freeradius-api v1.2.0 (reference implementation)
-- Wiki: `[[isp-development-requirements]]` — full dev requirements
-- Wiki: `[[isp-adapter-standard]]` — JSON response + HTTP contract
-- Wiki: `[[isp-logging-standard]]` — logging schema
-- Billing agent design spec: `~/Projects/billing-agent/docs/specs/2026-04-12-billing-agent-design.md`
+```
+3542 requests over 3m30s
+16.79 req/s sustained, 8 VUs peak
+Cache hit rate: 99.5%
+p95 cached:     4ms
+p99 cached:     7ms
+SNMP cold path: ~7s avg, 12s p95 (OLT bottleneck, not adapter)
+Validation:     1ms p95
+Health probes:  1ms p95 (sub-millisecond)
+Real failure rate: 0
+All 12 thresholds passed.
+```
 
-## Notes
+## Lessons Learned
 
-**go-snmp-olt is the most mature adapter after freeradius-api.** Highlights:
-- 98.6% test coverage
-- Multi-stage Docker (distroless)
-- OpenAPI 3.1 spec
-- Connection pooling + singleflight deduplication
-- Redis caching with pre-warming
-- Multi-arch Docker build in CI
-- Helm chart publishing
-- Most changes are naming alignment, not structural
+See `[[go-snmp-olt-zte-c320]]` wiki page §Lessons Learned for the full list.
+Highlights:
+- ldflags injection silently broken for entire 2.x series due to capitalisation typo
+- Naive context-key placement caused import cycle; fixed by extracting to leaf package
+- k6 default `http_req_failed` threshold false-alarms on intentional 4xx
+- zap chosen over zerolog despite zerolog being faster (consistency wins)
+- Cache pre-warming pays off massively (99.5% hit rate from cold start)
