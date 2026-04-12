@@ -7,6 +7,52 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.0.0] - 2026-04-12
+
+**Breaking changes** — this release updates the JSON response format to match the ISP adapter standard. Clients parsing `error.type` or `status:"OK"` must be updated. See migration notes at the bottom of this entry.
+
+### Added — Agent Integration Readiness
+- **Response format**: `error_code` field at top level (was nested `error.type`), success `status` changed from `"OK"` to `"success"` to align with ISP adapter standard (`isp-adapter-standard` wiki)
+- **request_id** field in error response body (was header-only)
+- **Zap logger** via new `pkg/logger` package with `service`/`version`/`module` base fields and `WithRequestID(ctx)` helper
+- **`internal/reqctx`** package to share request-ID context key without import cycles
+- **`internal/health`** package providing cached dependency probes (`Checker.Register(name, ttl, probe)`)
+- **`internal/middleware/audit.go`** — audit log (`audit` sub-logger) for POST/PUT/PATCH/DELETE with masked API key, `duration_ms`, `body_size`, `X-Forwarded-For`-aware client IP
+- **`/healthz`** endpoint (alias of `/health`, matches k8s convention)
+- **`/readyz`** endpoint with Redis ping (5s TTL cache) + SNMP OLT reachability ping (30s TTL cache); returns 503 + `{"status":"not_ready", "dependencies":{...}}` when any probe fails
+- **`SnmpRepositoryInterface.Ping()`** — sysUpTime (1.3.6.1.2.1.1.3.0) reachability check used by readyz
+- **`pkg/metrics`** — Prometheus collectors: `http_requests_total`, `http_request_duration_seconds`, `http_requests_in_flight`, `snmp_operations_total`, `snmp_operation_duration_seconds`, `snmp_cache_hits_total`, `snmp_cache_misses_total`
+- **`/metrics`** endpoint (unauthenticated, scrapers on-network) with path normalization to avoid cardinality explosion
+- **`pkg/logger.SetForTest`** helper for test log capture
+
+### Changed
+- **Removed** `github.com/rs/zerolog` dependency entirely (migrated 146 call sites across 13 files)
+- **`middleware.Logger()`** now takes no arguments; uses global zap logger from `pkg/logger`; skips `/health`, `/healthz`, `/ready`, `/readyz`, `/metrics`
+- **`utils.HandleError` / `ErrorBadRequest` / `ErrorNotFound` / `ErrorInternalServerError`** signature: now takes `(w http.ResponseWriter, r *http.Request, err error)` so request_id can be propagated from context into the error body
+- **`utils.ErrorResponse`** struct: flat `error_code` (was nested `error.type`), `data` field (was nested `error.message`), new `request_id` field
+- **`loadRoutes`** signature: now takes `(handler, *health.Checker)` (pass nil to skip dependency gating)
+- **Handler logs**: `log := logger.WithRequestID(r.Context())` at the top of each handler — removes explicit `zap.String("request_id", ...)` plumbing
+- **Duration fields**: renamed `elapsed_time` → `duration_ms` in request logs (snake_case + `_ms` suffix per `isp-logging-standard`)
+- **API version exposure**: new `APIVersionHeader` middleware emits `X-API-Version` (v1), `X-App-Version` (semver), and `X-Build-Commit` (short SHA) on every response
+- **`internal/buildinfo`** package exposing version/commit/build-time/uptime — wired from `main.go` ldflags
+- **`/version`** endpoint returns JSON build metadata for release verification and dashboard panels
+- **Dockerfile ldflags fix**: `-X main.Version=` (uppercase, never injected!) → `-X main.version=` / `main.commit=` / `main.buildTime=` (now correctly populated at build time)
+- **CI**: passes `APP_COMMIT=${{ github.sha }}` and `APP_BUILD_TIME=<UTC timestamp>` to the Docker build
+
+### Migration from 2.x
+
+If you consume `go-snmp-olt-zte-c320` from another service, update client code:
+
+| Before (2.x)                              | After (3.0.0)                                      |
+|-------------------------------------------|----------------------------------------------------|
+| `{"code":200,"status":"OK",...}`          | `{"code":200,"status":"success",...}`              |
+| `body.error.type`                         | `body.error_code`                                  |
+| `body.error.message`                      | `body.data` (string or `{message, details}` object)|
+| `body.error.details`                      | `body.data.details` (inside data object)           |
+| (request ID only in `X-Request-ID` header) | Still in header AND `body.request_id`             |
+
+No endpoint URLs changed. Only the JSON envelope of responses changed. Health endpoints (`/health`, `/healthz`, `/readyz`) and the new `/metrics` and `/version` endpoints are added without breaking existing `/api/v1/*` paths.
+
 ## [2.1.1] - 2026-04-08
 
 ### Added
@@ -135,7 +181,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Docker support
 - Air hot reload for development
 
-[Unreleased]: https://github.com/Cepat-Kilat-Teknologi/go-snmp-olt-zte-c320/compare/v2.1.1...HEAD
+[Unreleased]: https://github.com/Cepat-Kilat-Teknologi/go-snmp-olt-zte-c320/compare/v3.0.0...HEAD
+[3.0.0]: https://github.com/Cepat-Kilat-Teknologi/go-snmp-olt-zte-c320/compare/v2.1.1...v3.0.0
 [2.1.1]: https://github.com/Cepat-Kilat-Teknologi/go-snmp-olt-zte-c320/compare/v2.1.0...v2.1.1
 [2.1.0]: https://github.com/Cepat-Kilat-Teknologi/go-snmp-olt-zte-c320/compare/v1.0.0...v2.1.0
 [1.0.0]: https://github.com/Cepat-Kilat-Teknologi/go-snmp-olt-zte-c320/releases/tag/v1.0.0

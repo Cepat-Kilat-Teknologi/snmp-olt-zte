@@ -8,8 +8,9 @@ import (
 	"time"
 
 	"github.com/Cepat-Kilat-Teknologi/go-snmp-olt-zte-c320/internal/model"
+	"github.com/Cepat-Kilat-Teknologi/go-snmp-olt-zte-c320/pkg/logger"
 	"github.com/gosnmp/gosnmp"
-	"github.com/rs/zerolog/log"
+	"go.uber.org/zap"
 )
 
 // ZTE C320 OLT Trap OID prefixes
@@ -19,16 +20,16 @@ const (
 
 	// Common trap variable OIDs for ZTE C320
 	// These are used to identify ONU events in trap PDUs
-	OIDOnuIndex      = ".1.3.6.1.4.1.3902.1082.500.10.2.3.3.1.2"  // ONU index
-	OIDOnuStatus     = ".1.3.6.1.4.1.3902.1082.500.10.2.3.8.1.4"  // ONU status
-	OIDOnuOffReason  = ".1.3.6.1.4.1.3902.1082.500.10.2.3.8.1.7"  // Offline reason
+	OIDOnuIndex     = ".1.3.6.1.4.1.3902.1082.500.10.2.3.3.1.2" // ONU index
+	OIDOnuStatus    = ".1.3.6.1.4.1.3902.1082.500.10.2.3.8.1.4" // ONU status
+	OIDOnuOffReason = ".1.3.6.1.4.1.3902.1082.500.10.2.3.8.1.7" // Offline reason
 )
 
 // ListenerConfig holds configuration for the trap listener
 type ListenerConfig struct {
-	Port           uint16
-	Community      string
-	OnEvent        func(event model.TrapEvent) // callback for processed events
+	Port      uint16
+	Community string
+	OnEvent   func(event model.TrapEvent) // callback for processed events
 }
 
 // Listener wraps gosnmp.TrapListener
@@ -61,7 +62,7 @@ func NewListener(cfg ListenerConfig) *Listener {
 
 // Start begins listening for SNMP traps (blocking)
 func (l *Listener) Start() error {
-	log.Info().Str("addr", l.addr).Msg("Starting SNMP Trap listener")
+	logger.Info("starting_snmp_trap_listener", zap.String("addr", l.addr))
 	return l.tl.Listen(l.addr)
 }
 
@@ -72,7 +73,7 @@ func (l *Listener) Listening() <-chan bool {
 
 // Close stops the trap listener
 func (l *Listener) Close() error {
-	log.Info().Msg("Closing SNMP Trap listener")
+	logger.Info("closing_snmp_trap_listener")
 	l.tl.Close()
 	return nil
 }
@@ -81,10 +82,9 @@ func (l *Listener) Close() error {
 func (l *Listener) handleTrap(packet *gosnmp.SnmpPacket, addr *net.UDPAddr) {
 	source := addr.IP.String()
 
-	log.Debug().
-		Str("source", source).
-		Int("var_count", len(packet.Variables)).
-		Msg("Received SNMP trap")
+	logger.Debug("received_snmp_trap",
+		zap.String("source", source),
+		zap.Int("var_count", len(packet.Variables)))
 
 	event := model.TrapEvent{
 		Timestamp: time.Now(),
@@ -129,14 +129,13 @@ func (l *Listener) handleTrap(packet *gosnmp.SnmpPacket, addr *net.UDPAddr) {
 		event.Description = fmt.Sprintf("ONU %d/%d/%d %s detected", event.Board, event.PON, event.OnuID, event.EventType)
 	}
 
-	log.Info().
-		Str("source", source).
-		Int("board", event.Board).
-		Int("pon", event.PON).
-		Int("onu_id", event.OnuID).
-		Str("event_type", event.EventType).
-		Str("status", event.Status).
-		Msg("Trap event processed")
+	logger.Info("trap_event_processed",
+		zap.String("source", source),
+		zap.Int("board", event.Board),
+		zap.Int("pon", event.PON),
+		zap.Int("onu_id", event.OnuID),
+		zap.String("event_type", event.EventType),
+		zap.String("status", event.Status))
 
 	if l.config.OnEvent != nil {
 		l.config.OnEvent(event)

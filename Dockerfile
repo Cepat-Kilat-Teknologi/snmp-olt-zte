@@ -2,6 +2,8 @@
 ARG TARGETPLATFORM
 ARG BUILDPLATFORM
 ARG APP_VERSION=dev
+ARG APP_COMMIT=none
+ARG APP_BUILD_TIME=unknown
 
 # Development stage with hot reload
 FROM golang:1.26-alpine AS dev
@@ -18,12 +20,19 @@ RUN go mod download
 # Copy source code
 COPY . .
 
-# Build argument available in this stage
+# Build arguments available in this stage
 ARG APP_VERSION
+ARG APP_COMMIT
+ARG APP_BUILD_TIME
 
-# Build binary with version from git tag
+# Build binary with version/commit/build-time injected via ldflags.
+# The main package variables are lowercase (`version`, `commit`, `buildTime`)
+# — make sure -X targets match them exactly.
 RUN CGO_ENABLED=0 GOOS=linux go build \
-    -ldflags="-s -w -X main.Version=${APP_VERSION}" \
+    -ldflags="-s -w \
+      -X main.version=${APP_VERSION} \
+      -X main.commit=${APP_COMMIT} \
+      -X main.buildTime=${APP_BUILD_TIME}" \
     -o /go/bin/app \
     ./cmd/api
 

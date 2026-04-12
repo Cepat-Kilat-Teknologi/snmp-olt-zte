@@ -12,8 +12,9 @@ import (
 	"github.com/Cepat-Kilat-Teknologi/go-snmp-olt-zte-c320/internal/model"
 	"github.com/Cepat-Kilat-Teknologi/go-snmp-olt-zte-c320/internal/repository"
 	"github.com/Cepat-Kilat-Teknologi/go-snmp-olt-zte-c320/internal/utils"
+	"github.com/Cepat-Kilat-Teknologi/go-snmp-olt-zte-c320/pkg/logger"
 	"github.com/gosnmp/gosnmp"
-	"github.com/rs/zerolog/log"
+	"go.uber.org/zap"
 	"golang.org/x/sync/singleflight"
 )
 
@@ -60,13 +61,13 @@ func GenerateONUDetailRedisKey(boardID, ponID, onuID int) string {
 
 // OnuUseCaseInterface is an interface that represents the auth's usecase contract
 type OnuUseCaseInterface interface {
-	GetByBoardIDAndPonID(ctx context.Context, boardID, ponID int) ([]model.ONUInfoPerBoard, error)        // Get ONU info by board and PON
-	GetByBoardIDPonIDAndOnuID(ctx context.Context, boardID, ponID, onuID int) (model.ONUCustomerInfo, error) // Get specific ONU info
-	GetEmptyOnuID(ctx context.Context, boardID, ponID int) ([]model.OnuID, error)                         // Get empty ONU IDs
-	GetOnuIDAndSerialNumber(ctx context.Context, boardID, ponID int) ([]model.OnuSerialNumber, error)      // Get ONU IDs and serial numbers
-	UpdateEmptyOnuID(ctx context.Context, boardID, ponID int) error                                       // Update empty ONU IDs cache
+	GetByBoardIDAndPonID(ctx context.Context, boardID, ponID int) ([]model.ONUInfoPerBoard, error)                             // Get ONU info by board and PON
+	GetByBoardIDPonIDAndOnuID(ctx context.Context, boardID, ponID, onuID int) (model.ONUCustomerInfo, error)                   // Get specific ONU info
+	GetEmptyOnuID(ctx context.Context, boardID, ponID int) ([]model.OnuID, error)                                              // Get empty ONU IDs
+	GetOnuIDAndSerialNumber(ctx context.Context, boardID, ponID int) ([]model.OnuSerialNumber, error)                          // Get ONU IDs and serial numbers
+	UpdateEmptyOnuID(ctx context.Context, boardID, ponID int) error                                                            // Update empty ONU IDs cache
 	GetByBoardIDAndPonIDWithPagination(ctx context.Context, boardID, ponID, page, pageSize int) ([]model.ONUInfoPerBoard, int) // Get paginated ONU info
-	DeleteCache(ctx context.Context, boardID, ponID int) error                                            // Delete cache for specific board/pon
+	DeleteCache(ctx context.Context, boardID, ponID int) error                                                                 // Delete cache for specific board/pon
 	PreWarmCache(ctx context.Context)
 }
 
@@ -95,7 +96,7 @@ func NewOnuUsecase(
 func (u *onuUsecase) getOltConfig(boardID, ponID int) (*model.OltConfig, error) {
 	cfg, err := u.getBoardConfig(boardID, ponID) // Retrieve board configuration
 	if err != nil {
-		log.Error().Msg(err.Error()) // Log error
+		logger.Error("olt_config_failed", zap.Error(err)) // Log error
 		return nil, err
 	}
 	return cfg, nil // Return config
@@ -132,10 +133,10 @@ func (u *onuUsecase) getBoardConfig(boardID, ponID int) (*model.OltConfig, error
 }
 
 func (u *onuUsecase) GetByBoardIDAndPonID(ctx context.Context, boardID, ponID int) ([]model.ONUInfoPerBoard, error) {
-	log.Info().
-		Int("board_id", boardID).
-		Int("pon_id", ponID).
-		Msg("Getting all ONU information")
+	logger.WithRequestID(ctx).Info("getting_all_onu_information",
+		zap.Int("board_id", boardID),
+		zap.Int("pon_id", ponID),
+	)
 
 	key := fmt.Sprintf("onuinfo-b%d-p%d", boardID, ponID) // Create unique key for singleflight
 
@@ -144,7 +145,7 @@ func (u *onuUsecase) GetByBoardIDAndPonID(ctx context.Context, boardID, ponID in
 		// Get OLT config
 		oltConfig, err := u.getOltConfig(boardID, ponID) // Get OLT config based on Board ID and PON ID
 		if err != nil {
-			log.Error().Err(err).Int("board_id", boardID).Int("pon_id", ponID).Msg("Failed to get OLT Config")
+			logger.WithRequestID(ctx).Error("olt_config_failed", zap.Error(err), zap.Int("board_id", boardID), zap.Int("pon_id", ponID))
 			return nil, err
 		}
 
@@ -154,13 +155,13 @@ func (u *onuUsecase) GetByBoardIDAndPonID(ctx context.Context, boardID, ponID in
 		// Check if data is already cached in Redis
 		cachedOnuData, err := u.redisRepository.GetONUInfoList(ctx, redisKey) // Get ONU Information from Redis
 		if err == nil && cachedOnuData != nil {
-			log.Info().Str("redis_key", redisKey).Msg("Retrieved ONU information from Redis cache")
+			logger.WithRequestID(ctx).Info("onu_info_cache_hit", zap.String("redis_key", redisKey))
 
 			// Background refresh if TTL is low
 			ttl, ttlErr := u.redisRepository.GetTTL(ctx, redisKey)
 			if ttlErr == nil && ttl > 0 && ttl < time.Duration(u.cfg.CacheCfg.ONUInfoTTL/5)*time.Second {
 				go func() {
-					log.Info().Str("redis_key", redisKey).Msg("Background cache refresh triggered")
+					logger.Info("background_cache_refresh_triggered", zap.String("redis_key", redisKey))
 					u.refreshONUInfoCache(context.Background(), boardID, ponID, oltConfig, redisKey)
 				}()
 			}
@@ -169,7 +170,7 @@ func (u *onuUsecase) GetByBoardIDAndPonID(ctx context.Context, boardID, ponID in
 		}
 
 		// SNMP Walk to get Information from OLT Board and PON
-		log.Info().Int("board_id", boardID).Int("pon_id", ponID).Msg("Fetching ONU information via SNMP Walk")
+		logger.WithRequestID(ctx).Info("fetching_onu_information_snmp_walk", zap.Int("board_id", boardID), zap.Int("pon_id", ponID))
 		// Create a map to store SNMP Walk results
 		snmpDataMap := make(map[string]gosnmp.SnmpPDU)
 		// Perform SNMP Walk to get ONU ID and Name using snmpRepository Walk method with timeout context parameter
@@ -227,9 +228,9 @@ func (u *onuUsecase) GetByBoardIDAndPonID(ctx context.Context, boardID, ponID in
 		// Balanced: 600s (10min) - fresh enough while maintaining a good cache hit rate
 		err = u.redisRepository.SaveONUInfoList(ctx, redisKey, u.cfg.CacheCfg.ONUInfoTTL, onuInformationList)
 		if err != nil {
-			log.Error().Err(err).Str("redis_key", redisKey).Msg("Failed to save ONU information to Redis")
+			logger.WithRequestID(ctx).Error("redis_save_onu_info_failed", zap.Error(err), zap.String("redis_key", redisKey))
 		} else {
-			log.Info().Str("redis_key", redisKey).Msg("Saved ONU information to Redis")
+			logger.WithRequestID(ctx).Info("onu_info_saved_to_redis", zap.String("redis_key", redisKey))
 		}
 
 		// Return the ONU information list
@@ -237,7 +238,7 @@ func (u *onuUsecase) GetByBoardIDAndPonID(ctx context.Context, boardID, ponID in
 	})
 
 	if err != nil {
-		log.Error().Err(err).Int("board_id", boardID).Int("pon_id", ponID).Msg("Failed to get ONU information")
+		logger.WithRequestID(ctx).Error("get_onu_information_failed", zap.Error(err), zap.Int("board_id", boardID), zap.Int("pon_id", ponID))
 		return nil, err
 	}
 
@@ -252,7 +253,7 @@ func (u *onuUsecase) refreshONUInfoCache(ctx context.Context, boardID, ponID int
 		return nil
 	})
 	if err != nil {
-		log.Error().Err(err).Msg("Background refresh: SNMP Walk failed")
+		logger.Error("background_refresh_snmp_walk_failed", zap.Error(err))
 		return
 	}
 
@@ -285,9 +286,9 @@ func (u *onuUsecase) refreshONUInfoCache(ctx context.Context, boardID, ponID int
 	sort.Slice(list, func(i, j int) bool { return list[i].ID < list[j].ID })
 
 	if err := u.redisRepository.SaveONUInfoList(ctx, redisKey, u.cfg.CacheCfg.ONUInfoTTL, list); err != nil {
-		log.Error().Err(err).Msg("Background refresh: failed to save to Redis")
+		logger.Error("background_refresh_redis_save_failed", zap.Error(err))
 	} else {
-		log.Info().Str("redis_key", redisKey).Msg("Background refresh: cache updated")
+		logger.Info("background_refresh_cache_updated", zap.String("redis_key", redisKey))
 	}
 }
 
@@ -301,7 +302,7 @@ func (u *onuUsecase) GetByBoardIDPonIDAndOnuID(ctx context.Context, boardID, pon
 	result, err, _ := u.sg.Do(key, func() (interface{}, error) {
 		oltConfig, err := u.getOltConfig(boardID, ponID) // Get OLT config based on Board ID and PON ID
 		if err != nil {
-			log.Error().Err(err).Int("board_id", boardID).Int("pon_id", ponID).Msg("Failed to get OLT Config")
+			logger.WithRequestID(ctx).Error("olt_config_failed", zap.Error(err), zap.Int("board_id", boardID), zap.Int("pon_id", ponID))
 			return model.ONUCustomerInfo{}, err
 		}
 
@@ -309,7 +310,7 @@ func (u *onuUsecase) GetByBoardIDPonIDAndOnuID(ctx context.Context, boardID, pon
 		redisKey := GenerateONUDetailRedisKey(boardID, ponID, onuID)
 		cached, cacheErr := u.redisRepository.GetONUDetail(ctx, redisKey)
 		if cacheErr == nil && cached != nil {
-			log.Info().Str("redis_key", redisKey).Msg("Retrieved ONU detail from Redis cache")
+			logger.WithRequestID(ctx).Info("onu_detail_cache_hit", zap.String("redis_key", redisKey))
 			return *cached, nil
 		}
 
@@ -333,15 +334,18 @@ func (u *onuUsecase) GetByBoardIDPonIDAndOnuID(ctx context.Context, boardID, pon
 					}
 					// Cache this derived detail with shorter TTL
 					_ = u.redisRepository.SaveONUDetail(ctx, redisKey, u.cfg.CacheCfg.ONUDetailTTL, detail)
-					log.Info().Int("onu_id", onuID).Msg("ONU detail derived from cached info list")
+					logger.WithRequestID(ctx).Info("onu_detail_derived_from_cache", zap.Int("onu_id", onuID))
 					return detail, nil
 				}
 			}
 			if !found {
 				// ONU not in cached list — it doesn't exist on this board/pon.
 				// Skip expensive SNMP query and return empty immediately.
-				log.Debug().Int("board", boardID).Int("pon", ponID).Int("onu_id", onuID).
-					Msg("ONU not found in cached list, skipping SNMP query")
+				logger.WithRequestID(ctx).Debug("onu_not_found_in_cache_skip_snmp",
+					zap.Int("board", boardID),
+					zap.Int("pon", ponID),
+					zap.Int("onu_id", onuID),
+				)
 				return model.ONUCustomerInfo{}, nil
 			}
 		}
@@ -349,11 +353,11 @@ func (u *onuUsecase) GetByBoardIDPonIDAndOnuID(ctx context.Context, boardID, pon
 		var onuInformationList model.ONUCustomerInfo   // Create a variable to store ONU information
 		snmpDataMap := make(map[string]gosnmp.SnmpPDU) // Create a map to store SNMP Walk results
 
-		log.Info().
-			Int("board_id", boardID).
-			Int("pon_id", ponID).
-			Int("onu_id", onuID).
-			Msg("Fetching detailed ONU information via SNMP Walk")
+		logger.WithRequestID(ctx).Info("fetching_onu_detail_snmp_walk",
+			zap.Int("board_id", boardID),
+			zap.Int("pon_id", ponID),
+			zap.Int("onu_id", onuID),
+		)
 
 		// Get ONU ID and Name using snmpRepository Walk method with timeout context parameter
 		err = u.snmpRepository.BulkWalk(oltConfig.BaseOID+oltConfig.OnuIDNameOID+"."+strconv.Itoa(onuID),
@@ -362,7 +366,7 @@ func (u *onuUsecase) GetByBoardIDPonIDAndOnuID(ctx context.Context, boardID, pon
 				return nil
 			})
 		if err != nil {
-			log.Error().Err(err).Str("oid", oltConfig.BaseOID+oltConfig.OnuIDNameOID).Msg("Failed to walk OID")
+			logger.WithRequestID(ctx).Error("snmp_walk_failed", zap.Error(err), zap.String("oid", oltConfig.BaseOID+oltConfig.OnuIDNameOID))
 			return model.ONUCustomerInfo{}, apperrors.NewSNMPError("Walk", err) // Return SNMP error
 		}
 
@@ -468,7 +472,7 @@ func (u *onuUsecase) GetEmptyOnuID(ctx context.Context, boardID, ponID int) ([]m
 		// Get OLT config based on Board ID and PON ID
 		oltConfig, err := u.getOltConfig(boardID, ponID)
 		if err != nil {
-			log.Error().Err(err).Int("board_id", boardID).Int("pon_id", ponID).Msg("Failed to get OLT Config for empty ONU ID")
+			logger.WithRequestID(ctx).Error("olt_config_failed_empty_onu_id", zap.Error(err), zap.Int("board_id", boardID), zap.Int("pon_id", ponID))
 			return nil, err
 		}
 
@@ -478,7 +482,7 @@ func (u *onuUsecase) GetEmptyOnuID(ctx context.Context, boardID, ponID int) ([]m
 		// Try to get data from Redis using the GetOnuIDCtx method with context and Redis key as a parameter
 		cachedOnuData, err := u.redisRepository.GetOnuIDCtx(ctx, redisKey)
 		if err == nil && cachedOnuData != nil {
-			log.Info().Str("redis_key", redisKey).Msg("Retrieved empty ONU IDs from Redis cache")
+			logger.WithRequestID(ctx).Info("empty_onu_ids_cache_hit", zap.String("redis_key", redisKey))
 			// If data exists in Redis, return data from Redis
 			return cachedOnuData, nil
 		}
@@ -487,7 +491,7 @@ func (u *onuUsecase) GetEmptyOnuID(ctx context.Context, boardID, ponID int) ([]m
 		snmpOID := oltConfig.BaseOID + oltConfig.OnuIDNameOID
 		emptyOnuIDList := make([]model.OnuID, 0) // Initialize an empty list
 
-		log.Info().Int("board_id", boardID).Int("pon_id", ponID).Msg("Fetching empty ONU IDs via SNMP Walk")
+		logger.WithRequestID(ctx).Info("fetching_empty_onu_ids_snmp_walk", zap.Int("board_id", boardID), zap.Int("pon_id", ponID))
 
 		// Perform SNMP Walk to get ONU ID and Name
 		err = u.snmpRepository.BulkWalk(snmpOID, func(pdu gosnmp.SnmpPDU) error {
@@ -500,7 +504,7 @@ func (u *onuUsecase) GetEmptyOnuID(ctx context.Context, boardID, ponID int) ([]m
 			return nil
 		})
 		if err != nil {
-			log.Error().Err(err).Int("board_id", boardID).Int("pon_id", ponID).Msg("Failed to perform SNMP Walk for empty ONU IDs")
+			logger.WithRequestID(ctx).Error("snmp_walk_empty_onu_ids_failed", zap.Error(err), zap.Int("board_id", boardID), zap.Int("pon_id", ponID))
 			return nil, err
 		}
 
@@ -533,17 +537,17 @@ func (u *onuUsecase) GetEmptyOnuID(ctx context.Context, boardID, ponID int) ([]m
 		// Set data to Redis
 		err = u.redisRepository.SetOnuIDCtx(ctx, redisKey, u.cfg.CacheCfg.EmptyOnuIDTTL, emptyOnuIDList)
 		if err != nil {
-			log.Error().Err(err).Str("redis_key", redisKey).Msg("Failed to save empty ONU IDs to Redis")
+			logger.WithRequestID(ctx).Error("redis_save_empty_onu_ids_failed", zap.Error(err), zap.String("redis_key", redisKey))
 			return nil, err
 		}
 
-		log.Info().Str("redis_key", redisKey).Msg("Saved empty ONU IDs to Redis")
+		logger.WithRequestID(ctx).Info("empty_onu_ids_saved_to_redis", zap.String("redis_key", redisKey))
 
 		return emptyOnuIDList, nil
 	})
 
 	if err != nil {
-		log.Error().Err(err).Int("board_id", boardID).Int("pon_id", ponID).Msg("Failed to get empty ONU IDs")
+		logger.WithRequestID(ctx).Error("get_empty_onu_ids_failed", zap.Error(err), zap.Int("board_id", boardID), zap.Int("pon_id", ponID))
 		return nil, err
 	}
 
@@ -559,7 +563,7 @@ func (u *onuUsecase) GetOnuIDAndSerialNumber(ctx context.Context, boardID, ponID
 		// Get OLT config based on Board ID and PON ID
 		oltConfig, err := u.getOltConfig(boardID, ponID)
 		if err != nil {
-			log.Error().Err(err).Int("board_id", boardID).Int("pon_id", ponID).Msg("Failed to get OLT Config")
+			logger.WithRequestID(ctx).Error("olt_config_failed", zap.Error(err), zap.Int("board_id", boardID), zap.Int("pon_id", ponID))
 			return nil, err
 		}
 
@@ -567,7 +571,7 @@ func (u *onuUsecase) GetOnuIDAndSerialNumber(ctx context.Context, boardID, ponID
 		redisKey := fmt.Sprintf("board_%d_pon_%d_serial_list", boardID, ponID)
 		cached, cacheErr := u.redisRepository.GetONUSerialList(ctx, redisKey)
 		if cacheErr == nil && cached != nil {
-			log.Info().Str("redis_key", redisKey).Msg("Retrieved ONU serial list from Redis cache")
+			logger.WithRequestID(ctx).Info("onu_serial_list_cache_hit", zap.String("redis_key", redisKey))
 			return cached, nil
 		}
 
@@ -575,7 +579,7 @@ func (u *onuUsecase) GetOnuIDAndSerialNumber(ctx context.Context, boardID, ponID
 		snmpOID := oltConfig.BaseOID + oltConfig.OnuIDNameOID
 		onuIDList := make([]model.OnuID, 0) // Initialize ID list
 
-		log.Info().Int("board_id", boardID).Int("pon_id", ponID).Msg("Fetching ONU IDs and serial numbers via SNMP Walk")
+		logger.WithRequestID(ctx).Info("fetching_onu_ids_and_serial_numbers_snmp_walk", zap.Int("board_id", boardID), zap.Int("pon_id", ponID))
 
 		// Perform SNMP BulkWalk to get ONU ID and Name
 		err = u.snmpRepository.BulkWalk(snmpOID, func(pdu gosnmp.SnmpPDU) error {
@@ -588,7 +592,7 @@ func (u *onuUsecase) GetOnuIDAndSerialNumber(ctx context.Context, boardID, ponID
 			return nil
 		})
 		if err != nil {
-			log.Error().Err(err).Int("board_id", boardID).Int("pon_id", ponID).Msg("Failed to perform SNMP Walk for ONU IDs")
+			logger.WithRequestID(ctx).Error("snmp_walk_onu_ids_failed", zap.Error(err), zap.Int("board_id", boardID), zap.Int("pon_id", ponID))
 			return nil, err
 		}
 
@@ -616,14 +620,14 @@ func (u *onuUsecase) GetOnuIDAndSerialNumber(ctx context.Context, boardID, ponID
 
 		// Save to Redis cache
 		if err := u.redisRepository.SaveONUSerialList(ctx, redisKey, u.cfg.CacheCfg.ONUInfoTTL, onuSerialNumberList); err != nil {
-			log.Error().Err(err).Str("redis_key", redisKey).Msg("Failed to save ONU serial list to Redis")
+			logger.WithRequestID(ctx).Error("redis_save_onu_serial_list_failed", zap.Error(err), zap.String("redis_key", redisKey))
 		}
 
 		return onuSerialNumberList, nil
 	})
 
 	if err != nil {
-		log.Error().Err(err).Int("board_id", boardID).Int("pon_id", ponID).Msg("Failed to get ONU IDs and serial numbers")
+		logger.WithRequestID(ctx).Error("get_onu_ids_and_serial_numbers_failed", zap.Error(err), zap.Int("board_id", boardID), zap.Int("pon_id", ponID))
 		return nil, err
 	}
 
@@ -639,7 +643,7 @@ func (u *onuUsecase) UpdateEmptyOnuID(ctx context.Context, boardID, ponID int) e
 		// Get OLT config based on Board ID and PON ID
 		oltConfig, err := u.getOltConfig(boardID, ponID)
 		if err != nil {
-			log.Error().Err(err).Int("board_id", boardID).Int("pon_id", ponID).Msg("Failed to get OLT Config")
+			logger.WithRequestID(ctx).Error("olt_config_failed", zap.Error(err), zap.Int("board_id", boardID), zap.Int("pon_id", ponID))
 			return nil, err
 		}
 
@@ -647,7 +651,7 @@ func (u *onuUsecase) UpdateEmptyOnuID(ctx context.Context, boardID, ponID int) e
 		snmpOID := oltConfig.BaseOID + oltConfig.OnuIDNameOID
 		emptyOnuIDList := make([]model.OnuID, 0) // Initialize an empty list
 
-		log.Info().Int("board_id", boardID).Int("pon_id", ponID).Msg("Updating empty ONU IDs via SNMP Walk")
+		logger.WithRequestID(ctx).Info("updating_empty_onu_ids_snmp_walk", zap.Int("board_id", boardID), zap.Int("pon_id", ponID))
 
 		// Perform SNMP BulkWalk to get ONU ID and Name
 		err = u.snmpRepository.BulkWalk(snmpOID, func(pdu gosnmp.SnmpPDU) error {
@@ -690,11 +694,11 @@ func (u *onuUsecase) UpdateEmptyOnuID(ctx context.Context, boardID, ponID int) e
 		redisKey := GenerateRedisKey(RedisKeyTypeEmptyOnuID, boardID, ponID)
 		err = u.redisRepository.SetOnuIDCtx(ctx, redisKey, u.cfg.CacheCfg.EmptyOnuIDTTL, emptyOnuIDList)
 		if err != nil {
-			log.Error().Err(err).Str("redis_key", redisKey).Msg("Failed to update empty ONU IDs in Redis")
+			logger.WithRequestID(ctx).Error("redis_update_empty_onu_ids_failed", zap.Error(err), zap.String("redis_key", redisKey))
 			return nil, apperrors.NewRedisError("Set", err) // Return Redis error
 		}
 
-		log.Info().Str("redis_key", redisKey).Msg("Updated empty ONU IDs in Redis")
+		logger.WithRequestID(ctx).Info("empty_onu_ids_updated_in_redis", zap.String("redis_key", redisKey))
 		return nil, nil
 	})
 
@@ -823,7 +827,7 @@ func (u *onuUsecase) getLastOffline(OnuLastOfflineOID, onuID string) (string, er
 		return u.snmpRepository.Get(oids) // Perform SNMP GET
 	})
 	if err != nil {
-		log.Error().Err(err).Str("oid", oid).Msg("Failed to perform SNMP Get for last offline")
+		logger.Error("snmp_get_last_offline_failed", zap.Error(err), zap.String("oid", oid))
 		return "", apperrors.NewSNMPError("Get", err)
 	}
 
@@ -836,7 +840,7 @@ func (u *onuUsecase) getLastOffline(OnuLastOfflineOID, onuID string) (string, er
 		return utils.ConvertByteArrayToDateTime(value) // Convert to DateTime
 	}
 
-	log.Error().Str("oid", oid).Msg("Failed to get ONU Last Offline: No variables in response")
+	logger.Error("snmp_get_last_offline_no_variables", zap.String("oid", oid))
 	return "", apperrors.NewSNMPError("Get", fmt.Errorf("no variables in response")) // Return error
 }
 
@@ -865,25 +869,25 @@ func (u *onuUsecase) getUptimeDuration(lastOnline string) (string, error) {
 
 	lastOnlineTime, err := time.Parse(DateTimeFormat, lastOnline) // Parse last online string
 	if err != nil {
-		log.Error().Err(err).Str("last_online", lastOnline).Msg("Failed to parse last online time")
+		logger.Error("parse_last_online_failed", zap.Error(err), zap.String("last_online", lastOnline))
 		return "", err
 	}
 
-	duration := currentTime.Sub(lastOnlineTime) // Calculate duration
-	return utils.ConvertDurationToString(duration), nil             // Convert to string and return
+	duration := currentTime.Sub(lastOnlineTime)         // Calculate duration
+	return utils.ConvertDurationToString(duration), nil // Convert to string and return
 }
 
 // Last Down Duration
 func (u *onuUsecase) getLastDownDuration(lastOffline, lastOnline string) (string, error) {
 	lastOfflineTime, err := time.Parse(DateTimeFormat, lastOffline) // Parse last offline time
 	if err != nil {
-		log.Error().Err(err).Str("last_offline", lastOffline).Msg("Failed to parse last offline time")
+		logger.Error("parse_last_offline_failed", zap.Error(err), zap.String("last_offline", lastOffline))
 		return "", err
 	}
 
 	lastOnlineTime, err := time.Parse(DateTimeFormat, lastOnline) // Parse last online time
 	if err != nil {
-		log.Error().Err(err).Str("last_online", lastOnline).Msg("Failed to parse last online time")
+		logger.Error("parse_last_online_failed", zap.Error(err), zap.String("last_online", lastOnline))
 		return "", err
 	}
 
@@ -896,13 +900,13 @@ func (u *onuUsecase) getFromSNMPWithSingleflight(oid string) (*gosnmp.SnmpPacket
 		return u.snmpRepository.Get([]string{oid}) // Get OID from SNMP
 	})
 	if err != nil {
-		log.Error().Err(err).Str("oid", oid).Msg("Failed to perform SNMP Get")
+		logger.Error("snmp_get_failed", zap.Error(err), zap.String("oid", oid))
 		return nil, apperrors.NewSNMPError("Get", err)
 	}
 
 	packet := result.(*gosnmp.SnmpPacket) // Cast result
 	if len(packet.Variables) == 0 {
-		log.Error().Str("oid", oid).Msg("No variables returned for OID")
+		logger.Error("snmp_get_no_variables", zap.String("oid", oid))
 		return nil, apperrors.NewSNMPError("Get", fmt.Errorf("no variables in response"))
 	}
 
@@ -911,17 +915,18 @@ func (u *onuUsecase) getFromSNMPWithSingleflight(oid string) (*gosnmp.SnmpPacket
 
 // DeleteCache deletes the cached ONU information for a specific board and PON
 func (u *onuUsecase) DeleteCache(ctx context.Context, boardID, ponID int) error {
-	log.Info().
-		Int("board_id", boardID).
-		Int("pon_id", ponID).
-		Msg("Deleting cache for board/pon")
+	logger.WithRequestID(ctx).Info("deleting_cache_for_board_pon",
+		zap.Int("board_id", boardID),
+		zap.Int("pon_id", ponID),
+	)
 
 	// Validate board and pon IDs
 	if _, err := u.getBoardConfig(boardID, ponID); err != nil {
-		log.Error().Err(err).
-			Int("board_id", boardID).
-			Int("pon_id", ponID).
-			Msg("Invalid board/pon combination")
+		logger.WithRequestID(ctx).Error("invalid_board_pon_combination",
+			zap.Error(err),
+			zap.Int("board_id", boardID),
+			zap.Int("pon_id", ponID),
+		)
 		return apperrors.NewValidationError("invalid board/pon combination",
 			map[string]interface{}{"board_id": boardID, "pon_id": ponID})
 	}
@@ -932,23 +937,24 @@ func (u *onuUsecase) DeleteCache(ctx context.Context, boardID, ponID int) error 
 	// Delete from Redis
 	err := u.redisRepository.Delete(ctx, redisKey)
 	if err != nil {
-		log.Error().Err(err).
-			Str("redis_key", redisKey).
-			Msg("Failed to delete cache from Redis")
+		logger.WithRequestID(ctx).Error("redis_delete_cache_failed",
+			zap.Error(err),
+			zap.String("redis_key", redisKey),
+		)
 		return apperrors.NewRedisError("delete cache", err)
 	}
 
 	// Also delete serial list cache
 	serialKey := fmt.Sprintf("board_%d_pon_%d_serial_list", boardID, ponID)
 	if err := u.redisRepository.Delete(ctx, serialKey); err != nil {
-		log.Debug().Err(err).Str("key", serialKey).Msg("Failed to delete serial list cache")
+		logger.WithRequestID(ctx).Debug("delete_serial_list_cache_failed", zap.Error(err), zap.String("key", serialKey))
 	}
 
-	log.Info().
-		Str("redis_key", redisKey).
-		Int("board_id", boardID).
-		Int("pon_id", ponID).
-		Msg("Successfully deleted cache")
+	logger.WithRequestID(ctx).Info("cache_deleted_successfully",
+		zap.String("redis_key", redisKey),
+		zap.Int("board_id", boardID),
+		zap.Int("pon_id", ponID),
+	)
 
 	return nil
 }

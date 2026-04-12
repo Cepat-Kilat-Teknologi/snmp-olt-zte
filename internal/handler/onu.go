@@ -7,17 +7,10 @@ import (
 	"github.com/Cepat-Kilat-Teknologi/go-snmp-olt-zte-c320/internal/middleware"
 	"github.com/Cepat-Kilat-Teknologi/go-snmp-olt-zte-c320/internal/usecase"
 	"github.com/Cepat-Kilat-Teknologi/go-snmp-olt-zte-c320/internal/utils"
+	"github.com/Cepat-Kilat-Teknologi/go-snmp-olt-zte-c320/pkg/logger"
 	"github.com/Cepat-Kilat-Teknologi/go-snmp-olt-zte-c320/pkg/pagination"
-	"github.com/rs/zerolog/log"
+	"go.uber.org/zap"
 )
-
-// getRequestID extracts the request ID from the request header
-func getRequestID(r *http.Request) string {
-	if id := r.Header.Get("X-Request-ID"); id != "" {
-		return id
-	}
-	return ""
-}
 
 // OnuHandlerInterface is an interface that represents the auth's handler contract
 type OnuHandlerInterface interface {
@@ -47,59 +40,60 @@ func (o *OnuHandler) GetByBoardIDAndPonID(w http.ResponseWriter, r *http.Request
 	boardIDInt, _ := middleware.GetBoardID(r.Context()) // Retrieve boardID from context
 	ponIDInt, _ := middleware.GetPonID(r.Context())     // Retrieve ponID from context
 
-	log.Info().
-		Str("request_id", getRequestID(r)).
-		Int("board_id", boardIDInt).
-		Int("pon_id", ponIDInt).
-		Msg("Getting ONU info by board and PON") // Log the request
+	log := logger.WithRequestID(r.Context())
+
+	log.Info("getting_onu_info_by_board_and_pon",
+		zap.Int("board_id", boardIDInt),
+		zap.Int("pon_id", ponIDInt),
+	)
 
 	query := r.URL.Query() // Get query parameters
 
 	// Validate query parameters and return error 400 if query parameters is not "onu_id" or empty query parameters
 	if len(query) > 0 && query["onu_id"] == nil {
-		log.Warn().Interface("query_parameters", query).Msg("Invalid query parameter") // Log warning
+		log.Warn("invalid_query_parameter", zap.Any("query_parameters", query))
 		appErr := apperrors.NewValidationError(
 			"invalid query parameter - only 'onu_id' is allowed",
 			map[string]interface{}{"received": query},
 		) // Create validation error
-		utils.HandleError(w, appErr) // Handle and respond with error
+		utils.HandleError(w, r, appErr) // Handle and respond with error
 		return
 	}
 
 	// Call usecase to get data from SNMP
 	onuInfoList, err := o.ponUsecase.GetByBoardIDAndPonID(r.Context(), boardIDInt, ponIDInt)
 	if err != nil {
-		log.Error().
-			Err(err).
-			Int("board_id", boardIDInt).
-			Int("pon_id", ponIDInt).
-			Msg("Failed to get ONU info from SNMP") // Log error
-		utils.HandleError(w, err) // Handle error
+		log.Error("failed_to_get_onu_info_from_snmp",
+			zap.Error(err),
+			zap.Int("board_id", boardIDInt),
+			zap.Int("pon_id", ponIDInt),
+		)
+		utils.HandleError(w, r, err) // Handle error
 		return
 	}
 
 	// Check if the result list is empty
 	if len(onuInfoList) == 0 {
-		log.Warn().
-			Int("board_id", boardIDInt).
-			Int("pon_id", ponIDInt).
-			Msg("ONU info not found") // Log warning
+		log.Warn("onu_info_not_found",
+			zap.Int("board_id", boardIDInt),
+			zap.Int("pon_id", ponIDInt),
+		)
 		appErr := apperrors.NewNotFoundError("ONU info",
 			map[string]int{"board_id": boardIDInt, "pon_id": ponIDInt}) // Create not found error
-		utils.HandleError(w, appErr) // Handle error
+		utils.HandleError(w, r, appErr) // Handle error
 		return
 	}
 
-	log.Info().
-		Int("board_id", boardIDInt).
-		Int("pon_id", ponIDInt).
-		Int("result_count", len(onuInfoList)).
-		Msg("Successfully retrieved ONU info") // Log success
+	log.Info("successfully_retrieved_onu_info",
+		zap.Int("board_id", boardIDInt),
+		zap.Int("pon_id", ponIDInt),
+		zap.Int("result_count", len(onuInfoList)),
+	)
 
 	// Create web response object
 	response := utils.WebResponse{
 		Code:   http.StatusOK, // Status 200
-		Status: "OK",
+		Status: "success",
 		Data:   onuInfoList, // Payload
 	}
 
@@ -114,49 +108,50 @@ func (o *OnuHandler) GetByBoardIDPonIDAndOnuID(w http.ResponseWriter, r *http.Re
 	ponIDInt, _ := middleware.GetPonID(r.Context())     // Get ponID
 	onuIDInt, _ := middleware.GetOnuID(r.Context())     // Get onuID
 
-	log.Info().
-		Str("request_id", getRequestID(r)).
-		Int("board_id", boardIDInt).
-		Int("pon_id", ponIDInt).
-		Int("onu_id", onuIDInt).
-		Msg("Getting specific ONU info") // Log request
+	log := logger.WithRequestID(r.Context())
+
+	log.Info("getting_specific_onu_info",
+		zap.Int("board_id", boardIDInt),
+		zap.Int("pon_id", ponIDInt),
+		zap.Int("onu_id", onuIDInt),
+	)
 
 	// Call usecase to get data from SNMP
 	onuInfoList, err := o.ponUsecase.GetByBoardIDPonIDAndOnuID(r.Context(), boardIDInt, ponIDInt, onuIDInt)
 	if err != nil {
-		log.Error().
-			Err(err).
-			Int("board_id", boardIDInt).
-			Int("pon_id", ponIDInt).
-			Int("onu_id", onuIDInt).
-			Msg("Failed to get specific ONU info from SNMP") // Log error
-		utils.HandleError(w, err) // Handle error
+		log.Error("failed_to_get_specific_onu_info_from_snmp",
+			zap.Error(err),
+			zap.Int("board_id", boardIDInt),
+			zap.Int("pon_id", ponIDInt),
+			zap.Int("onu_id", onuIDInt),
+		)
+		utils.HandleError(w, r, err) // Handle error
 		return
 	}
 
 	// Check if the returned object is empty (default zero values)
 	if onuInfoList.Board == 0 && onuInfoList.PON == 0 && onuInfoList.ID == 0 {
-		log.Warn().
-			Int("board_id", boardIDInt).
-			Int("pon_id", ponIDInt).
-			Int("onu_id", onuIDInt).
-			Msg("ONU not found") // Log warning
+		log.Warn("onu_not_found",
+			zap.Int("board_id", boardIDInt),
+			zap.Int("pon_id", ponIDInt),
+			zap.Int("onu_id", onuIDInt),
+		)
 		appErr := apperrors.NewNotFoundError("ONU",
 			map[string]int{"board_id": boardIDInt, "pon_id": ponIDInt, "onu_id": onuIDInt}) // Create not found error
-		utils.HandleError(w, appErr) // Handle error
+		utils.HandleError(w, r, appErr) // Handle error
 		return
 	}
 
-	log.Info().
-		Int("board_id", boardIDInt).
-		Int("pon_id", ponIDInt).
-		Int("onu_id", onuIDInt).
-		Msg("Successfully retrieved specific ONU info") // Log success
+	log.Info("successfully_retrieved_specific_onu_info",
+		zap.Int("board_id", boardIDInt),
+		zap.Int("pon_id", ponIDInt),
+		zap.Int("onu_id", onuIDInt),
+	)
 
 	// Create a web response
 	response := utils.WebResponse{
 		Code:   http.StatusOK,
-		Status: "OK",
+		Status: "success",
 		Data:   onuInfoList,
 	}
 
@@ -170,34 +165,35 @@ func (o *OnuHandler) GetEmptyOnuID(w http.ResponseWriter, r *http.Request) {
 	boardIDInt, _ := middleware.GetBoardID(r.Context())
 	ponIDInt, _ := middleware.GetPonID(r.Context())
 
-	log.Info().
-		Str("request_id", getRequestID(r)).
-		Int("board_id", boardIDInt).
-		Int("pon_id", ponIDInt).
-		Msg("Getting empty ONU IDs") // Log request
+	log := logger.WithRequestID(r.Context())
+
+	log.Info("getting_empty_onu_ids",
+		zap.Int("board_id", boardIDInt),
+		zap.Int("pon_id", ponIDInt),
+	)
 
 	// Call usecase to get data from SNMP
 	onuIDEmptyList, err := o.ponUsecase.GetEmptyOnuID(r.Context(), boardIDInt, ponIDInt)
 	if err != nil {
-		log.Error().
-			Err(err).
-			Int("board_id", boardIDInt).
-			Int("pon_id", ponIDInt).
-			Msg("Failed to get empty ONU IDs from SNMP") // Log error
-		utils.HandleError(w, err)
+		log.Error("failed_to_get_empty_onu_ids_from_snmp",
+			zap.Error(err),
+			zap.Int("board_id", boardIDInt),
+			zap.Int("pon_id", ponIDInt),
+		)
+		utils.HandleError(w, r, err)
 		return
 	}
 
-	log.Info().
-		Int("board_id", boardIDInt).
-		Int("pon_id", ponIDInt).
-		Int("empty_count", len(onuIDEmptyList)).
-		Msg("Successfully retrieved empty ONU IDs") // Log success
+	log.Info("successfully_retrieved_empty_onu_ids",
+		zap.Int("board_id", boardIDInt),
+		zap.Int("pon_id", ponIDInt),
+		zap.Int("empty_count", len(onuIDEmptyList)),
+	)
 
 	// Create a web response
 	response := utils.WebResponse{
 		Code:   http.StatusOK,
-		Status: "OK",
+		Status: "success",
 		Data:   onuIDEmptyList,
 	}
 
@@ -211,34 +207,35 @@ func (o *OnuHandler) GetOnuIDAndSerialNumber(w http.ResponseWriter, r *http.Requ
 	boardIDInt, _ := middleware.GetBoardID(r.Context())
 	ponIDInt, _ := middleware.GetPonID(r.Context())
 
-	log.Info().
-		Str("request_id", getRequestID(r)).
-		Int("board_id", boardIDInt).
-		Int("pon_id", ponIDInt).
-		Msg("Getting ONU IDs and serial numbers") // Log request
+	log := logger.WithRequestID(r.Context())
+
+	log.Info("getting_onu_ids_and_serial_numbers",
+		zap.Int("board_id", boardIDInt),
+		zap.Int("pon_id", ponIDInt),
+	)
 
 	// Call usecase to get Serial Number from SNMP
 	onuSerialNumber, err := o.ponUsecase.GetOnuIDAndSerialNumber(r.Context(), boardIDInt, ponIDInt)
 	if err != nil {
-		log.Error().
-			Err(err).
-			Int("board_id", boardIDInt).
-			Int("pon_id", ponIDInt).
-			Msg("Failed to get ONU serial numbers from SNMP") // Log error
-		utils.HandleError(w, err)
+		log.Error("failed_to_get_onu_serial_numbers_from_snmp",
+			zap.Error(err),
+			zap.Int("board_id", boardIDInt),
+			zap.Int("pon_id", ponIDInt),
+		)
+		utils.HandleError(w, r, err)
 		return
 	}
 
-	log.Info().
-		Int("board_id", boardIDInt).
-		Int("pon_id", ponIDInt).
-		Int("result_count", len(onuSerialNumber)).
-		Msg("Successfully retrieved ONU serial numbers") // Log success
+	log.Info("successfully_retrieved_onu_serial_numbers",
+		zap.Int("board_id", boardIDInt),
+		zap.Int("pon_id", ponIDInt),
+		zap.Int("result_count", len(onuSerialNumber)),
+	)
 
 	// Create a web response
 	response := utils.WebResponse{
 		Code:   http.StatusOK,
-		Status: "OK",
+		Status: "success",
 		Data:   onuSerialNumber,
 	}
 
@@ -252,33 +249,34 @@ func (o *OnuHandler) UpdateEmptyOnuID(w http.ResponseWriter, r *http.Request) {
 	boardIDInt, _ := middleware.GetBoardID(r.Context())
 	ponIDInt, _ := middleware.GetPonID(r.Context())
 
-	log.Info().
-		Str("request_id", getRequestID(r)).
-		Int("board_id", boardIDInt).
-		Int("pon_id", ponIDInt).
-		Msg("Updating empty ONU IDs") // Log request
+	log := logger.WithRequestID(r.Context())
+
+	log.Info("updating_empty_onu_ids",
+		zap.Int("board_id", boardIDInt),
+		zap.Int("pon_id", ponIDInt),
+	)
 
 	// Call usecase to get data from SNMP
 	err := o.ponUsecase.UpdateEmptyOnuID(r.Context(), boardIDInt, ponIDInt)
 	if err != nil {
-		log.Error().
-			Err(err).
-			Int("board_id", boardIDInt).
-			Int("pon_id", ponIDInt).
-			Msg("Failed to update empty ONU IDs") // Log error
-		utils.HandleError(w, err)
+		log.Error("failed_to_update_empty_onu_ids",
+			zap.Error(err),
+			zap.Int("board_id", boardIDInt),
+			zap.Int("pon_id", ponIDInt),
+		)
+		utils.HandleError(w, r, err)
 		return
 	}
 
-	log.Info().
-		Int("board_id", boardIDInt).
-		Int("pon_id", ponIDInt).
-		Msg("Successfully updated empty ONU IDs") // Log success
+	log.Info("successfully_updated_empty_onu_ids",
+		zap.Int("board_id", boardIDInt),
+		zap.Int("pon_id", ponIDInt),
+	)
 
 	// Create a web response
 	response := utils.WebResponse{
 		Code:   http.StatusOK,
-		Status: "OK",
+		Status: "success",
 		Data:   "Success Update Empty ONU_ID",
 	}
 
@@ -295,50 +293,51 @@ func (o *OnuHandler) GetByBoardIDAndPonIDWithPaginate(w http.ResponseWriter, r *
 	// Get page and page size parameters from the request
 	pageIndex, pageSize := pagination.GetPaginationParametersFromRequest(r)
 
-	log.Info().
-		Str("request_id", getRequestID(r)).
-		Int("board_id", boardIDInt).
-		Int("pon_id", ponIDInt).
-		Int("page", pageIndex).
-		Int("page_size", pageSize).
-		Msg("Getting paginated ONU info") // Log request
+	log := logger.WithRequestID(r.Context())
+
+	log.Info("getting_paginated_onu_info",
+		zap.Int("board_id", boardIDInt),
+		zap.Int("pon_id", ponIDInt),
+		zap.Int("page", pageIndex),
+		zap.Int("page_size", pageSize),
+	)
 
 	// Call usecase to get paginated data
 	item, count := o.ponUsecase.GetByBoardIDAndPonIDWithPagination(r.Context(), boardIDInt, ponIDInt, pageIndex, pageSize)
 
 	// Check if no items found
 	if len(item) == 0 {
-		log.Warn().
-			Int("board_id", boardIDInt).
-			Int("pon_id", ponIDInt).
-			Int("page", pageIndex).
-			Msg("No ONU data found for page") // Log warning
+		log.Warn("no_onu_data_found_for_page",
+			zap.Int("board_id", boardIDInt),
+			zap.Int("pon_id", ponIDInt),
+			zap.Int("page", pageIndex),
+		)
 		appErr := apperrors.NewNotFoundError("ONU data",
 			map[string]interface{}{
 				"board_id": boardIDInt,
 				"pon_id":   ponIDInt,
 				"page":     pageIndex,
 			}) // Create not found error
-		utils.HandleError(w, appErr) // Handle error
+		utils.HandleError(w, r, appErr) // Handle error
 		return
 	}
 
 	// Convert result to JSON format according to Pages structure
 	pages := pagination.New(pageIndex, pageSize, count) // Create pagination meta data
 
-	log.Info().
-		Int("board_id", boardIDInt).
-		Int("pon_id", ponIDInt).
-		Int("page", pageIndex).
-		Int("page_size", pageSize).
-		Int("total_rows", pages.TotalRows).
-		Int("page_count", pages.PageCount).
-		Msg("Successfully retrieved paginated ONU info") // Log success
+	log.Info("successfully_retrieved_paginated_onu_info",
+		zap.Int("board_id", boardIDInt),
+		zap.Int("pon_id", ponIDInt),
+		zap.Int("page", pageIndex),
+		zap.Int("page_size", pageSize),
+		zap.Int("total_rows", pages.TotalRows),
+		zap.Int("page_count", pages.PageCount),
+	)
 
 	// Create pagination response
 	response := utils.WebResponse{
 		Code:   http.StatusOK,
-		Status: "OK",
+		Status: "success",
 		Data:   item,
 		Meta: &utils.Meta{
 			Page:      pages.Page,
@@ -358,32 +357,34 @@ func (o *OnuHandler) DeleteCache(w http.ResponseWriter, r *http.Request) {
 	boardIDInt, _ := middleware.GetBoardID(r.Context())
 	ponIDInt, _ := middleware.GetPonID(r.Context())
 
-	log.Info().
-		Str("request_id", getRequestID(r)).
-		Int("board_id", boardIDInt).
-		Int("pon_id", ponIDInt).
-		Msg("Deleting cache for board/pon")
+	log := logger.WithRequestID(r.Context())
+
+	log.Info("deleting_cache_for_board_pon",
+		zap.Int("board_id", boardIDInt),
+		zap.Int("pon_id", ponIDInt),
+	)
 
 	// Call usecase to delete cache
 	err := o.ponUsecase.DeleteCache(r.Context(), boardIDInt, ponIDInt)
 	if err != nil {
-		log.Error().Err(err).
-			Int("board_id", boardIDInt).
-			Int("pon_id", ponIDInt).
-			Msg("Failed to delete cache")
-		utils.HandleError(w, err)
+		log.Error("failed_to_delete_cache",
+			zap.Error(err),
+			zap.Int("board_id", boardIDInt),
+			zap.Int("pon_id", ponIDInt),
+		)
+		utils.HandleError(w, r, err)
 		return
 	}
 
-	log.Info().
-		Int("board_id", boardIDInt).
-		Int("pon_id", ponIDInt).
-		Msg("Successfully deleted cache")
+	log.Info("successfully_deleted_cache",
+		zap.Int("board_id", boardIDInt),
+		zap.Int("pon_id", ponIDInt),
+	)
 
 	// Send success response
 	utils.SendJSONResponse(w, http.StatusOK, utils.WebResponse{
 		Code:   http.StatusOK,
-		Status: "OK",
+		Status: "success",
 		Data: map[string]interface{}{
 			"message":  "Cache deleted successfully",
 			"board_id": boardIDInt,

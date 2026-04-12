@@ -2,7 +2,7 @@
 [![ci](https://github.com/Cepat-Kilat-Teknologi/go-snmp-olt-zte-c320/actions/workflows/ci.yml/badge.svg)](https://github.com/Cepat-Kilat-Teknologi/go-snmp-olt-zte-c320/actions/workflows/ci.yml)
 [![Go Report Card](https://goreportcard.com/badge/github.com/Cepat-Kilat-Teknologi/go-snmp-olt-zte-c320)](https://goreportcard.com/report/github.com/Cepat-Kilat-Teknologi/go-snmp-olt-zte-c320)
 [![codecov](https://codecov.io/gh/Cepat-Kilat-Teknologi/go-snmp-olt-zte-c320/graph/badge.svg?token=NB3N7GMUX3)](https://codecov.io/gh/Cepat-Kilat-Teknologi/go-snmp-olt-zte-c320)
-[![Helm Chart](https://img.shields.io/badge/helm-v2.1.1-blue)](https://github.com/Cepat-Kilat-Teknologi/go-snmp-olt-zte-c320/releases/tag/v2.1.1)
+[![Helm Chart](https://img.shields.io/badge/helm-v3.0.0-blue)](https://github.com/Cepat-Kilat-Teknologi/go-snmp-olt-zte-c320/releases/tag/v3.0.0)
 
 REST API service for monitoring ZTE C320 OLT devices via SNMP protocol, built with Go. Provides real-time ONU information including status, optical power levels, uptime, and serial numbers across all board/PON combinations.
 
@@ -12,7 +12,8 @@ REST API service for monitoring ZTE C320 OLT devices via SNMP protocol, built wi
 * [GoSNMP](https://github.com/gosnmp/gosnmp) - SNMP library with BulkWalk support
 * [Redis](https://github.com/redis/go-redis/v9) - Caching layer with background refresh
 * [robfig/cron](https://github.com/robfig/cron) - Cron scheduling for power monitor
-* [Zerolog](https://github.com/rs/zerolog) - Structured JSON logger
+* [Zap](https://github.com/uber-go/zap) - Structured JSON logger (standardized across all ISP adapters)
+* [Prometheus client_golang](https://github.com/prometheus/client_golang) - Metrics collection
 * [Godotenv](https://github.com/joho/godotenv) - Environment variable loader
 * [Miniredis](https://github.com/alicebob/miniredis) - In-memory Redis for testing
 * [Docker](https://www.docker.com/) - Containerization with distroless production image
@@ -81,7 +82,7 @@ docker run -d -p 8081:8081 --name go-snmp-olt-zte-c320 \
 -e REDIS_MIN_IDLE_CONNECTIONS=10 -e REDIS_POOL_SIZE=100 \
 -e REDIS_POOL_TIMEOUT=30 -e SNMP_HOST=x.x.x.x \
 -e SNMP_PORT=161 -e SNMP_COMMUNITY=xxxx \
-cepatkilatteknologi/snmp-olt-zte-c320:2.1.1
+cepatkilatteknologi/snmp-olt-zte-c320:3.0.0
 ```
 
 ## API Endpoints

@@ -7,8 +7,9 @@ import (
 
 	"github.com/Cepat-Kilat-Teknologi/go-snmp-olt-zte-c320/config"
 	"github.com/Cepat-Kilat-Teknologi/go-snmp-olt-zte-c320/internal/utils"
+	"github.com/Cepat-Kilat-Teknologi/go-snmp-olt-zte-c320/pkg/logger"
 	"github.com/gosnmp/gosnmp"
-	"github.com/rs/zerolog/log"
+	"go.uber.org/zap"
 )
 
 // SetupSnmpConnection is a function to set up snmp connection
@@ -35,17 +36,17 @@ func SetupSnmpConnection(config *config.Config) (*gosnmp.GoSNMP, error) {
 
 	// Check if SNMP configuration is valid (non-empty)
 	if snmpHost == "" || snmpPort == 0 || snmpCommunity == "" {
-		log.Error().Msg("SNMP configuration is invalid")       // Log error
-		return nil, fmt.Errorf("konfigurasi SNMP tidak valid") // Return error (Note: Error string is in Indonesian, keeping it as is or should I translate it? Request said English comments, didn't explicitly strict logic strings, but I will leave logic string as is to avoid breaking changes if any)
+		logger.Error("snmp_configuration_invalid")
+		return nil, fmt.Errorf("konfigurasi SNMP tidak valid")
 	}
 
-	log.Info().
-		Str("host", snmpHost).
-		Uint16("port", snmpPort).
-		Msg("Setting up SNMP connection") // Log setup information
+	logger.Info("setting_up_snmp_connection",
+		zap.String("host", snmpHost),
+		zap.Uint16("port", snmpPort),
+	)
 
 	// Create a new SNMP target instance
-	// Note: SNMP library logging is disabled, we use zerolog for application logging instead
+	// Note: SNMP library logging is disabled; we use zap via pkg/logger for application logging instead
 	target := &gosnmp.GoSNMP{
 		Target:    snmpHost,                       // Target IP
 		Port:      snmpPort,                       // Target Port
@@ -60,10 +61,10 @@ func SetupSnmpConnection(config *config.Config) (*gosnmp.GoSNMP, error) {
 	// Connect to the SNMP target
 	err := target.Connect()
 	if err != nil {
-		log.Error().Err(err).Msg("Failed to connect to SNMP")      // Log connection error
-		return nil, fmt.Errorf("gagal terhubung ke SNMP: %w", err) // Return wrapped error
+		logger.Error("snmp_connect_failed", zap.Error(err))
+		return nil, fmt.Errorf("gagal terhubung ke SNMP: %w", err)
 	}
 
-	log.Info().Msg("Successfully connected to SNMP") // Log success
-	return target, nil                               // Return SNMP target object
+	logger.Info("snmp_connected_successfully")
+	return target, nil
 }

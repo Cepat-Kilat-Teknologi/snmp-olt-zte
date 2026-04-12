@@ -2,13 +2,36 @@
 # Go SNMP OLT ZTE C320 - API Test Collection
 # Base URL: http://localhost:8081
 # OpenAPI Spec: api/openapi.yaml
+# Version:      v3.0.0 (response format: status="success"/error_code/data/request_id)
 ###############################################
 
-### Health Check
+###############################################
+# Health, Readiness, Version, Metrics (no auth)
+###############################################
+
+### Liveness probe (legacy alias)
 GET http://localhost:8081/health
 Accept: application/json
 
-### Root Endpoint
+### Liveness probe (k8s style)
+GET http://localhost:8081/healthz
+Accept: application/json
+
+### Readiness probe with dependency checks (Redis + SNMP)
+# Returns 200 + {"status":"ready","dependencies":{"redis":{"state":"up"},"snmp":{"state":"up"}}}
+# or 503 + {"status":"not_ready", ...} when any probe is down.
+GET http://localhost:8081/readyz
+Accept: application/json
+
+### Build metadata (version, commit, build_time, uptime)
+GET http://localhost:8081/version
+Accept: application/json
+
+### Prometheus metrics (OpenMetrics format)
+GET http://localhost:8081/metrics
+Accept: text/plain
+
+### Root endpoint
 GET http://localhost:8081/
 Accept: application/json
 
@@ -109,36 +132,74 @@ Accept: application/json
 X-API-Key: {{API_KEY}}
 
 ###############################################
-# Error Testing - Invalid Parameters
+# Request ID Tracing
+# Send X-Request-ID to correlate logs across services. The server echoes it
+# back in the response header AND in the request_id field of error bodies.
 ###############################################
 
-### Invalid Board ID (expect 400)
+### Pass custom X-Request-ID (echoed in response header + error body)
+GET http://localhost:8081/api/v1/board/1/pon/8
+Accept: application/json
+X-API-Key: {{API_KEY}}
+X-Request-ID: my-custom-trace-id-123
+
+###############################################
+# Error Testing - v3.0.0 Error Envelope
+# Expected response shape:
+#   {
+#     "code": 400,
+#     "status": "Bad Request",
+#     "error_code": "VALIDATION_ERROR",
+#     "data": { "message": "...", "details": {...} },
+#     "request_id": "<xid>"
+#   }
+###############################################
+
+### Invalid Board ID — expect 400 VALIDATION_ERROR
 GET http://localhost:8081/api/v1/board/99/pon/1
 Accept: application/json
 X-API-Key: {{API_KEY}}
 
-### Invalid PON ID (expect 400)
+### Invalid PON ID — expect 400 VALIDATION_ERROR
 GET http://localhost:8081/api/v1/board/1/pon/99
 Accept: application/json
 X-API-Key: {{API_KEY}}
 
-### Invalid ONU ID (expect 400)
+### Invalid ONU ID — expect 400 VALIDATION_ERROR
 GET http://localhost:8081/api/v1/board/1/pon/1/onu/999
 Accept: application/json
 X-API-Key: {{API_KEY}}
 
-### Missing API Key (expect 401 when API_KEY is set)
+### Missing API Key — expect 401 (when API_KEY is configured)
 GET http://localhost:8081/api/v1/board/1/pon/1
 Accept: application/json
+
+### Not Found — request a board/pon combination that has no ONUs
+# Expected: 404 NOT_FOUND with data.message + data.details
+GET http://localhost:8081/api/v1/board/2/pon/16/onu/128
+Accept: application/json
+X-API-Key: {{API_KEY}}
+
+###############################################
+# Response Headers (added in v3.0.0)
+# Every response carries:
+#   X-Request-ID    correlation ID (echoed or auto-generated)
+#   X-API-Version   API contract version (e.g. v1)
+#   X-App-Version   binary semantic version (e.g. 3.0.0)
+#   X-Build-Commit  short git SHA of the build
+###############################################
 
 ###############################################
 # Notes:
 # - Set {{API_KEY}} variable or leave empty if auth disabled
-# - Health and root endpoints don't require auth
-# - Default timeout: 90 seconds
+# - Health, version, metrics endpoints don't require auth
+# - Default timeout: 90 seconds (allows cold-cache SNMP queries)
 # - Rate limit: 100 req/s, burst 200
 # - Cache TTL: 10 minutes
 # - Board IDs: 1 or 2
-# - PON IDs: 1-16
-# - ONU IDs: 1-128
+# - PON IDs:   1-16
+# - ONU IDs:   1-128
+# - Success responses use status="success"
+# - Error responses use top-level error_code (was nested error.type in 2.x)
+# - Audit log: POST/PUT/PATCH/DELETE emit a separate "audit" log entry
 ###############################################

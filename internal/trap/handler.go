@@ -5,7 +5,8 @@ import (
 	"time"
 
 	"github.com/Cepat-Kilat-Teknologi/go-snmp-olt-zte-c320/internal/model"
-	"github.com/rs/zerolog/log"
+	"github.com/Cepat-Kilat-Teknologi/go-snmp-olt-zte-c320/pkg/logger"
+	"go.uber.org/zap"
 )
 
 // offlineEventTypes lists event types that should trigger webhook notifications
@@ -40,18 +41,17 @@ func NewHandler(webhook *WebhookClient, onuFetcher ONUDetailFetcher) *Handler {
 
 // HandleEvent processes a trap event, enriches with ONU info, and dispatches webhook
 func (h *Handler) HandleEvent(event model.TrapEvent) {
-	log.Info().
-		Str("source", event.Source).
-		Int("board", event.Board).
-		Int("pon", event.PON).
-		Int("onu_id", event.OnuID).
-		Str("event_type", event.EventType).
-		Str("status", event.Status).
-		Msg("Trap event received")
+	logger.Info("trap_event_received",
+		zap.String("source", event.Source),
+		zap.Int("board", event.Board),
+		zap.Int("pon", event.PON),
+		zap.Int("onu_id", event.OnuID),
+		zap.String("event_type", event.EventType),
+		zap.String("status", event.Status))
 
 	// Only send webhook for offline/alert events
 	if !offlineEventTypes[event.EventType] {
-		log.Debug().Str("event_type", event.EventType).Msg("Skipping non-alert event")
+		logger.Debug("skipping_non_alert_event", zap.String("event_type", event.EventType))
 		return
 	}
 
@@ -67,15 +67,16 @@ func (h *Handler) HandleEvent(event model.TrapEvent) {
 			event.OnuType = detail.OnuType
 			event.SerialNumber = detail.SerialNumber
 
-			log.Info().
-				Str("name", event.Name).
-				Str("serial", event.SerialNumber).
-				Str("address", event.Description).
-				Msg("Trap enriched with ONU detail")
+			logger.Info("trap_enriched_with_onu_detail",
+				zap.String("name", event.Name),
+				zap.String("serial", event.SerialNumber),
+				zap.String("address", event.Description))
 		} else if err != nil {
-			log.Warn().Err(err).
-				Int("board", event.Board).Int("pon", event.PON).Int("onu_id", event.OnuID).
-				Msg("Failed to enrich trap with ONU detail")
+			logger.Warn("trap_enrich_failed",
+				zap.Error(err),
+				zap.Int("board", event.Board),
+				zap.Int("pon", event.PON),
+				zap.Int("onu_id", event.OnuID))
 		}
 	}
 

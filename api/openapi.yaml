@@ -1,11 +1,21 @@
 openapi: 3.1.0
 info:
   title: Go SNMP OLT ZTE C320 Monitoring API
-  description: >
+  description: |
     REST API for monitoring ZTE C320 OLT (Optical Line Terminal) via SNMP.
     Provides endpoints to query ONU status, optical power levels, serial numbers,
     and manage cache for board/PON combinations.
-  version: 2.1.1
+
+    **Breaking change in 3.0.0:** the JSON response format was aligned to
+    the ISP adapter standard:
+      - success responses now use `status: "success"` (was `"OK"`)
+      - error responses use top-level `error_code` (was nested `error.type`)
+      - error body carries `data` (was nested `error.message`) and `request_id`
+
+    Version is `3.0.0`; API contract version is `v1` (endpoint prefix
+    `/api/v1`). Both are exposed via `X-App-Version` and `X-API-Version`
+    response headers on every request.
+  version: 3.0.0
   contact:
     name: API Support
   license:
@@ -22,15 +32,17 @@ security:
 paths:
   /health:
     get:
-      summary: Health check
-      description: Returns the health status of the API server. No authentication required.
+      summary: Liveness probe (legacy alias)
+      description: |
+        Returns the liveness status of the service. Kept for backwards
+        compatibility; new deployments should prefer `/healthz`.
       operationId: healthCheck
       tags:
         - Health
       security: []
       responses:
         "200":
-          description: Server is healthy
+          description: Server is alive
           content:
             application/json:
               schema:
@@ -38,9 +50,143 @@ paths:
                 properties:
                   status:
                     type: string
-                    example: ok
+                    example: healthy
                 required:
                   - status
+
+  /healthz:
+    get:
+      summary: Liveness probe
+      description: |
+        Kubernetes-style liveness probe. Always returns 200 OK when the
+        process is running; does not inspect dependencies. Use `/readyz`
+        for readiness gating.
+      operationId: livenessProbe
+      tags:
+        - Health
+      security: []
+      responses:
+        "200":
+          description: Server is alive
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: healthy
+
+  /readyz:
+    get:
+      summary: Readiness probe with dependency checks
+      description: |
+        Returns 200 when all registered dependency probes (Redis, SNMP) are
+        healthy, 503 otherwise. Probe results are cached per-dependency TTL
+        (Redis 5s, SNMP 30s) so this endpoint is cheap to call.
+      operationId: readinessProbe
+      tags:
+        - Health
+      security: []
+      responses:
+        "200":
+          description: Service is ready to serve traffic
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: ready
+                  dependencies:
+                    type: object
+                    additionalProperties:
+                      type: object
+                      properties:
+                        state:
+                          type: string
+                          enum: [up, down]
+                        error:
+                          type: string
+                    example:
+                      redis:
+                        state: up
+                      snmp:
+                        state: up
+        "503":
+          description: One or more dependencies are down
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: not_ready
+                  dependencies:
+                    type: object
+
+  /version:
+    get:
+      summary: Build metadata
+      description: |
+        Returns JSON build metadata (version, API contract version, git
+        commit, build time, uptime). Useful for release verification and
+        Grafana/Kibana panels. Unauthenticated — the same data is visible
+        in Docker image labels.
+      operationId: versionInfo
+      tags:
+        - Health
+      security: []
+      responses:
+        "200":
+          description: Build metadata
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  version:
+                    type: string
+                    description: Binary semantic version
+                    example: "3.0.0"
+                  api_version:
+                    type: string
+                    description: API contract version prefix
+                    example: "v1"
+                  commit:
+                    type: string
+                    description: Git commit SHA at build time
+                    example: "abcd123"
+                  build_time:
+                    type: string
+                    description: Build timestamp (RFC3339)
+                    example: "2026-04-12T10:00:00Z"
+                  uptime:
+                    type: string
+                    description: Process uptime
+                    example: "48h30m0s"
+
+  /metrics:
+    get:
+      summary: Prometheus metrics
+      description: |
+        OpenMetrics / Prometheus exposition endpoint. Unauthenticated —
+        scrapers are expected to run on the same private network. Returns
+        HTTP request metrics, SNMP operation counters/histograms, and
+        cache hit/miss counters.
+      operationId: metricsEndpoint
+      tags:
+        - Health
+      security: []
+      responses:
+        "200":
+          description: Prometheus text-format metrics
+          content:
+            text/plain:
+              schema:
+                type: string
 
   /api/v1/board/{board_id}/pon/{pon_id}:
     get:
@@ -360,8 +506,8 @@ components:
           example: 200
         status:
           type: string
-          description: HTTP status text
-          example: OK
+          description: Fixed string "success" for 2xx responses (ISP adapter standard)
+          example: success
         data: {}
       required:
         - code
@@ -370,7 +516,12 @@ components:
 
     ErrorResponse:
       type: object
-      description: Standard error response wrapper
+      description: |
+        Standard error response wrapper aligned to the `isp-adapter-standard`
+        wiki page. `error_code` is a machine-readable identifier, `data`
+        carries either the error message (string) or a structured object with
+        `message` + `details`, and `request_id` echoes the request correlation
+        ID so operators can correlate across services.
       properties:
         code:
           type: integer
@@ -378,42 +529,46 @@ components:
           example: 400
         status:
           type: string
-          description: HTTP status text
+          description: HTTP reason phrase (e.g. "Bad Request", "Not Found")
           example: Bad Request
-        error:
-          $ref: "#/components/schemas/ErrorDetail"
+        error_code:
+          type: string
+          description: Machine-readable error code
+          enum:
+            - VALIDATION_ERROR
+            - NOT_FOUND
+            - SNMP_ERROR
+            - REDIS_ERROR
+            - CONFIG_ERROR
+            - INTERNAL_ERROR
+          example: VALIDATION_ERROR
+        data:
+          description: |
+            Either the human-readable error message (string) or an object
+            containing `message` + `details` when structured context is
+            available. Callers should handle both shapes.
+          oneOf:
+            - type: string
+              example: board_id must be 1 or 2
+            - type: object
+              properties:
+                message:
+                  type: string
+                  example: board_id must be 1 or 2
+                details:
+                  type: object
+                  additionalProperties: true
+                  example:
+                    received: "99"
+        request_id:
+          type: string
+          description: Correlation ID (same value as X-Request-ID response header)
+          example: d7dhp4pciod1cuth4i80
       required:
         - code
         - status
-        - error
-
-    ErrorDetail:
-      type: object
-      description: Detailed error information
-      properties:
-        type:
-          type: string
-          description: Error type identifier
-          enum:
-            - VALIDATION_ERROR
-            - AUTHENTICATION_ERROR
-            - NOT_FOUND
-            - RATE_LIMIT_ERROR
-            - INTERNAL_ERROR
-          example: VALIDATION_ERROR
-        message:
-          type: string
-          description: Human-readable error message
-          example: board_id must be 1 or 2
-        details:
-          type: object
-          description: Additional context about the error
-          additionalProperties: true
-          example:
-            received: "99"
-      required:
-        - type
-        - message
+        - error_code
+        - data
 
     Meta:
       type: object
@@ -687,11 +842,12 @@ components:
           example:
             code: 400
             status: Bad Request
-            error:
-              type: VALIDATION_ERROR
+            error_code: VALIDATION_ERROR
+            data:
               message: board_id must be 1 or 2
               details:
                 received: "99"
+            request_id: d7dhp4pciod1cuth4i80
     Unauthorized:
       description: Missing or invalid API key
       content:
@@ -701,9 +857,9 @@ components:
           example:
             code: 401
             status: Unauthorized
-            error:
-              type: AUTHENTICATION_ERROR
-              message: Invalid or missing API key
+            error_code: INTERNAL_ERROR
+            data: Invalid or missing API key
+            request_id: d7dhp4pciod1cuth4i80
     NotFound:
       description: Resource not found
       content:
@@ -713,9 +869,14 @@ components:
           example:
             code: 404
             status: Not Found
-            error:
-              type: NOT_FOUND
+            error_code: NOT_FOUND
+            data:
               message: ONU not found
+              details:
+                board_id: 1
+                pon_id: 8
+                onu_id: 42
+            request_id: d7dhp4pciod1cuth4i80
     RateLimited:
       description: Rate limit exceeded
       content:
@@ -725,9 +886,9 @@ components:
           example:
             code: 429
             status: Too Many Requests
-            error:
-              type: RATE_LIMIT_ERROR
-              message: Rate limit exceeded, try again later
+            error_code: INTERNAL_ERROR
+            data: Rate limit exceeded, try again later
+            request_id: d7dhp4pciod1cuth4i80
     InternalError:
       description: Internal server error
       content:
@@ -737,9 +898,9 @@ components:
           example:
             code: 500
             status: Internal Server Error
-            error:
-              type: INTERNAL_ERROR
-              message: An unexpected error occurred
+            error_code: INTERNAL_ERROR
+            data: An unexpected error occurred
+            request_id: d7dhp4pciod1cuth4i80
 
 tags:
   - name: Health

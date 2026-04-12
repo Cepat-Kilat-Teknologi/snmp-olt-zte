@@ -20,9 +20,9 @@ const (
 // AppError represents a structured application error
 // containing the type, message, underlying cause, and optional details.
 type AppError struct {
-	Type    ErrorType              // Category of the error
-	Message string                 // User-friendly error message
-	Err     error                  // The underlying error (if any)
+	Type    ErrorType      // Category of the error
+	Message string         // User-friendly error message
+	Err     error          // The underlying error (if any)
 	Details map[string]any // Additional context or validation details
 }
 

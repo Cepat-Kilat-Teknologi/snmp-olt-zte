@@ -43,14 +43,14 @@ type RedisConfig struct { // Define the RedisConfig struct for Redis settings
 // TrapConfig contains configuration parameters for the SNMP Trap listener
 // including webhook notification settings for ONU events.
 type TrapConfig struct {
-	Enabled           bool
-	Port              uint16
-	Community         string
-	WebhookURL        string
-	WebhookRetries    int
-	WebhookTimeout    int
-	PowerMonitor      bool    // POWER_MONITOR_ENABLED
-	PowerMonitorInterval int  // POWER_MONITOR_INTERVAL (seconds)
+	Enabled              bool
+	Port                 uint16
+	Community            string
+	WebhookURL           string
+	WebhookRetries       int
+	WebhookTimeout       int
+	PowerMonitor         bool    // POWER_MONITOR_ENABLED
+	PowerMonitorInterval int     // POWER_MONITOR_INTERVAL (seconds)
 	PowerMonitorCron     string  // POWER_MONITOR_CRON (cron expression, e.g. "0 8,12,15,17,0 * * *")
 	PowerMonitorTimezone string  // POWER_MONITOR_TIMEZONE (IANA timezone, e.g. "Asia/Jakarta")
 	RxPowerHighThreshold float64 // RX_POWER_HIGH_THRESHOLD (dBm, overload)

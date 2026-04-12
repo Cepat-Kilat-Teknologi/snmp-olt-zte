@@ -69,4 +69,4 @@ bin/
 # Backup files
 *.bak
 *.backup
-*.old
+*.oldk6-results.json

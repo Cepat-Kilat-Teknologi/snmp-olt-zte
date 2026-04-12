@@ -5,7 +5,8 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/rs/zerolog/log"
+	"github.com/Cepat-Kilat-Teknologi/go-snmp-olt-zte-c320/pkg/logger"
+	"go.uber.org/zap"
 	"golang.org/x/time/rate"
 )
 
@@ -56,15 +57,15 @@ func RateLimiter(tokensPerSecond int, burst int) func(http.Handler) http.Handler
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			if !limiter.Allow() { // Check if the request is allowed
-				// to Log as WARN - rate limit hit (important for monitoring DDoS/abuse patterns)
-				log.Warn().
-					Str("remote_addr", r.RemoteAddr).
-					Str("method", r.Method).
-					Str("path", r.URL.Path).
-					Str("user_agent", r.UserAgent()).
-					Int("limit_per_second", tokensPerSecond).
-					Int("burst", burst).
-					Msg("Rate limit exceeded")
+				// Log as WARN - rate limit hit (important for monitoring DDoS/abuse patterns)
+				logger.WithRequestID(r.Context()).Warn("rate_limit_exceeded",
+					zap.String("remote_addr", r.RemoteAddr),
+					zap.String("method", r.Method),
+					zap.String("path", r.URL.Path),
+					zap.String("user_agent", r.UserAgent()),
+					zap.Int("limit_per_second", tokensPerSecond),
+					zap.Int("burst", burst),
+				)
 				http.Error(w, "Rate limit exceeded. Please try again later.", http.StatusTooManyRequests) // Return 429 Too Many Requests
 				return
 			}

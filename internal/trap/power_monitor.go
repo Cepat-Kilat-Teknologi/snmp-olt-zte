@@ -8,8 +8,9 @@ import (
 	"time"
 
 	"github.com/Cepat-Kilat-Teknologi/go-snmp-olt-zte-c320/internal/model"
+	"github.com/Cepat-Kilat-Teknologi/go-snmp-olt-zte-c320/pkg/logger"
 	"github.com/robfig/cron/v3"
-	"github.com/rs/zerolog/log"
+	"go.uber.org/zap"
 )
 
 // ONUListFetcher fetches the cached ONU list for a board/PON
@@ -20,8 +21,8 @@ type ONUListFetcher interface {
 // PowerMonitorConfig holds configuration for the power monitor
 type PowerMonitorConfig struct {
 	Interval      time.Duration
-	Cron          string // cron expression (5-field), e.g. "0 8,12,15,17,0 * * *"
-	Timezone      string // IANA timezone, e.g. "Asia/Jakarta" (empty = local)
+	Cron          string  // cron expression (5-field), e.g. "0 8,12,15,17,0 * * *"
+	Timezone      string  // IANA timezone, e.g. "Asia/Jakarta" (empty = local)
 	HighThreshold float64 // dBm, above this = overload alert
 	LowThreshold  float64 // dBm, below this = weak signal alert
 	Source        string  // OLT IP for event source field
@@ -57,8 +58,9 @@ func NewPowerMonitor(cfg PowerMonitorConfig, fetcher ONUListFetcher, webhook *We
 		if cfg.Timezone != "" {
 			loc, err := time.LoadLocation(cfg.Timezone)
 			if err != nil {
-				log.Warn().Str("timezone", cfg.Timezone).Err(err).
-					Msg("Invalid timezone, falling back to local")
+				logger.Warn("invalid_timezone_fallback_local",
+					zap.String("timezone", cfg.Timezone),
+					zap.Error(err))
 			} else {
 				opts = append(opts, cron.WithLocation(loc))
 			}
@@ -67,8 +69,9 @@ func NewPowerMonitor(cfg PowerMonitorConfig, fetcher ONUListFetcher, webhook *We
 		cronRunner := cron.New(opts...)
 		_, err := cronRunner.AddFunc(cfg.Cron, pm.safeScan)
 		if err != nil {
-			log.Error().Str("cron", cfg.Cron).Err(err).
-				Msg("Invalid cron expression, cron scheduling disabled")
+			logger.Error("invalid_cron_expression_scheduling_disabled",
+				zap.String("cron", cfg.Cron),
+				zap.Error(err))
 		} else {
 			pm.cronRunner = cronRunner
 		}
@@ -83,22 +86,21 @@ func (pm *PowerMonitor) Start() {
 	hasCron := pm.cronRunner != nil
 
 	if !hasInterval && !hasCron {
-		log.Warn().Msg("Power monitor: both interval and cron are disabled, nothing to do")
+		logger.Warn("power_monitor_disabled_nothing_to_do")
 		return
 	}
 
-	log.Info().
-		Dur("interval", pm.config.Interval).
-		Str("cron", pm.config.Cron).
-		Str("timezone", pm.config.Timezone).
-		Float64("high_threshold", pm.config.HighThreshold).
-		Float64("low_threshold", pm.config.LowThreshold).
-		Msg("Starting RX Power monitor")
+	logger.Info("starting_rx_power_monitor",
+		zap.Duration("interval", pm.config.Interval),
+		zap.String("cron", pm.config.Cron),
+		zap.String("timezone", pm.config.Timezone),
+		zap.Float64("high_threshold", pm.config.HighThreshold),
+		zap.Float64("low_threshold", pm.config.LowThreshold))
 
 	// Start cron scheduler if configured
 	if hasCron {
 		pm.cronRunner.Start()
-		log.Info().Str("cron", pm.config.Cron).Msg("Power monitor: cron scheduler started")
+		logger.Info("power_monitor_cron_scheduler_started", zap.String("cron", pm.config.Cron))
 	}
 
 	// Run interval ticker if configured
@@ -111,14 +113,14 @@ func (pm *PowerMonitor) Start() {
 			case <-ticker.C:
 				pm.safeScan()
 			case <-pm.stopCh:
-				log.Info().Msg("Power monitor stopped")
+				logger.Info("power_monitor_stopped")
 				return
 			}
 		}
 	} else {
 		// Cron-only mode: block until stop signal
 		<-pm.stopCh
-		log.Info().Msg("Power monitor stopped")
+		logger.Info("power_monitor_stopped")
 	}
 }
 
@@ -137,7 +139,7 @@ func (pm *PowerMonitor) Close() error {
 func (pm *PowerMonitor) safeScan() {
 	defer func() {
 		if r := recover(); r != nil {
-			log.Error().Interface("panic", r).Msg("Power monitor: scan panicked, recovered")
+			logger.Error("power_monitor_scan_panic_recovered", zap.Any("panic", r))
 		}
 	}()
 	pm.scan()
@@ -148,7 +150,7 @@ func (pm *PowerMonitor) scan() {
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 
-	log.Debug().Msg("Power monitor: scanning all PONs")
+	logger.Debug("power_monitor_scanning_all_pons")
 
 	alertCount := 0
 	for boardID := 1; boardID <= 2; boardID++ {
@@ -203,9 +205,9 @@ func (pm *PowerMonitor) scan() {
 	}
 
 	if alertCount > 0 {
-		log.Warn().Int("alerts", alertCount).Msg("Power monitor: abnormal RX power detected")
+		logger.Warn("power_monitor_abnormal_rx_power_detected", zap.Int("alerts", alertCount))
 	} else {
-		log.Debug().Msg("Power monitor: scan complete, all power levels normal")
+		logger.Debug("power_monitor_scan_complete_all_normal")
 	}
 }
 
@@ -240,14 +242,13 @@ func (pm *PowerMonitor) sendAlert(onu model.ONUInfoPerBoard, eventType, descript
 		Description:  description,
 	}
 
-	log.Warn().
-		Int("board", onu.Board).
-		Int("pon", onu.PON).
-		Int("onu_id", onu.ID).
-		Str("rx_power", onu.RXPower).
-		Str("event_type", eventType).
-		Str("name", onu.Name).
-		Msg("RX Power alert")
+	logger.Warn("rx_power_alert",
+		zap.Int("board", onu.Board),
+		zap.Int("pon", onu.PON),
+		zap.Int("onu_id", onu.ID),
+		zap.String("rx_power", onu.RXPower),
+		zap.String("event_type", eventType),
+		zap.String("name", onu.Name))
 
 	if pm.webhook != nil {
 		go pm.webhook.Send(event)

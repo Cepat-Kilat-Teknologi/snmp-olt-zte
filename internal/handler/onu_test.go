@@ -74,29 +74,10 @@ func (m *mockOnuUsecase) DeleteCache(ctx context.Context, boardID, ponID int) er
 
 func (m *mockOnuUsecase) PreWarmCache(ctx context.Context) {}
 
-func TestGetRequestID(t *testing.T) {
-	tests := []struct {
-		name     string
-		headerID string
-		expected string
-	}{
-		{"with X-Request-ID header", "abc-123", "abc-123"},
-		{"without X-Request-ID header", "", ""},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			req := httptest.NewRequest("GET", "/", nil)
-			if tt.headerID != "" {
-				req.Header.Set("X-Request-ID", tt.headerID)
-			}
-			got := getRequestID(req)
-			if got != tt.expected {
-				t.Errorf("getRequestID() = %q, want %q", got, tt.expected)
-			}
-		})
-	}
-}
+// TestGetRequestID removed: the local getRequestID helper was replaced by
+// logger.WithRequestID(ctx) which uses the context-based reqctx package.
+// Request ID propagation is covered by TestHandleError_RequestIDPropagated
+// in internal/utils and by the middleware.RequestID tests.
 
 func TestNewOnuHandler(t *testing.T) {
 	usecase := &mockOnuUsecase{}

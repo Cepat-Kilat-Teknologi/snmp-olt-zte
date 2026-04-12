@@ -9,7 +9,8 @@ import (
 	"time"
 
 	"github.com/Cepat-Kilat-Teknologi/go-snmp-olt-zte-c320/internal/model"
-	"github.com/rs/zerolog/log"
+	"github.com/Cepat-Kilat-Teknologi/go-snmp-olt-zte-c320/pkg/logger"
+	"go.uber.org/zap"
 )
 
 // WebhookClient sends trap events to external webhook URLs
@@ -36,7 +37,7 @@ func NewWebhookClient(url string, maxRetries int, timeoutSec int) *WebhookClient
 func (w *WebhookClient) Send(event model.TrapEvent) {
 	payload, err := json.Marshal(event)
 	if err != nil {
-		log.Error().Err(err).Msg("Failed to marshal trap event for webhook")
+		logger.Error("webhook_marshal_failed", zap.Error(err))
 		return
 	}
 
@@ -45,44 +46,41 @@ func (w *WebhookClient) Send(event model.TrapEvent) {
 		if attempt > 0 {
 			// Exponential backoff: 1s, 2s, 4s
 			backoff := time.Duration(math.Pow(2, float64(attempt-1))) * time.Second
-			log.Warn().
-				Int("attempt", attempt).
-				Dur("backoff", backoff).
-				Msg("Retrying webhook")
+			logger.Warn("webhook_retry",
+				zap.Int("attempt", attempt),
+				zap.Duration("backoff", backoff))
 			time.Sleep(backoff)
 		}
 
 		resp, err := w.client.Post(w.url, "application/json", bytes.NewReader(payload))
 		if err != nil {
 			lastErr = err
-			log.Error().Err(err).
-				Int("attempt", attempt).
-				Msg("Webhook request failed")
+			logger.Error("webhook_request_failed",
+				zap.Error(err),
+				zap.Int("attempt", attempt))
 			continue
 		}
 		_ = resp.Body.Close()
 
 		if resp.StatusCode >= 200 && resp.StatusCode < 300 {
-			log.Info().
-				Str("url", w.url).
-				Int("status", resp.StatusCode).
-				Int("board", event.Board).
-				Int("pon", event.PON).
-				Int("onu_id", event.OnuID).
-				Str("event_type", event.EventType).
-				Msg("Webhook sent successfully")
+			logger.Info("webhook_sent_successfully",
+				zap.String("url", w.url),
+				zap.Int("status", resp.StatusCode),
+				zap.Int("board", event.Board),
+				zap.Int("pon", event.PON),
+				zap.Int("onu_id", event.OnuID),
+				zap.String("event_type", event.EventType))
 			return
 		}
 
 		lastErr = fmt.Errorf("webhook returned status %d", resp.StatusCode)
-		log.Error().
-			Int("status", resp.StatusCode).
-			Int("attempt", attempt).
-			Msg("Webhook returned non-2xx status")
+		logger.Error("webhook_non_2xx_status",
+			zap.Int("status", resp.StatusCode),
+			zap.Int("attempt", attempt))
 	}
 
-	log.Error().Err(lastErr).
-		Str("url", w.url).
-		Int("retries", w.maxRetries).
-		Msg("Webhook failed after all retries")
+	logger.Error("webhook_failed_after_all_retries",
+		zap.Error(lastErr),
+		zap.String("url", w.url),
+		zap.Int("retries", w.maxRetries))
 }

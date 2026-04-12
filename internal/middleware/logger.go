@@ -5,48 +5,69 @@ import (
 	"runtime/debug"
 	"time"
 
-	"github.com/go-chi/chi/v5/middleware"
-	"github.com/rs/zerolog"
+	"github.com/Cepat-Kilat-Teknologi/go-snmp-olt-zte-c320/internal/utils"
+	"github.com/Cepat-Kilat-Teknologi/go-snmp-olt-zte-c320/pkg/logger"
+	chimw "github.com/go-chi/chi/v5/middleware"
+	"go.uber.org/zap"
 )
 
-// Logger is a middleware function that logs incoming HTTP requests and their details
-// using the provided zerolog.Logger instance. It captures information such as request
-// time, remote address, request path, protocol, method, user agent, response status,
-// bytes in/out, and elapsed time. It also handles panics and logs them as errors
-func Logger(logger zerolog.Logger) func(next http.Handler) http.Handler { // Function to return Logger middleware handler
-	return func(next http.Handler) http.Handler { // Return the actual middleware function
-		fn := func(w http.ResponseWriter, r *http.Request) { // Define the handler function
-			ww := middleware.NewWrapResponseWriter(w, r.ProtoMajor) // Wrap the response writer to capture status and size
-			startTime := time.Now()                                 // Record start time of request
+// skipLogPaths contains URIs that should NOT emit request logs.
+// Health and metrics endpoints are excluded to keep logs quiet.
+var skipLogPaths = map[string]struct{}{
+	"/health":  {},
+	"/healthz": {},
+	"/ready":   {},
+	"/readyz":  {},
+	"/metrics": {},
+}
 
-			defer func() { // Defer logging execution until after the request is processed
-				endTime := time.Now()                 // Record end time
-				elapsedTime := endTime.Sub(startTime) // Calculate duration
+// Logger is a middleware that logs incoming HTTP requests using the global
+// zap logger. It captures method, path, status, duration, client IP, user
+// agent, and request ID, and recovers from panics so they are logged as errors.
+func Logger() func(next http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		fn := func(w http.ResponseWriter, r *http.Request) {
+			if _, skip := skipLogPaths[r.URL.Path]; skip {
+				next.ServeHTTP(w, r)
+				return
+			}
 
-				if r := recover(); r != nil && r != http.ErrAbortHandler { // Recover from panics
-					logger.Error().Interface("recover", r).Bytes("stack", debug.Stack()).Msg("incoming_request_panic") // Log panic details
-					ww.WriteHeader(http.StatusInternalServerError)                                                     // Respond with 500 Internal Server Error
+			ww := chimw.NewWrapResponseWriter(w, r.ProtoMajor)
+			startTime := time.Now()
+
+			defer func() {
+				elapsed := time.Since(startTime)
+
+				reqID := utils.RequestIDFromContext(r.Context())
+
+				if rec := recover(); rec != nil && rec != http.ErrAbortHandler {
+					logger.L().Error("incoming_request_panic",
+						zap.Any("recover", rec),
+						zap.ByteString("stack", debug.Stack()),
+						zap.String("request_id", reqID),
+						zap.String("method", r.Method),
+						zap.String("path", r.URL.Path),
+					)
+					ww.WriteHeader(http.StatusInternalServerError)
 				}
 
-				// Log request details using structured logging
-				logger.Info().Fields(map[string]interface{}{
-					"time":         startTime.Format(time.RFC3339), // Format start time as RFC3339
-					"remote_addr":  r.RemoteAddr,                   // Remote IP address
-					"path":         r.URL.Path,                     // Request path
-					"proto":        r.Proto,                        // Protocol version
-					"method":       r.Method,                       // HTTP method
-					"user_agent":   r.UserAgent(),                  // User Agent string
-					"status":       http.StatusText(ww.Status()),   // Text description of HTTP status
-					"status_code":  ww.Status(),                    // Numeric HTTP status code
-					"bytes_in":     r.ContentLength,                // Request content length
-					"bytes_out":    ww.BytesWritten(),              // Response body size
-					"elapsed_time": elapsedTime.String(),           // Processing duration as a string
-				}).Msg("incoming_request") // Log message
+				logger.L().Info("incoming_request",
+					zap.String("request_id", reqID),
+					zap.String("remote_addr", r.RemoteAddr),
+					zap.String("path", r.URL.Path),
+					zap.String("proto", r.Proto),
+					zap.String("method", r.Method),
+					zap.String("user_agent", r.UserAgent()),
+					zap.Int("status", ww.Status()),
+					zap.Int64("bytes_in", r.ContentLength),
+					zap.Int("bytes_out", ww.BytesWritten()),
+					zap.Int64("duration_ms", elapsed.Milliseconds()),
+				)
 			}()
 
-			next.ServeHTTP(ww, r) // Serve the request using the wrapped response writer
+			next.ServeHTTP(ww, r)
 		}
 
-		return http.HandlerFunc(fn) // Return the handler function
+		return http.HandlerFunc(fn)
 	}
 }

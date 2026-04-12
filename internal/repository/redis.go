@@ -7,8 +7,9 @@ import (
 
 	apperrors "github.com/Cepat-Kilat-Teknologi/go-snmp-olt-zte-c320/internal/errors"
 	"github.com/Cepat-Kilat-Teknologi/go-snmp-olt-zte-c320/internal/model"
+	"github.com/Cepat-Kilat-Teknologi/go-snmp-olt-zte-c320/pkg/logger"
 	"github.com/redis/go-redis/v9"
-	"github.com/rs/zerolog/log"
+	"go.uber.org/zap"
 )
 
 // OnuRedisRepositoryInterface is an interface that represents the auth's repository contract
@@ -25,8 +26,8 @@ type OnuRedisRepositoryInterface interface {
 	GetTTL(ctx context.Context, key string) (time.Duration, error)                                           // Get TTL for a key
 	SaveONUDetail(ctx context.Context, key string, seconds int, detail model.ONUCustomerInfo) error          // Save ONU detail to Redis
 	GetONUDetail(ctx context.Context, key string) (*model.ONUCustomerInfo, error)                            // Get ONU detail from Redis
-	SaveONUSerialList(ctx context.Context, key string, seconds int, list []model.OnuSerialNumber) error     // Save ONU serial number list to Redis
-	GetONUSerialList(ctx context.Context, key string) ([]model.OnuSerialNumber, error)                      // Get ONU serial number list from Redis
+	SaveONUSerialList(ctx context.Context, key string, seconds int, list []model.OnuSerialNumber) error      // Save ONU serial number list to Redis
+	GetONUSerialList(ctx context.Context, key string) ([]model.OnuSerialNumber, error)                       // Get ONU serial number list from Redis
 }
 
 // Auth redis repository
@@ -48,13 +49,13 @@ func (r *onuRedisRepo) GetOnuIDCtx(ctx context.Context, key string) ([]model.Onu
 	// Check for error
 	if err != nil {
 		// Cache miss is normal behavior, not an error - log as debug only
-		log.Debug().Str("key", key).Msg("Cache miss - key not found in Redis")
+		logger.WithRequestID(ctx).Debug("cache_miss_key_not_found", zap.String("key", key))
 		return nil, apperrors.NewRedisError("Get", err) // Return wrapped Redis error
 	}
 
 	var onuID []model.OnuID                                  // Variable to hold the result
 	if err := json.Unmarshal(onuBytes, &onuID); err != nil { // Unmarshal JSON bytes into onuID slice
-		log.Error().Err(err).Msg("Failed to unmarshal onu id")                    // Log error
+		logger.WithRequestID(ctx).Error("failed_to_unmarshal_onu_id", zap.Error(err))
 		return nil, apperrors.NewInternalError("failed to unmarshal onu id", err) // Return wrapped internal error
 	}
 
@@ -69,8 +70,8 @@ func (r *onuRedisRepo) SetOnuIDCtx(ctx context.Context, key string, seconds int,
 
 	// Set the key in Redis with the marshaled bytes and expiration time
 	if err := r.redisClient.Set(ctx, key, onuBytes, time.Second*time.Duration(seconds)).Err(); err != nil {
-		log.Error().Err(err).Str("key", key).Msg("Failed to set onu id to redis") // Log error
-		return apperrors.NewRedisError("Set", err)                                // Return wrapped Redis error
+		logger.WithRequestID(ctx).Error("failed_to_set_onu_id_to_redis", zap.Error(err), zap.String("key", key))
+		return apperrors.NewRedisError("Set", err) // Return wrapped Redis error
 	}
 
 	return nil // Return nil on success
@@ -79,8 +80,8 @@ func (r *onuRedisRepo) SetOnuIDCtx(ctx context.Context, key string, seconds int,
 // DeleteOnuIDCtx is a method to delete onu id from redis
 func (r *onuRedisRepo) DeleteOnuIDCtx(ctx context.Context, key string) error {
 	if err := r.redisClient.Del(ctx, key).Err(); err != nil { // Delete key from Redis
-		log.Error().Err(err).Str("key", key).Msg("Failed to delete onu id from redis") // Log error
-		return apperrors.NewRedisError("Del", err)                                     // Return wrapped Redis error
+		logger.WithRequestID(ctx).Error("failed_to_delete_onu_id_from_redis", zap.Error(err), zap.String("key", key))
+		return apperrors.NewRedisError("Del", err) // Return wrapped Redis error
 	}
 
 	return nil // Return nil on success
@@ -96,8 +97,8 @@ func (r *onuRedisRepo) SaveONUInfoList(
 
 	// Set key in Redis with expiration
 	if err := r.redisClient.Set(ctx, key, onuBytes, time.Second*time.Duration(seconds)).Err(); err != nil {
-		log.Error().Err(err).Str("key", key).Msg("Failed to set onu info list to redis") // Log error
-		return apperrors.NewRedisError("Set", err)                                       // Return wrapped Redis error
+		logger.WithRequestID(ctx).Error("failed_to_set_onu_info_list_to_redis", zap.Error(err), zap.String("key", key))
+		return apperrors.NewRedisError("Set", err) // Return wrapped Redis error
 	}
 
 	return nil // Return nil on success
@@ -108,13 +109,13 @@ func (r *onuRedisRepo) GetONUInfoList(ctx context.Context, key string) ([]model.
 	onuBytes, err := r.redisClient.Get(ctx, key).Bytes() // Get value as bytes from Redis
 	if err != nil {                                      // Check for error
 		// Cache miss is normal behavior, not an error - log as debug only
-		log.Debug().Str("key", key).Msg("Cache miss - key not found in Redis")
+		logger.WithRequestID(ctx).Debug("cache_miss_key_not_found", zap.String("key", key))
 		return nil, apperrors.NewRedisError("Get", err) // Return wrapped Redis error
 	}
 
 	var onuInfoList []model.ONUInfoPerBoard                        // Variable to hold a result
 	if err := json.Unmarshal(onuBytes, &onuInfoList); err != nil { // Unmarshal JSON to struct
-		log.Error().Err(err).Msg("Failed to unmarshal onu info list")                    // Log error
+		logger.WithRequestID(ctx).Error("failed_to_unmarshal_onu_info_list", zap.Error(err))
 		return nil, apperrors.NewInternalError("failed to unmarshal onu info list", err) // Return wrapped internal error
 	}
 
@@ -126,13 +127,13 @@ func (r *onuRedisRepo) GetOnlyOnuIDCtx(ctx context.Context, key string) ([]model
 	onuBytes, err := r.redisClient.Get(ctx, key).Bytes() // Get value as bytes from Redis
 	if err != nil {                                      // Check for error
 		// Cache miss is normal behavior, not an error - log as debug only
-		log.Debug().Str("key", key).Msg("Cache miss - key not found in Redis")
+		logger.WithRequestID(ctx).Debug("cache_miss_key_not_found", zap.String("key", key))
 		return nil, apperrors.NewRedisError("Get", err) // Return wrapped Redis error
 	}
 
 	var onuID []model.OnuOnlyID                              // Variable to hold a result
 	if err := json.Unmarshal(onuBytes, &onuID); err != nil { // Unmarshal JSON
-		log.Error().Err(err).Msg("Failed to unmarshal onu id")                    // Log error
+		logger.WithRequestID(ctx).Error("failed_to_unmarshal_onu_id", zap.Error(err))
 		return nil, apperrors.NewInternalError("failed to unmarshal onu id", err) // Return wrapped internal error
 	}
 
@@ -147,8 +148,8 @@ func (r *onuRedisRepo) SaveOnlyOnuIDCtx(ctx context.Context, key string, seconds
 
 	// Set key in Redis with expiration
 	if err := r.redisClient.Set(ctx, key, onuBytes, time.Second*time.Duration(seconds)).Err(); err != nil {
-		log.Error().Err(err).Str("key", key).Msg("Failed to set onu id to redis") // Log error
-		return apperrors.NewRedisError("Set", err)                                // Return wrapped Redis error
+		logger.WithRequestID(ctx).Error("failed_to_set_onu_id_to_redis", zap.Error(err), zap.String("key", key))
+		return apperrors.NewRedisError("Set", err) // Return wrapped Redis error
 	}
 
 	return nil // Return nil
@@ -159,15 +160,15 @@ func (r *onuRedisRepo) Delete(ctx context.Context, key string) error {
 	// Delete key from Redis
 	result, err := r.redisClient.Del(ctx, key).Result()
 	if err != nil {
-		log.Error().Err(err).Str("key", key).Msg("Failed to delete key from redis")
+		logger.WithRequestID(ctx).Error("failed_to_delete_key_from_redis", zap.Error(err), zap.String("key", key))
 		return apperrors.NewRedisError("Delete", err)
 	}
 
 	// Log result
 	if result == 0 {
-		log.Warn().Str("key", key).Msg("Key not found in redis (already deleted or never existed)")
+		logger.WithRequestID(ctx).Warn("key_not_found_in_redis", zap.String("key", key))
 	} else {
-		log.Info().Str("key", key).Int64("deleted_count", result).Msg("Successfully deleted key from redis")
+		logger.WithRequestID(ctx).Info("successfully_deleted_key_from_redis", zap.String("key", key), zap.Int64("deleted_count", result))
 	}
 
 	return nil
@@ -183,13 +184,13 @@ func (r *onuRedisRepo) SaveONUDetail(ctx context.Context, key string, seconds in
 	// Marshal detail to JSON bytes
 	detailBytes, err := json.Marshal(detail)
 	if err != nil {
-		log.Error().Err(err).Msg("Failed to marshal ONU detail")
+		logger.WithRequestID(ctx).Error("failed_to_marshal_onu_detail", zap.Error(err))
 		return apperrors.NewInternalError("failed to marshal ONU detail", err)
 	}
 
 	// Set key in Redis with expiration
 	if err := r.redisClient.Set(ctx, key, detailBytes, time.Second*time.Duration(seconds)).Err(); err != nil {
-		log.Error().Err(err).Str("key", key).Msg("Failed to set ONU detail to redis")
+		logger.WithRequestID(ctx).Error("failed_to_set_onu_detail_to_redis", zap.Error(err), zap.String("key", key))
 		return apperrors.NewRedisError("Set", err)
 	}
 
@@ -200,13 +201,13 @@ func (r *onuRedisRepo) SaveONUDetail(ctx context.Context, key string, seconds in
 func (r *onuRedisRepo) GetONUDetail(ctx context.Context, key string) (*model.ONUCustomerInfo, error) {
 	detailBytes, err := r.redisClient.Get(ctx, key).Bytes()
 	if err != nil {
-		log.Debug().Str("key", key).Msg("Cache miss - ONU detail key not found in Redis")
+		logger.WithRequestID(ctx).Debug("cache_miss_onu_detail_key_not_found", zap.String("key", key))
 		return nil, apperrors.NewRedisError("Get", err)
 	}
 
 	var detail model.ONUCustomerInfo
 	if err := json.Unmarshal(detailBytes, &detail); err != nil {
-		log.Error().Err(err).Msg("Failed to unmarshal ONU detail")
+		logger.WithRequestID(ctx).Error("failed_to_unmarshal_onu_detail", zap.Error(err))
 		return nil, apperrors.NewInternalError("failed to unmarshal ONU detail", err)
 	}
 
@@ -217,11 +218,11 @@ func (r *onuRedisRepo) GetONUDetail(ctx context.Context, key string) (*model.ONU
 func (r *onuRedisRepo) SaveONUSerialList(ctx context.Context, key string, seconds int, list []model.OnuSerialNumber) error {
 	dataBytes, err := json.Marshal(list)
 	if err != nil {
-		log.Error().Err(err).Msg("Failed to marshal ONU serial list")
+		logger.WithRequestID(ctx).Error("failed_to_marshal_onu_serial_list", zap.Error(err))
 		return apperrors.NewInternalError("failed to marshal ONU serial list", err)
 	}
 	if err := r.redisClient.Set(ctx, key, dataBytes, time.Second*time.Duration(seconds)).Err(); err != nil {
-		log.Error().Err(err).Str("key", key).Msg("Failed to set ONU serial list to redis")
+		logger.WithRequestID(ctx).Error("failed_to_set_onu_serial_list_to_redis", zap.Error(err), zap.String("key", key))
 		return apperrors.NewRedisError("Set", err)
 	}
 	return nil
@@ -231,12 +232,12 @@ func (r *onuRedisRepo) SaveONUSerialList(ctx context.Context, key string, second
 func (r *onuRedisRepo) GetONUSerialList(ctx context.Context, key string) ([]model.OnuSerialNumber, error) {
 	dataBytes, err := r.redisClient.Get(ctx, key).Bytes()
 	if err != nil {
-		log.Debug().Str("key", key).Msg("Cache miss - ONU serial list not found in Redis")
+		logger.WithRequestID(ctx).Debug("cache_miss_onu_serial_list_not_found", zap.String("key", key))
 		return nil, apperrors.NewRedisError("Get", err)
 	}
 	var list []model.OnuSerialNumber
 	if err := json.Unmarshal(dataBytes, &list); err != nil {
-		log.Error().Err(err).Msg("Failed to unmarshal ONU serial list")
+		logger.WithRequestID(ctx).Error("failed_to_unmarshal_onu_serial_list", zap.Error(err))
 		return nil, apperrors.NewInternalError("failed to unmarshal ONU serial list", err)
 	}
 	return list, nil

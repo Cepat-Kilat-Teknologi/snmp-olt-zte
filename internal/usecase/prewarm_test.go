@@ -45,8 +45,8 @@ func TestPreWarmCache_Success(t *testing.T) {
 
 func TestPreWarmCache_Cancelled(t *testing.T) {
 	cfg := &config.Config{
-		OltCfg:   config.OltConfig{BaseOID1: "1.3.6.1.4.1", BaseOID2: "1.3.6.1.4.2"},
-		CacheCfg: config.CacheConfig{ONUInfoTTL: 1800, ONUDetailTTL: 900, EmptyOnuIDTTL: 300},
+		OltCfg:      config.OltConfig{BaseOID1: "1.3.6.1.4.1", BaseOID2: "1.3.6.1.4.2"},
+		CacheCfg:    config.CacheConfig{ONUInfoTTL: 1800, ONUDetailTTL: 900, EmptyOnuIDTTL: 300},
 		BoardPonMap: make(map[config.BoardPonKey]*config.BoardPonConfig),
 	}
 	for b := 1; b <= 2; b++ {
@@ -68,8 +68,8 @@ func TestPreWarmCache_Cancelled(t *testing.T) {
 
 func TestPreWarmCache_WithErrors(t *testing.T) {
 	cfg := &config.Config{
-		OltCfg:   config.OltConfig{BaseOID1: "1.3.6.1.4.1", BaseOID2: "1.3.6.1.4.2"},
-		CacheCfg: config.CacheConfig{ONUInfoTTL: 1800, ONUDetailTTL: 900, EmptyOnuIDTTL: 300},
+		OltCfg:      config.OltConfig{BaseOID1: "1.3.6.1.4.1", BaseOID2: "1.3.6.1.4.2"},
+		CacheCfg:    config.CacheConfig{ONUInfoTTL: 1800, ONUDetailTTL: 900, EmptyOnuIDTTL: 300},
 		BoardPonMap: make(map[config.BoardPonKey]*config.BoardPonConfig),
 	}
 	// Only add board 1 pon 1 — all other combos will fail with "config not found"

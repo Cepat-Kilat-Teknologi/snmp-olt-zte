@@ -15,7 +15,7 @@ func TestSendRequestJSONResponse(t *testing.T) {
 	// Response for 200 OK
 	response := WebResponse{
 		Code:   200,
-		Status: "OK",
+		Status: "success",
 		Data:   map[string]string{"key": "value"},
 	}
 
@@ -50,7 +50,7 @@ func TestErrorBadRequestBos(t *testing.T) {
 	err := errors.New("Bad Request")
 
 	// Call function ErrorBadRequest
-	ErrorBadRequest(rr, err)
+	ErrorBadRequest(rr, newTestRequest(), err)
 
 	// Check status respons
 	if status := rr.Code; status != http.StatusBadRequest {
@@ -76,7 +76,10 @@ func TestErrorBadRequestBos(t *testing.T) {
 	if decodedResponse.Status != "Bad Request" {
 		t.Errorf("Status tidak sesuai: got %v want %v", decodedResponse.Status, "Bad Request")
 	}
-	if decodedResponse.Error.Message != "Bad Request" {
-		t.Errorf("Error message tidak sesuai: got %v want %v", decodedResponse.Error.Message, "Bad Request")
+	if decodedResponse.Data != "Bad Request" {
+		t.Errorf("Error data tidak sesuai: got %v want %v", decodedResponse.Data, "Bad Request")
+	}
+	if decodedResponse.ErrorCode != "INTERNAL_ERROR" {
+		t.Errorf("ErrorCode tidak sesuai: got %v want %v", decodedResponse.ErrorCode, "INTERNAL_ERROR")
 	}
 }

@@ -66,14 +66,18 @@ func (m *mockSnmpRepository) BulkWalk(oid string, walkFunc func(pdu gosnmp.SnmpP
 
 func (m *mockSnmpRepository) Close() {}
 
+// Ping satisfies SnmpRepositoryInterface.Ping for the mock.
+// The mock is always considered reachable in unit tests.
+func (m *mockSnmpRepository) Ping() error { return nil }
+
 // mockRedisRepository is a mock implementation of OnuRedisRepositoryInterface
 type mockRedisRepository struct {
-	GetONUInfoListFunc  func(ctx context.Context, key string) ([]model.ONUInfoPerBoard, error)
-	SaveONUInfoListFunc func(ctx context.Context, key string, seconds int, onuInfoList []model.ONUInfoPerBoard) error
-	GetOnuIDCtxFunc     func(ctx context.Context, key string) ([]model.OnuID, error)
-	SetOnuIDCtxFunc     func(ctx context.Context, key string, seconds int, onuID []model.OnuID) error
-	DeleteFunc          func(ctx context.Context, key string) error
-	GetTTLFunc          func(ctx context.Context, key string) (time.Duration, error)
+	GetONUInfoListFunc    func(ctx context.Context, key string) ([]model.ONUInfoPerBoard, error)
+	SaveONUInfoListFunc   func(ctx context.Context, key string, seconds int, onuInfoList []model.ONUInfoPerBoard) error
+	GetOnuIDCtxFunc       func(ctx context.Context, key string) ([]model.OnuID, error)
+	SetOnuIDCtxFunc       func(ctx context.Context, key string, seconds int, onuID []model.OnuID) error
+	DeleteFunc            func(ctx context.Context, key string) error
+	GetTTLFunc            func(ctx context.Context, key string) (time.Duration, error)
 	SaveONUDetailFunc     func(ctx context.Context, key string, seconds int, detail model.ONUCustomerInfo) error
 	GetONUDetailFunc      func(ctx context.Context, key string) (*model.ONUCustomerInfo, error)
 	GetONUSerialListFunc  func(ctx context.Context, key string) ([]model.OnuSerialNumber, error)
@@ -2995,7 +2999,7 @@ func TestGetByBoardIDAndPonID_CacheWithLowTTL_TriggersRefresh(t *testing.T) {
 			BaseOID1: "1.3.6.1.4.1",
 			BaseOID2: "1.3.6.1.4.2",
 		},
-		CacheCfg: config.CacheConfig{ONUInfoTTL: 1800, ONUDetailTTL: 900, EmptyOnuIDTTL: 300},
+		CacheCfg:    config.CacheConfig{ONUInfoTTL: 1800, ONUDetailTTL: 900, EmptyOnuIDTTL: 300},
 		BoardPonMap: make(map[config.BoardPonKey]*config.BoardPonConfig),
 	}
 	cfg.BoardPonMap[config.BoardPonKey{BoardID: 1, PonID: 1}] = &config.BoardPonConfig{
@@ -3035,7 +3039,7 @@ func TestGetByBoardIDAndPonID_CacheWithHighTTL_NoRefresh(t *testing.T) {
 		OltCfg: config.OltConfig{
 			BaseOID1: "1.3.6.1.4.1",
 		},
-		CacheCfg: config.CacheConfig{ONUInfoTTL: 1800, ONUDetailTTL: 900, EmptyOnuIDTTL: 300},
+		CacheCfg:    config.CacheConfig{ONUInfoTTL: 1800, ONUDetailTTL: 900, EmptyOnuIDTTL: 300},
 		BoardPonMap: make(map[config.BoardPonKey]*config.BoardPonConfig),
 	}
 	cfg.BoardPonMap[config.BoardPonKey{BoardID: 1, PonID: 1}] = &config.BoardPonConfig{
@@ -3071,7 +3075,7 @@ func TestGetByBoardIDPonIDAndOnuID_FromCache(t *testing.T) {
 		OltCfg: config.OltConfig{
 			BaseOID1: "1.3.6.1.4.1",
 		},
-		CacheCfg: config.CacheConfig{ONUInfoTTL: 1800, ONUDetailTTL: 900, EmptyOnuIDTTL: 300},
+		CacheCfg:    config.CacheConfig{ONUInfoTTL: 1800, ONUDetailTTL: 900, EmptyOnuIDTTL: 300},
 		BoardPonMap: make(map[config.BoardPonKey]*config.BoardPonConfig),
 	}
 	cfg.BoardPonMap[config.BoardPonKey{BoardID: 1, PonID: 1}] = &config.BoardPonConfig{
