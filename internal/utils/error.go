@@ -5,8 +5,9 @@ import (
 	"errors"
 	"net/http"
 
-	apperrors "github.com/Cepat-Kilat-Teknologi/go-snmp-olt-zte-c320/internal/errors" // Import custom errors
-	"github.com/rs/zerolog/log"                                                       // Import logger
+	apperrors "github.com/Cepat-Kilat-Teknologi/go-snmp-olt-zte-c320/internal/errors"
+	"github.com/Cepat-Kilat-Teknologi/go-snmp-olt-zte-c320/pkg/logger"
+	"go.uber.org/zap"
 )
 
 // SendJSONResponse is a helper function to send a JSON response
@@ -20,117 +21,114 @@ func SendJSONResponse(w http.ResponseWriter, statusCode int, response interface{
 	}
 }
 
-// HandleError converts AppError to appropriate HTTP response
+// requestIDFromRequest extracts the request ID from the HTTP request context.
+// Returns empty string if not present.
+func requestIDFromRequest(r *http.Request) string {
+	if r == nil {
+		return ""
+	}
+	return RequestIDFromContext(r.Context())
+}
+
+// buildErrorResponse constructs an ErrorResponse from an error, extracting the
+// error code and data payload from AppError when possible.
+func buildErrorResponse(code int, status string, requestID string, err error) ErrorResponse {
+	resp := ErrorResponse{
+		Code:      code,
+		Status:    status,
+		ErrorCode: string(apperrors.ErrorTypeInternal),
+		RequestID: requestID,
+	}
+
+	var appErr *apperrors.AppError
+	if errors.As(err, &appErr) {
+		resp.ErrorCode = string(appErr.Type)
+		if len(appErr.Details) > 0 {
+			resp.Data = map[string]any{
+				"message": appErr.Message,
+				"details": appErr.Details,
+			}
+		} else {
+			resp.Data = appErr.Message
+		}
+		return resp
+	}
+
+	// Fallback for non-AppError errors
+	if err != nil {
+		resp.Data = err.Error()
+	}
+	return resp
+}
+
+// HandleError converts AppError to appropriate HTTP response.
 // Maps custom application error types to standard HTTP status codes.
 // Logs errors at appropriate levels for Prometheus/Grafana/Loki monitoring.
-func HandleError(w http.ResponseWriter, err error) {
+func HandleError(w http.ResponseWriter, r *http.Request, err error) {
 	var appErr *apperrors.AppError
+	requestID := requestIDFromRequest(r)
 
 	// Check if it's our custom error
 	if errors.As(err, &appErr) {
+		baseFields := []zap.Field{
+			zap.String("error_code", string(appErr.Type)),
+			zap.String("request_id", requestID),
+			zap.String("message", appErr.Message),
+		}
+		if len(appErr.Details) > 0 {
+			baseFields = append(baseFields, zap.Any("details", appErr.Details))
+		}
+
 		switch appErr.Type {
-		case apperrors.ErrorTypeValidation: // Validation error -> 400 Bad Request
-			// Log as WARN - client sent invalid data (not critical, expected behavior)
-			log.Warn().
-				Str("error_type", string(appErr.Type)).
-				Str("message", appErr.Message).
-				Interface("details", appErr.Details).
-				Msg("Validation error")
-			ErrorBadRequest(w, appErr)
+		case apperrors.ErrorTypeValidation: // -> 400 Bad Request
+			logger.Warn("validation_error", baseFields...)
+			writeError(w, http.StatusBadRequest, "Bad Request", requestID, appErr)
 
-		case apperrors.ErrorTypeNotFound: // Not Found error -> 404 Not Found
-			// Log as DEBUG - resource not found (normal operation, not an error)
-			log.Debug().
-				Str("error_type", string(appErr.Type)).
-				Str("message", appErr.Message).
-				Interface("details", appErr.Details).
-				Msg("Resource not found")
-			ErrorNotFound(w, appErr)
+		case apperrors.ErrorTypeNotFound: // -> 404 Not Found
+			logger.Debug("resource_not_found", baseFields...)
+			writeError(w, http.StatusNotFound, "Not Found", requestID, appErr)
 
-		case apperrors.ErrorTypeSNMP, apperrors.ErrorTypeRedis, apperrors.ErrorTypeInternal: // Systems errors -> 500 Internal Error
-			// Log as ERROR - real system error (already logged upstream, but log here for completeness)
-			log.Error().
-				Str("error_type", string(appErr.Type)).
-				Str("message", appErr.Message).
-				Err(appErr.Err).
-				Interface("details", appErr.Details).
-				Msg("Internal error")
-			ErrorInternalServerError(w, appErr)
+		case apperrors.ErrorTypeSNMP, apperrors.ErrorTypeRedis, apperrors.ErrorTypeInternal: // -> 500
+			fields := append(baseFields, zap.Error(appErr.Err))
+			logger.Error("internal_error", fields...)
+			writeError(w, http.StatusInternalServerError, "Internal Server Error", requestID, appErr)
 
-		case apperrors.ErrorTypeConfig: // Config error -> 500 Internal Error
-			// Log as ERROR - configuration error (critical)
-			log.Error().
-				Str("error_type", string(appErr.Type)).
-				Str("message", appErr.Message).
-				Err(appErr.Err).
-				Msg("Configuration error")
-			ErrorInternalServerError(w, appErr)
+		case apperrors.ErrorTypeConfig: // -> 500
+			fields := append(baseFields, zap.Error(appErr.Err))
+			logger.Error("configuration_error", fields...)
+			writeError(w, http.StatusInternalServerError, "Internal Server Error", requestID, appErr)
 
-		default: // Unknown error type -> 500 Internal Error
-			// Log as ERROR - unknown error type (critical)
-			log.Error().
-				Str("error_type", string(appErr.Type)).
-				Str("message", appErr.Message).
-				Msg("Unknown error type")
-			ErrorInternalServerError(w, appErr)
+		default: // -> 500
+			logger.Error("unknown_error_type", baseFields...)
+			writeError(w, http.StatusInternalServerError, "Internal Server Error", requestID, appErr)
 		}
 		return
 	}
 
 	// Fallback for non-AppError errors
-	log.Error().
-		Err(err).
-		Msg("Unhandled error")
-	ErrorInternalServerError(w, err)
+	logger.Error("unhandled_error",
+		zap.String("request_id", requestID),
+		zap.Error(err),
+	)
+	writeError(w, http.StatusInternalServerError, "Internal Server Error", requestID, err)
 }
 
-// ErrorBadRequest is a helper function to send a 400 Bad Request response
-func ErrorBadRequest(w http.ResponseWriter, err error) {
-	var appErr *apperrors.AppError
-	detail := ErrorDetail{Message: err.Error()}
-	if errors.As(err, &appErr) {
-		detail.Type = string(appErr.Type)
-		detail.Message = appErr.Message
-		detail.Details = appErr.Details
-	}
-	resp := ErrorResponse{
-		Code:   http.StatusBadRequest,
-		Status: "Bad Request",
-		Error:  detail,
-	}
-	SendJSONResponse(w, http.StatusBadRequest, resp)
+func writeError(w http.ResponseWriter, code int, status, requestID string, err error) {
+	resp := buildErrorResponse(code, status, requestID, err)
+	SendJSONResponse(w, code, resp)
 }
 
-// ErrorInternalServerError is a helper function to send a 500 Internal Server Error response
-func ErrorInternalServerError(w http.ResponseWriter, err error) {
-	var appErr *apperrors.AppError
-	detail := ErrorDetail{Message: err.Error()}
-	if errors.As(err, &appErr) {
-		detail.Type = string(appErr.Type)
-		detail.Message = appErr.Message
-		detail.Details = appErr.Details
-	}
-	resp := ErrorResponse{
-		Code:   http.StatusInternalServerError,
-		Status: "Internal Server Error",
-		Error:  detail,
-	}
-	SendJSONResponse(w, http.StatusInternalServerError, resp)
+// ErrorBadRequest is a helper function to send a 400 Bad Request response.
+func ErrorBadRequest(w http.ResponseWriter, r *http.Request, err error) {
+	writeError(w, http.StatusBadRequest, "Bad Request", requestIDFromRequest(r), err)
 }
 
-// ErrorNotFound is a helper function to send a 404 Not Found response
-func ErrorNotFound(w http.ResponseWriter, err error) {
-	var appErr *apperrors.AppError
-	detail := ErrorDetail{Message: err.Error()}
-	if errors.As(err, &appErr) {
-		detail.Type = string(appErr.Type)
-		detail.Message = appErr.Message
-		detail.Details = appErr.Details
-	}
-	resp := ErrorResponse{
-		Code:   http.StatusNotFound,
-		Status: "Not Found",
-		Error:  detail,
-	}
-	SendJSONResponse(w, http.StatusNotFound, resp)
+// ErrorInternalServerError is a helper function to send a 500 Internal Server Error response.
+func ErrorInternalServerError(w http.ResponseWriter, r *http.Request, err error) {
+	writeError(w, http.StatusInternalServerError, "Internal Server Error", requestIDFromRequest(r), err)
+}
+
+// ErrorNotFound is a helper function to send a 404 Not Found response.
+func ErrorNotFound(w http.ResponseWriter, r *http.Request, err error) {
+	writeError(w, http.StatusNotFound, "Not Found", requestIDFromRequest(r), err)
 }

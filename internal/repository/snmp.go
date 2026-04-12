@@ -12,6 +12,11 @@ type SnmpRepositoryInterface interface {
 	Get(oids []string) (result *gosnmp.SnmpPacket, err error)
 	Walk(oid string, walkFunc func(pdu gosnmp.SnmpPDU) error) error
 	BulkWalk(oid string, walkFunc func(pdu gosnmp.SnmpPDU) error) error
+	// Ping performs a lightweight reachability check against the OLT by
+	// issuing a single SNMP Get for sysUpTime (1.3.6.1.2.1.1.3.0). It is
+	// used by the readiness probe; callers should treat the result as a
+	// best-effort signal and not rely on it for correctness.
+	Ping() error
 	Close()
 }
 
@@ -148,6 +153,14 @@ func (r *snmpRepository) Close() {
 			_ = conn.Conn.Close()
 		}
 	}
+}
+
+// Ping performs a lightweight reachability check by fetching sysUpTime
+// (1.3.6.1.2.1.1.3.0) from the OLT. Any non-nil error is treated as "down"
+// by the readiness probe.
+func (r *snmpRepository) Ping() error {
+	_, err := r.Get([]string{"1.3.6.1.2.1.1.3.0"})
+	return err
 }
 
 // BulkWalk performs SNMP BulkWalk to get all OIDs under the given OID using GetBulk requests

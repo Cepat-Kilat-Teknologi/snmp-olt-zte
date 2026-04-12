@@ -4,13 +4,14 @@ import (
 	"context"
 	"time"
 
-	"github.com/rs/zerolog/log"
+	"github.com/Cepat-Kilat-Teknologi/go-snmp-olt-zte-c320/pkg/logger"
+	"go.uber.org/zap"
 )
 
 // PreWarmCache scans all board/pon combinations to populate Redis cache.
 // This runs as a background goroutine at startup so first requests hit cache.
 func (u *onuUsecase) PreWarmCache(ctx context.Context) {
-	log.Info().Msg("Cache pre-warm: starting")
+	logger.Info("cache_prewarm_starting")
 	start := time.Now()
 	total := 0
 	errors := 0
@@ -19,7 +20,7 @@ func (u *onuUsecase) PreWarmCache(ctx context.Context) {
 		for ponID := 1; ponID <= 16; ponID++ {
 			select {
 			case <-ctx.Done():
-				log.Warn().Msg("Cache pre-warm: cancelled")
+				logger.Warn("cache_prewarm_cancelled")
 				return
 			default:
 			}
@@ -27,24 +28,30 @@ func (u *onuUsecase) PreWarmCache(ctx context.Context) {
 			_, err := u.GetByBoardIDAndPonID(ctx, boardID, ponID)
 			if err != nil {
 				errors++
-				log.Debug().Err(err).Int("board", boardID).Int("pon", ponID).
-					Msg("Cache pre-warm: failed to fetch ONU info")
+				logger.Debug("cache_prewarm_fetch_onu_failed",
+					zap.Error(err),
+					zap.Int("board", boardID),
+					zap.Int("pon", ponID),
+				)
 			} else {
 				total++
 			}
 
-			// Also pre-warm serial number list cache
+			// Also pre-warm serial number list cache.
 			_, err = u.GetOnuIDAndSerialNumber(ctx, boardID, ponID)
 			if err != nil {
-				log.Debug().Err(err).Int("board", boardID).Int("pon", ponID).
-					Msg("Cache pre-warm: failed to fetch serial numbers")
+				logger.Debug("cache_prewarm_fetch_sn_failed",
+					zap.Error(err),
+					zap.Int("board", boardID),
+					zap.Int("pon", ponID),
+				)
 			}
 		}
 	}
 
-	log.Info().
-		Int("success", total).
-		Int("errors", errors).
-		Dur("duration", time.Since(start)).
-		Msg("Cache pre-warm: completed")
+	logger.Info("cache_prewarm_completed",
+		zap.Int("success", total),
+		zap.Int("errors", errors),
+		zap.Int64("duration_ms", time.Since(start).Milliseconds()),
+	)
 }

@@ -115,6 +115,10 @@ jobs:
             echo "value=${GIT_SHA::7}" >> "$GITHUB_OUTPUT"
           fi
 
+      - name: Capture build timestamp
+        id: buildtime
+        run: echo "value=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
+
       - name: Build & Push Docker Image
         id: build
         uses: docker/build-push-action@v6
@@ -127,6 +131,8 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           build-args: |
             APP_VERSION=${{ steps.version.outputs.value }}
+            APP_COMMIT=${{ github.sha }}
+            APP_BUILD_TIME=${{ steps.buildtime.outputs.value }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 

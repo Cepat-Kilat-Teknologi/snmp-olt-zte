@@ -121,6 +121,17 @@ func TestSnmpRepository_Get_NoConnection(t *testing.T) {
 	}
 }
 
+func TestSnmpRepository_Ping_NoConnection(t *testing.T) {
+	// Ping wraps Get on sysUpTime; without a live connection it must
+	// return a non-nil error so the readiness probe reports "down".
+	conn := newTestConn("invalid-host-that-does-not-exist", "public", 161)
+	repo := NewPonRepository(conn)
+
+	if err := repo.Ping(); err == nil {
+		t.Error("Expected non-nil error from Ping() on unconnected SNMP instance")
+	}
+}
+
 func TestSnmpRepository_Get_EmptyOIDs(t *testing.T) {
 	conn := newTestConn("invalid-host", "public", 161)
 	repo := NewPonRepository(conn)

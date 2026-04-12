@@ -7,25 +7,56 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/rs/zerolog"
+	"github.com/Cepat-Kilat-Teknologi/go-snmp-olt-zte-c320/pkg/logger"
+	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
 )
 
-func TestLogger_SuccessfulRequest(t *testing.T) {
-	// Create a buffer to capture log output
-	var buf bytes.Buffer
-	logger := zerolog.New(&buf).With().Timestamp().Logger()
+// newCapturingLogger returns a zap.Logger that writes JSON-encoded log entries
+// to the provided buffer. Used by tests that need to inspect middleware output.
+func newCapturingLogger(buf *bytes.Buffer) *zap.Logger {
+	encCfg := zap.NewProductionEncoderConfig()
+	encCfg.TimeKey = "timestamp"
+	encCfg.MessageKey = "message"
+	encCfg.LevelKey = "level"
+	encCfg.CallerKey = ""
+	encCfg.StacktraceKey = ""
+	enc := zapcore.NewJSONEncoder(encCfg)
+	core := zapcore.NewCore(enc, zapcore.AddSync(buf), zapcore.DebugLevel)
+	return zap.New(core)
+}
 
-	// Test handler that returns 200 OK
+// installCapturingLogger swaps the global logger with one that writes to buf,
+// returning a restore function to revert after the test.
+func installCapturingLogger(t *testing.T, buf *bytes.Buffer) func() {
+	t.Helper()
+	return logger.SetForTest(newCapturingLogger(buf))
+}
+
+// decodeFirstLog parses the first JSON log entry from buf. Tests can then
+// assert on individual fields.
+func decodeFirstLog(t *testing.T, buf *bytes.Buffer) map[string]interface{} {
+	t.Helper()
+	dec := json.NewDecoder(bytes.NewReader(buf.Bytes()))
+	var entry map[string]interface{}
+	if err := dec.Decode(&entry); err != nil {
+		t.Fatalf("failed to parse log as JSON: %v (raw=%q)", err, buf.String())
+	}
+	return entry
+}
+
+func TestLogger_SuccessfulRequest(t *testing.T) {
+	var buf bytes.Buffer
+	restore := installCapturingLogger(t, &buf)
+	defer restore()
+
 	testHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte("success"))
 	})
 
-	// Wrap handler with logger middleware
-	middleware := Logger(logger)
-	handler := middleware(testHandler)
+	handler := Logger()(testHandler)
 
-	// Create test request
 	req := httptest.NewRequest("GET", "/api/test", nil)
 	req.Header.Set("User-Agent", "test-agent")
 	req.RemoteAddr = "192.168.1.1:12345"
@@ -33,57 +64,44 @@ func TestLogger_SuccessfulRequest(t *testing.T) {
 	rr := httptest.NewRecorder()
 	handler.ServeHTTP(rr, req)
 
-	// Check response
 	if rr.Code != http.StatusOK {
 		t.Errorf("Expected status OK, got %d", rr.Code)
 	}
 
-	// Check that log was written
-	logOutput := buf.String()
-	if logOutput == "" {
-		t.Error("Expected log output, got empty string")
+	if buf.Len() == 0 {
+		t.Fatal("Expected log output, got empty string")
 	}
 
-	// Parse log as JSON
-	var logEntry map[string]interface{}
-	if err := json.Unmarshal(buf.Bytes(), &logEntry); err != nil {
-		t.Errorf("Failed to parse log as JSON: %v", err)
-	}
+	entry := decodeFirstLog(t, &buf)
 
-	// Verify log fields
-	if logEntry["level"] != "info" {
-		t.Errorf("Expected level 'info', got %v", logEntry["level"])
+	if entry["level"] != "info" {
+		t.Errorf("Expected level 'info', got %v", entry["level"])
 	}
-
-	if logEntry["message"] != "incoming_request" {
-		t.Errorf("Expected message 'incoming_request', got %v", logEntry["message"])
+	if entry["message"] != "incoming_request" {
+		t.Errorf("Expected message 'incoming_request', got %v", entry["message"])
 	}
-
-	if logEntry["method"] != "GET" {
-		t.Errorf("Expected method 'GET', got %v", logEntry["method"])
+	if entry["method"] != "GET" {
+		t.Errorf("Expected method 'GET', got %v", entry["method"])
 	}
-
-	if logEntry["path"] != "/api/test" {
-		t.Errorf("Expected path '/api/test', got %v", logEntry["path"])
+	if entry["path"] != "/api/test" {
+		t.Errorf("Expected path '/api/test', got %v", entry["path"])
 	}
-
-	if logEntry["status_code"] != float64(200) {
-		t.Errorf("Expected status_code 200, got %v", logEntry["status_code"])
+	if entry["status"] != float64(200) {
+		t.Errorf("Expected status 200, got %v", entry["status"])
 	}
 }
 
 func TestLogger_ErrorResponse(t *testing.T) {
 	var buf bytes.Buffer
-	logger := zerolog.New(&buf).With().Timestamp().Logger()
+	restore := installCapturingLogger(t, &buf)
+	defer restore()
 
-	// Test handler that returns 500 error
 	testHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
 		_, _ = w.Write([]byte("error"))
 	})
 
-	middleware := Logger(logger)
-	handler := middleware(testHandler)
+	handler := Logger()(testHandler)
 
 	req := httptest.NewRequest("POST", "/api/error", bytes.NewBufferString("test body"))
 	rr := httptest.NewRecorder()
@@ -93,32 +111,25 @@ func TestLogger_ErrorResponse(t *testing.T) {
 		t.Errorf("Expected status 500, got %d", rr.Code)
 	}
 
-	// Parse log
-	var logEntry map[string]interface{}
-	if err := json.Unmarshal(buf.Bytes(), &logEntry); err != nil {
-		t.Errorf("Failed to parse log as JSON: %v", err)
+	entry := decodeFirstLog(t, &buf)
+	if entry["status"] != float64(500) {
+		t.Errorf("Expected status 500, got %v", entry["status"])
 	}
-
-	if logEntry["status_code"] != float64(500) {
-		t.Errorf("Expected status_code 500, got %v", logEntry["status_code"])
-	}
-
-	if logEntry["method"] != "POST" {
-		t.Errorf("Expected method 'POST', got %v", logEntry["method"])
+	if entry["method"] != "POST" {
+		t.Errorf("Expected method 'POST', got %v", entry["method"])
 	}
 }
 
 func TestLogger_PanicRecovery(t *testing.T) {
 	var buf bytes.Buffer
-	logger := zerolog.New(&buf).With().Timestamp().Logger()
+	restore := installCapturingLogger(t, &buf)
+	defer restore()
 
-	// Test handler that panics
-	testHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	testHandler := http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {
 		panic("test panic")
 	})
 
-	middleware := Logger(logger)
-	handler := middleware(testHandler)
+	handler := Logger()(testHandler)
 
 	req := httptest.NewRequest("GET", "/api/panic", nil)
 	rr := httptest.NewRecorder()
@@ -126,18 +137,14 @@ func TestLogger_PanicRecovery(t *testing.T) {
 	// Should not panic - middleware should recover
 	handler.ServeHTTP(rr, req)
 
-	// Check that panic was logged as error
-	logOutput := buf.String()
-	if logOutput == "" {
-		t.Error("Expected log output for panic, got empty string")
+	if buf.Len() == 0 {
+		t.Fatal("Expected log output for panic, got empty string")
 	}
 
-	// Should contain both error log for panic and info log for request
-	// The panic recovery should log at ERROR level
-	if !bytes.Contains(buf.Bytes(), []byte("error")) {
+	// The panic recovery should log at ERROR level with message "incoming_request_panic"
+	if !bytes.Contains(buf.Bytes(), []byte(`"level":"error"`)) {
 		t.Error("Expected error level log for panic")
 	}
-
 	if !bytes.Contains(buf.Bytes(), []byte("incoming_request_panic")) {
 		t.Error("Expected 'incoming_request_panic' message in log")
 	}
@@ -149,89 +156,96 @@ func TestLogger_DifferentMethods(t *testing.T) {
 	for _, method := range methods {
 		t.Run(method, func(t *testing.T) {
 			var buf bytes.Buffer
-			logger := zerolog.New(&buf).With().Timestamp().Logger()
+			restore := installCapturingLogger(t, &buf)
+			defer restore()
 
-			testHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			testHandler := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 				w.WriteHeader(http.StatusOK)
 			})
 
-			middleware := Logger(logger)
-			handler := middleware(testHandler)
+			handler := Logger()(testHandler)
 
 			req := httptest.NewRequest(method, "/api/test", nil)
 			rr := httptest.NewRecorder()
 			handler.ServeHTTP(rr, req)
 
-			// Parse log
-			var logEntry map[string]interface{}
-			if err := json.Unmarshal(buf.Bytes(), &logEntry); err != nil {
-				t.Errorf("Failed to parse log as JSON: %v", err)
-			}
-
-			if logEntry["method"] != method {
-				t.Errorf("Expected method '%s', got %v", method, logEntry["method"])
+			entry := decodeFirstLog(t, &buf)
+			if entry["method"] != method {
+				t.Errorf("Expected method '%s', got %v", method, entry["method"])
 			}
 		})
 	}
 }
 
-func TestLogger_LogsElapsedTime(t *testing.T) {
+func TestLogger_LogsDurationMs(t *testing.T) {
 	var buf bytes.Buffer
-	logger := zerolog.New(&buf).With().Timestamp().Logger()
+	restore := installCapturingLogger(t, &buf)
+	defer restore()
 
-	testHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	testHandler := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	})
 
-	middleware := Logger(logger)
-	handler := middleware(testHandler)
+	handler := Logger()(testHandler)
 
 	req := httptest.NewRequest("GET", "/api/test", nil)
 	rr := httptest.NewRecorder()
 	handler.ServeHTTP(rr, req)
 
-	// Parse log
-	var logEntry map[string]interface{}
-	if err := json.Unmarshal(buf.Bytes(), &logEntry); err != nil {
-		t.Errorf("Failed to parse log as JSON: %v", err)
-	}
-
-	// Check that elapsed_time field exists
-	if _, ok := logEntry["elapsed_time"]; !ok {
-		t.Error("Expected 'elapsed_time' field in log")
+	entry := decodeFirstLog(t, &buf)
+	if _, ok := entry["duration_ms"]; !ok {
+		t.Error("Expected 'duration_ms' field in log")
 	}
 }
 
 func TestLogger_BytesInOut(t *testing.T) {
 	var buf bytes.Buffer
-	logger := zerolog.New(&buf).With().Timestamp().Logger()
+	restore := installCapturingLogger(t, &buf)
+	defer restore()
 
-	testHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	testHandler := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte("response body"))
 	})
 
-	middleware := Logger(logger)
-	handler := middleware(testHandler)
+	handler := Logger()(testHandler)
 
 	requestBody := "request data"
 	req := httptest.NewRequest("POST", "/api/test", bytes.NewBufferString(requestBody))
 	rr := httptest.NewRecorder()
 	handler.ServeHTTP(rr, req)
 
-	// Parse log
-	var logEntry map[string]interface{}
-	if err := json.Unmarshal(buf.Bytes(), &logEntry); err != nil {
-		t.Errorf("Failed to parse log as JSON: %v", err)
-	}
-
-	// Check bytes_in (content length)
-	if _, ok := logEntry["bytes_in"]; !ok {
+	entry := decodeFirstLog(t, &buf)
+	if _, ok := entry["bytes_in"]; !ok {
 		t.Error("Expected 'bytes_in' field in log")
 	}
-
-	// Check bytes_out
-	if _, ok := logEntry["bytes_out"]; !ok {
+	if _, ok := entry["bytes_out"]; !ok {
 		t.Error("Expected 'bytes_out' field in log")
+	}
+}
+
+func TestLogger_SkipsHealthEndpoints(t *testing.T) {
+	skipPaths := []string{"/health", "/healthz", "/ready", "/readyz", "/metrics"}
+
+	for _, path := range skipPaths {
+		t.Run(path, func(t *testing.T) {
+			var buf bytes.Buffer
+			restore := installCapturingLogger(t, &buf)
+			defer restore()
+
+			testHandler := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.WriteHeader(http.StatusOK)
+			})
+
+			handler := Logger()(testHandler)
+
+			req := httptest.NewRequest("GET", path, nil)
+			rr := httptest.NewRecorder()
+			handler.ServeHTTP(rr, req)
+
+			if buf.Len() != 0 {
+				t.Errorf("Expected no log output for %s, got: %s", path, buf.String())
+			}
+		})
 	}
 }

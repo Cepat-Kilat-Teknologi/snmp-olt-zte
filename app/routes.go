@@ -1,93 +1,159 @@
 package app
 
 import (
+	"encoding/json"
 	"net/http"
-	"os"
 	"time"
 
+	"github.com/Cepat-Kilat-Teknologi/go-snmp-olt-zte-c320/internal/buildinfo"
 	"github.com/Cepat-Kilat-Teknologi/go-snmp-olt-zte-c320/internal/handler"
+	"github.com/Cepat-Kilat-Teknologi/go-snmp-olt-zte-c320/internal/health"
 	"github.com/Cepat-Kilat-Teknologi/go-snmp-olt-zte-c320/internal/middleware"
+	"github.com/Cepat-Kilat-Teknologi/go-snmp-olt-zte-c320/pkg/metrics"
 	"github.com/go-chi/chi/v5"
-	"github.com/rs/zerolog"
-	"github.com/rs/zerolog/log"
 )
 
-func loadRoutes(onuHandler *handler.OnuHandler) http.Handler { // Function to configure and return the HTTP router
+// loadRoutes wires the HTTP router with all middleware and endpoints.
+// `checker` supplies readiness probes for /readyz; pass nil to disable
+// dependency checking (readyz will then unconditionally report ready).
+func loadRoutes(onuHandler *handler.OnuHandler, checker *health.Checker) http.Handler {
+	router := chi.NewRouter()
 
-	// Initialize logger
-	l := log.Output(zerolog.ConsoleWriter{ // Create a new logger with console writer output
-		Out: os.Stdout, // Set output to standard out
-	})
+	// Request ID tracking (must be first so all downstream middleware sees it).
+	router.Use(middleware.RequestID)
 
-	// Initialize router using chi
-	router := chi.NewRouter() // Create a new instance of Chi router
+	// API/build version headers on every response.
+	router.Use(middleware.APIVersionHeader(middleware.DefaultAPIVersionConfig(
+		buildinfo.APIVersion,
+		buildinfo.Version,
+		buildinfo.Commit,
+	)))
 
-	// Request ID tracking (should be first for all requests)
-	router.Use(middleware.RequestID) // Add unique request ID to each request
+	// Security middleware.
+	router.Use(middleware.SecurityHeaders)
+	router.Use(middleware.RequestTimeout(90 * time.Second)) // allows cold-cache SNMP queries
+	router.Use(middleware.RateLimiter(100, 200))            // 100 rps, burst 200
+	router.Use(middleware.MaxBodySize(1 << 20))             // 1 MB body limit
 
-	// Security middleware
-	router.Use(middleware.SecurityHeaders)                  // Apply security headers middleware
-	router.Use(middleware.RequestTimeout(90 * time.Second)) // Set request timeout to the 90s (allows cold cache SNMP queries up to the 60s without a timeout)
-	router.Use(middleware.RateLimiter(100, 200))            // Apply rate limiting: 100 requests per second, burst up to 200
-	router.Use(middleware.MaxBodySize(1 << 20))             // Limit request body size to 1MB (1 << 20 bytes)
+	// Prometheus metrics middleware (records request counts, durations,
+	// in-flight gauge). Skips health and metrics endpoints to avoid label
+	// explosion.
+	router.Use(metrics.Middleware())
 
-	// Middleware for logging requests
-	router.Use(middleware.Logger(l)) // Apply logging middleware using the initialized logger
+	// Structured request logging via zap (skips /health, /healthz, /ready, /readyz, /metrics).
+	router.Use(middleware.Logger())
 
-	// Middleware for CORS (now configurable via environment variables)
-	router.Use(middleware.CorsMiddleware()) // Apply Cross-Origin Resource Sharing (CORS) middleware
+	// Audit log for write operations (POST/PUT/PATCH/DELETE).
+	router.Use(middleware.AuditLog())
 
-	// Define a simple root endpoint
-	router.Get("/", rootHandler)       // Register the GET handler for the root path "/"
-	router.Get("/health", healthHandler) // Register the GET handler for the health check endpoint
+	// CORS (configurable via environment variables).
+	router.Use(middleware.CorsMiddleware())
 
-	// Create a group for /api/v1/
-	apiV1Group := chi.NewRouter() // Create a new router instance for API version 1 group
+	// Root, health, version, metrics endpoints (no auth).
+	router.Get("/", rootHandler)
+	router.Get("/health", healthHandler)
+	router.Get("/healthz", healthzHandler)
+	router.Get("/readyz", makeReadyzHandler(checker))
+	router.Get("/version", versionHandler)
+
+	// Prometheus metrics endpoint (no auth — scrapers run on-network).
+	router.Handle("/metrics", metrics.Handler())
+
+	// /api/v1/ route group.
+	apiV1Group := chi.NewRouter()
 	apiV1Group.Use(middleware.APIKeyAuth)
 
-	// Define routes for /api/v1/
-	apiV1Group.Route("/board", func(r chi.Router) { // Create a route group starting with "/board"
-		r.Route("/{board_id}/pon/{pon_id}", func(r chi.Router) { // Nested route group with board_id and pon_id parameters
-			// Apply validation middleware for board_id and pon_id
-			r.Use(middleware.ValidateBoardPonParams) // specific middleware to validate these parameters
+	apiV1Group.Route("/board", func(r chi.Router) {
+		r.Route("/{board_id}/pon/{pon_id}", func(r chi.Router) {
+			r.Use(middleware.ValidateBoardPonParams)
 
-			r.Get("/", onuHandler.GetByBoardIDAndPonID)                // GET /board/{board_id}/pon/{pon_id}/ - Fetch ONUs by board and PON
-			r.Delete("/cache/clear", onuHandler.DeleteCache)           // DELETE .../cache/clear - Clear Redis cache for board/pon
-			r.Get("/onu_id/empty", onuHandler.GetEmptyOnuID)        // GET .../onu_id/empty - Fetch empty ONU IDs
-			r.Get("/onu_id_sn", onuHandler.GetOnuIDAndSerialNumber) // GET .../onu_id_sn - Fetch ONU IDs and serial numbers
-			r.Post("/onu_id/update", onuHandler.UpdateEmptyOnuID)   // POST .../onu_id/update - Update empty ONU IDs
+			r.Get("/", onuHandler.GetByBoardIDAndPonID)
+			r.Delete("/cache/clear", onuHandler.DeleteCache)
+			r.Get("/onu_id/empty", onuHandler.GetEmptyOnuID)
+			r.Get("/onu_id_sn", onuHandler.GetOnuIDAndSerialNumber)
+			r.Post("/onu_id/update", onuHandler.UpdateEmptyOnuID)
 
-			// Routes with onu_id parameter
-			r.Route("/onu/{onu_id}", func(r chi.Router) { // Nested route group for specific ONU ID
-				r.Use(middleware.ValidateOnuIDParam)             // Validate onu_id parameter
-				r.Get("/", onuHandler.GetByBoardIDPonIDAndOnuID) // GET .../onu/{onu_id} - Fetch specific ONU details
+			r.Route("/onu/{onu_id}", func(r chi.Router) {
+				r.Use(middleware.ValidateOnuIDParam)
+				r.Get("/", onuHandler.GetByBoardIDPonIDAndOnuID)
 			})
 		})
 	})
 
-	// Define routes for /api/v1/paginate
-	apiV1Group.Route("/paginate", func(r chi.Router) { // Create a route group for pagination
-		r.Route("/board/{board_id}/pon/{pon_id}", func(r chi.Router) { // Nested route group with board and PON IDs
-			r.Use(middleware.ValidateBoardPonParams)                // Apply parameter validation
-			r.Get("/", onuHandler.GetByBoardIDAndPonIDWithPaginate) // GET .../ - Fetch paginated ONU list
+	apiV1Group.Route("/paginate", func(r chi.Router) {
+		r.Route("/board/{board_id}/pon/{pon_id}", func(r chi.Router) {
+			r.Use(middleware.ValidateBoardPonParams)
+			r.Get("/", onuHandler.GetByBoardIDAndPonIDWithPaginate)
 		})
 	})
 
-	// Mount /api/v1/ to root router
-	router.Mount("/api/v1", apiV1Group) // Mount the API v1 group to the main router under /api/v1 prefix
+	router.Mount("/api/v1", apiV1Group)
 
-	return router // Return the configured router
+	return router
 }
 
-// rootHandler is a simple handler for a root endpoint
-func rootHandler(w http.ResponseWriter, _ *http.Request) { // Handler function for the root URL
-	w.WriteHeader(http.StatusOK)                                // Set the HTTP status code to 200 OK
-	_, _ = w.Write([]byte("Hello, this is the root endpoint!")) // Write a simple welcome message to the response body
-}
-
-// healthHandler returns application health status as JSON
-func healthHandler(w http.ResponseWriter, _ *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
+// rootHandler is a simple handler for the root endpoint.
+func rootHandler(w http.ResponseWriter, _ *http.Request) {
 	w.WriteHeader(http.StatusOK)
-	_, _ = w.Write([]byte(`{"status":"ok"}`))
+	_, _ = w.Write([]byte("Hello, this is the root endpoint!"))
+}
+
+// healthHandler returns the application liveness status.
+// Kept for backwards compatibility; /healthz is the preferred name.
+func healthHandler(w http.ResponseWriter, _ *http.Request) {
+	writeJSONStatus(w, http.StatusOK, map[string]string{"status": "healthy"})
+}
+
+// versionHandler exposes build metadata (version, commit, build time, uptime)
+// for debugging and release verification. Unauthenticated; safe because the
+// information is already published in the Docker image labels.
+func versionHandler(w http.ResponseWriter, _ *http.Request) {
+	writeJSONStatus(w, http.StatusOK, buildinfo.Info())
+}
+
+// healthzHandler is the liveness probe endpoint (standard name).
+func healthzHandler(w http.ResponseWriter, _ *http.Request) {
+	writeJSONStatus(w, http.StatusOK, map[string]string{"status": "healthy"})
+}
+
+// makeReadyzHandler builds the readiness handler. When a checker is supplied,
+// it runs the registered probes (with cached results) and returns 503 if any
+// dependency is down; otherwise it reports the up/down state of each.
+// When checker is nil, readyz unconditionally returns ready — useful for
+// tests and for deployments that don't want dependency gating.
+func makeReadyzHandler(checker *health.Checker) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if checker == nil {
+			writeJSONStatus(w, http.StatusOK, map[string]string{"status": "ready"})
+			return
+		}
+
+		statuses, healthy := checker.Check(r.Context())
+
+		body := map[string]any{
+			"status": "ready",
+		}
+		deps := make(map[string]any, len(statuses))
+		for _, s := range statuses {
+			entry := map[string]any{"state": s.State}
+			if s.Err != "" {
+				entry["error"] = s.Err
+			}
+			deps[s.Name] = entry
+		}
+		body["dependencies"] = deps
+
+		code := http.StatusOK
+		if !healthy {
+			code = http.StatusServiceUnavailable
+			body["status"] = "not_ready"
+		}
+		writeJSONStatus(w, code, body)
+	}
+}
+
+func writeJSONStatus(w http.ResponseWriter, code int, body any) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(code)
+	_ = json.NewEncoder(w).Encode(body)
 }

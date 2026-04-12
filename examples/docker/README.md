@@ -1,6 +1,6 @@
 # Docker Deployment Examples
 
-Docker deployment patterns for `cepatkilatteknologi/snmp-olt-zte-c320:2.1.1`.
+Docker deployment patterns for `cepatkilatteknologi/snmp-olt-zte-c320:3.0.0`.
 
 The application listens on **TCP 8081** (HTTP API) and **UDP 1620** (SNMP Trap).
 
@@ -27,7 +27,7 @@ docker run -d \
   -e SNMP_COMMUNITY=public \
   -e TRAP_ENABLED=true \
   -e TZ=Asia/Jakarta \
-  cepatkilatteknologi/snmp-olt-zte-c320:2.1.1
+  cepatkilatteknologi/snmp-olt-zte-c320:3.0.0
 ```
 
 ## 2. With Redis (recommended)

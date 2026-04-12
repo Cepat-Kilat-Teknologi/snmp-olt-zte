@@ -67,7 +67,7 @@ func ValidateBoardPonParams(next http.Handler) http.Handler {
 				"board_id must be 1 or 2",
 				map[string]interface{}{"received": boardID},
 			) // Create validation error
-			utils.HandleError(w, appErr) // Return error response
+			utils.HandleError(w, r, appErr) // Return error response
 			return
 		}
 
@@ -79,7 +79,7 @@ func ValidateBoardPonParams(next http.Handler) http.Handler {
 				"pon_id must be between 1 and 16",
 				map[string]interface{}{"received": ponID},
 			) // Create validation error
-			utils.HandleError(w, appErr) // Return error response
+			utils.HandleError(w, r, appErr) // Return error response
 			return
 		}
 
@@ -106,7 +106,7 @@ func ValidateOnuIDParam(next http.Handler) http.Handler {
 				"onu_id must be between 1 and 128",
 				map[string]interface{}{"received": onuID},
 			) // Create validation error
-			utils.HandleError(w, appErr) // Return error response
+			utils.HandleError(w, r, appErr) // Return error response
 			return
 		}
 
