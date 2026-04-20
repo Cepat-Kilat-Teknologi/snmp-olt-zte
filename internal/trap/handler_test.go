@@ -28,12 +28,12 @@ func (m *mockONUDetailFetcher) InvalidateONUCache(_ context.Context, _, _, _ int
 func TestHandleEvent_VerifiedOffline_LOS(t *testing.T) {
 	fetcher := &mockONUDetailFetcher{
 		result: model.ONUCustomerInfo{
-			ID:               1,
-			Name:             "Customer-023",
-			Description:      "Perumahan Graha Ria Blok F No.6",
-			OnuType:          "F670LV7.1",
-			SerialNumber:     "ZTEGC12345678",
-			Status:           "LOS",
+			ID:                1,
+			Name:              "Customer-023",
+			Description:       "Perumahan Graha Ria Blok F No.6",
+			OnuType:           "F670LV7.1",
+			SerialNumber:      "ZTEGC12345678",
+			Status:            "LOS",
 			LastOfflineReason: "",
 		},
 	}
@@ -140,9 +140,9 @@ func TestHandleEvent_VerifiedOnline_Skipped(t *testing.T) {
 func TestHandleEvent_VerifiedOfflineWithReason(t *testing.T) {
 	fetcher := &mockONUDetailFetcher{
 		result: model.ONUCustomerInfo{
-			ID:               1,
-			Name:             "Customer-LOS",
-			Status:           "Offline",
+			ID:                1,
+			Name:              "Customer-LOS",
+			Status:            "Offline",
 			LastOfflineReason: "LOS",
 		},
 	}
@@ -299,8 +299,8 @@ func TestHandleEvent_Enrichment_PrefersSNMP(t *testing.T) {
 	handler := NewHandler(webhook, nil, fetcher)
 
 	event := model.TrapEvent{
-		Timestamp:   time.Now(),
-		Board:       1, PON: 5, OnuID: 23,
+		Timestamp: time.Now(),
+		Board:     1, PON: 5, OnuID: 23,
 		EventType:   "StatusChange",
 		Name:        "Trap-Name",
 		Description: "Trap-Address",
@@ -326,8 +326,8 @@ func TestHandleEvent_Enrichment_KeepsTrapDataIfSNMPEmpty(t *testing.T) {
 	handler := NewHandler(nil, nil, fetcher)
 
 	event := model.TrapEvent{
-		Timestamp:   time.Now(),
-		Board:       1, PON: 5, OnuID: 23,
+		Timestamp: time.Now(),
+		Board:     1, PON: 5, OnuID: 23,
 		EventType:   "StatusChange",
 		Name:        "Trap-Name",
 		Description: "Trap-Address",
@@ -405,7 +405,7 @@ func TestHandleEvent_OnlineRemovesFromBatcher(t *testing.T) {
 	handler := NewHandler(webhook, batcher, fetcher)
 	handler.HandleEvent(model.TrapEvent{
 		Timestamp: time.Now(),
-		Board: 1, PON: 1, OnuID: 1,
+		Board:     1, PON: 1, OnuID: 1,
 		EventType: "StatusChange",
 	})
 
@@ -444,7 +444,7 @@ func TestHandleEvent_WithBatcher(t *testing.T) {
 
 	event := model.TrapEvent{
 		Timestamp: time.Now(),
-		Board: 1, PON: 1, OnuID: 1,
+		Board:     1, PON: 1, OnuID: 1,
 		EventType: "StatusChange",
 	}
 

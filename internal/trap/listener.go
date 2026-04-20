@@ -17,7 +17,7 @@ const (
 	ZTEEnterpriseOID = ".1.3.6.1.4.1.3902"
 
 	// snmpTrapOID values identifying the trap type
-	OIDSnmpTrapOID   = ".1.3.6.1.6.3.1.1.4.1.0"
+	OIDSnmpTrapOID    = ".1.3.6.1.6.3.1.1.4.1.0"
 	OIDTrapOnuOffline = ".1.3.6.1.4.1.3902.1082.500.10.3.1.9"
 	OIDTrapOnuOnline  = ".1.3.6.1.4.1.3902.1082.500.10.3.1.10"
 

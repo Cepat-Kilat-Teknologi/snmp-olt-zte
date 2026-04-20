@@ -978,7 +978,7 @@ func TestFormatLastOnline(t *testing.T) {
 var batchEvents = []model.TrapEvent{
 	{
 		Timestamp: time.Date(2026, 4, 20, 10, 0, 0, 0, time.UTC),
-		Board: 1, PON: 5, OnuID: 23,
+		Board:     1, PON: 5, OnuID: 23,
 		EventType: "LOS", Status: "offline",
 		Name: "Budi Santoso", Description: "Perumahan Graha Ria",
 		SerialNumber: "ZTEGC12345678", RXPower: "-22.50",
@@ -986,11 +986,11 @@ var batchEvents = []model.TrapEvent{
 	},
 	{
 		Timestamp: time.Date(2026, 4, 20, 10, 0, 0, 0, time.UTC),
-		Board: 1, PON: 13, OnuID: 40,
+		Board:     1, PON: 13, OnuID: 40,
 		EventType: "LOS", Status: "offline",
 		Name: "Widya Sofani", Description: "Kejambon RT 007/003",
 		SerialNumber: "ZXICCC94FA71",
-		LastOffline: "2026-04-20 17:05:00",
+		LastOffline:  "2026-04-20 17:05:00",
 	},
 }
 

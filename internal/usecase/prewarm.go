@@ -20,7 +20,7 @@ func (u *onuUsecase) PreWarmCache(ctx context.Context) {
 		for ponID := 1; ponID <= 16; ponID++ {
 			select {
 			case <-ctx.Done():
-				logger.Warn("cache_prewarm_cancelled")
+				logger.Warn("cache_prewarm_canceled")
 				return
 			default:
 			}

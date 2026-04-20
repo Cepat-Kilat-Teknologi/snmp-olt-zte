@@ -46,7 +46,7 @@ func (m *mockOnuUsecase) DeleteCache(ctx context.Context, boardID, ponID int) er
 }
 
 func (m *mockOnuUsecase) InvalidateONUCache(_ context.Context, _, _, _ int) error { return nil }
-func (m *mockOnuUsecase) PreWarmCache(ctx context.Context) {}
+func (m *mockOnuUsecase) PreWarmCache(ctx context.Context)                        {}
 
 func TestRootHandler(t *testing.T) {
 	req := httptest.NewRequest("GET", "/", nil)

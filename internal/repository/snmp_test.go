@@ -27,8 +27,8 @@ func TestNewPonRepository(t *testing.T) {
 		t.Error("Expected non-nil repository")
 	}
 
-	// Verify it implements the interface
-	_ = SnmpRepositoryInterface(repo)
+	// Constructor returns the interface — no extra check needed
+	_ = repo
 }
 
 func TestNewPonRepository_DifferentParameters(t *testing.T) {
@@ -507,4 +507,20 @@ func TestSnmpRepository_BulkWalk_Connected(t *testing.T) {
 		return nil
 	})
 	_ = err
+}
+
+func TestNewPonRepositoryWithConcurrency_ZeroMaxConcurrent(t *testing.T) {
+	conn := newTestConn("192.168.1.1", "public", 161)
+	repo := NewPonRepositoryWithConcurrency(conn, 0)
+	if repo == nil {
+		t.Error("Expected non-nil repository with zero maxConcurrent")
+	}
+}
+
+func TestNewPonRepositoryWithConcurrency_NegativeMaxConcurrent(t *testing.T) {
+	conn := newTestConn("192.168.1.1", "public", 161)
+	repo := NewPonRepositoryWithConcurrency(conn, -1)
+	if repo == nil {
+		t.Error("Expected non-nil repository with negative maxConcurrent")
+	}
 }

@@ -52,6 +52,8 @@ func severityEmoji(s Severity) string {
 		return "\U0001F7E1" // 🟡
 	case SeverityLow:
 		return "\U0001F535" // 🔵
+	case SeverityUnknown:
+		return "\u26AA" // ⚪
 	default:
 		return "\u26AA" // ⚪
 	}
@@ -67,6 +69,8 @@ func severityLabel(s Severity) string {
 		return "MEDIUM"
 	case SeverityLow:
 		return "LOW"
+	case SeverityUnknown:
+		return "UNKNOWN"
 	default:
 		return "UNKNOWN"
 	}
@@ -108,6 +112,8 @@ func severityColorDiscord(s Severity) int {
 		return 0xFFD700 // yellow
 	case SeverityLow:
 		return 0x3498DB // blue
+	case SeverityUnknown:
+		return 0x95A5A6 // gray
 	default:
 		return 0x95A5A6 // gray
 	}
@@ -123,6 +129,8 @@ func severityColorHex(s Severity) string {
 		return "#FFD700"
 	case SeverityLow:
 		return "#3498DB"
+	case SeverityUnknown:
+		return "#95A5A6"
 	default:
 		return "#95A5A6"
 	}
@@ -135,6 +143,8 @@ func eventTitle(event model.TrapEvent) string {
 
 	category := event.EventType
 	switch sev {
+	case SeverityCritical, SeverityMedium, SeverityLow, SeverityUnknown:
+		// keep original event type as category
 	case SeverityHigh:
 		category = "STUCK"
 	}

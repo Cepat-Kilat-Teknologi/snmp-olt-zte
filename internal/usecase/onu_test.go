@@ -177,8 +177,8 @@ func TestNewOnuUsecase(t *testing.T) {
 		t.Error("Expected non-nil usecase")
 	}
 
-	// Verify it implements the interface
-	_ = OnuUseCaseInterface(usecase)
+	// Constructor returns the interface — no extra check needed
+	_ = usecase
 }
 
 func TestNewOnuUsecase_InitializesFields(t *testing.T) {
@@ -3300,5 +3300,82 @@ func TestDeleteCache_DeletesSerialListKey(t *testing.T) {
 	}
 	if !foundSerial {
 		t.Errorf("Expected serial list key to be deleted, deleted keys: %v", deletedKeys)
+	}
+}
+
+func TestInvalidateONUCache(t *testing.T) {
+	cfg := createTestConfig()
+	var deletedKeys []string
+	snmpRepo := &mockSnmpRepository{}
+	redisRepo := &mockRedisRepository{
+		DeleteFunc: func(ctx context.Context, key string) error {
+			deletedKeys = append(deletedKeys, key)
+			return nil
+		},
+	}
+	uc := NewOnuUsecase(snmpRepo, redisRepo, cfg)
+	err := uc.InvalidateONUCache(context.Background(), 1, 5, 23)
+	if err != nil {
+		t.Errorf("Expected no error, got %v", err)
+	}
+	if len(deletedKeys) != 2 {
+		t.Errorf("Expected 2 delete calls, got %d", len(deletedKeys))
+	}
+}
+
+func TestInvalidateONUCache_DeleteErrors(t *testing.T) {
+	cfg := createTestConfig()
+	snmpRepo := &mockSnmpRepository{}
+	redisRepo := &mockRedisRepository{
+		DeleteFunc: func(ctx context.Context, key string) error {
+			return errors.New("redis error")
+		},
+	}
+	uc := NewOnuUsecase(snmpRepo, redisRepo, cfg)
+	err := uc.InvalidateONUCache(context.Background(), 1, 5, 23)
+	if err != nil {
+		t.Errorf("Expected nil error (errors are ignored), got %v", err)
+	}
+}
+
+func TestDeleteCache_SerialDeleteError(t *testing.T) {
+	cfg := createTestConfig()
+	callCount := 0
+	snmpRepo := &mockSnmpRepository{}
+	redisRepo := &mockRedisRepository{
+		DeleteFunc: func(ctx context.Context, key string) error {
+			callCount++
+			if callCount == 2 {
+				return errors.New("serial delete error")
+			}
+			return nil
+		},
+	}
+	uc := NewOnuUsecase(snmpRepo, redisRepo, cfg)
+	err := uc.DeleteCache(context.Background(), 1, 1)
+	if err != nil {
+		t.Errorf("Expected no error (serial delete error is logged only), got %v", err)
+	}
+}
+
+func TestGetOnuIDAndSerialNumber_SaveCacheError(t *testing.T) {
+	cfg := createTestConfig()
+	snmpRepo := &mockSnmpRepository{
+		BulkWalkFunc: func(oid string, walkFn func(pdu gosnmp.SnmpPDU) error) error {
+			return nil
+		},
+	}
+	redisRepo := &mockRedisRepository{
+		GetONUSerialListFunc: func(ctx context.Context, key string) ([]model.OnuSerialNumber, error) {
+			return nil, errors.New("cache miss")
+		},
+		SaveONUSerialListFunc: func(ctx context.Context, key string, seconds int, list []model.OnuSerialNumber) error {
+			return errors.New("save failed")
+		},
+	}
+	uc := NewOnuUsecase(snmpRepo, redisRepo, cfg)
+	_, err := uc.GetOnuIDAndSerialNumber(context.Background(), 1, 1)
+	if err != nil {
+		t.Errorf("Expected no error (save failure is logged only), got %v", err)
 	}
 }

@@ -800,3 +800,35 @@ func TestGetONUDetail_InvalidJSON(t *testing.T) {
 		t.Errorf("Unmet expectations: %v", err)
 	}
 }
+
+func TestSaveONUDetail_MarshalError(t *testing.T) {
+	original := jsonMarshal
+	jsonMarshal = func(v interface{}) ([]byte, error) {
+		return nil, errors.New("marshal error")
+	}
+	defer func() { jsonMarshal = original }()
+
+	db, _ := redismock.NewClientMock()
+	repo := NewOnuRedisRepo(db)
+
+	err := repo.SaveONUDetail(context.Background(), "key", 900, model.ONUCustomerInfo{})
+	if err == nil {
+		t.Error("Expected error from marshal failure")
+	}
+}
+
+func TestSaveONUSerialList_MarshalError(t *testing.T) {
+	original := jsonMarshal
+	jsonMarshal = func(v interface{}) ([]byte, error) {
+		return nil, errors.New("marshal error")
+	}
+	defer func() { jsonMarshal = original }()
+
+	db, _ := redismock.NewClientMock()
+	repo := NewOnuRedisRepo(db)
+
+	err := repo.SaveONUSerialList(context.Background(), "key", 900, []model.OnuSerialNumber{})
+	if err == nil {
+		t.Error("Expected error from marshal failure")
+	}
+}

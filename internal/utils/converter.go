@@ -50,7 +50,6 @@ func ConvertDurationToString(duration time.Duration) string {
 // ConvertByteArrayToDateTime Convert byte array to a human-readable date time string.
 // Expects an 8-byte array in specific format (Year(2), Month(1), Day(1), Hour(1), Min(1), Sec(1), Reserved(1)).
 func ConvertByteArrayToDateTime(byteArray []byte) (string, error) {
-
 	// Check if the byteArray length is exactly 8
 	if len(byteArray) != 8 {
 		return "", errors.New("invalid byte array length: expected 8 bytes") // Error if length is incorrect

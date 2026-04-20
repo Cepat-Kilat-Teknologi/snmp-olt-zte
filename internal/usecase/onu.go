@@ -188,7 +188,6 @@ func (u *onuUsecase) GetByBoardIDAndPonID(ctx context.Context, boardID, ponID in
 
 		// Loop through an SNMP data map to get ONU information based on ONU ID and ONU Name stored in a map before and store
 		for _, pdu := range snmpDataMap {
-
 			// Create a new ONUInfoPerBoard struct and populate it with ONU ID, ONU Name, ONU Type, ONU Serial Number, ONU RX Power, ONU Status
 			onuInfo := model.ONUInfoPerBoard{
 				Board: boardID,                        // Set Board ID
@@ -373,7 +372,6 @@ func (u *onuUsecase) GetByBoardIDPonIDAndOnuID(ctx context.Context, boardID, pon
 
 		// Loop through an SNMP data map to get ONU information based on ONU ID and ONU Name stored in a map before and store
 		for _, pdu := range snmpDataMap {
-
 			// Create a new ONUInfoPerBoard struct and populate it with ONU ID, ONU Name, ONU Type, ONU Serial Number, ONU RX Power, ONU Status
 			onuInfo := model.ONUCustomerInfo{
 				Board: boardID,                        // Set board ID

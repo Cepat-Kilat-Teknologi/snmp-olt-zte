@@ -72,7 +72,7 @@ func maskAPIKey(key string) string {
 	return key[:8] + "***"
 }
 
-// clientIP returns the best-effort client IP for the request. It honours
+// clientIP returns the best-effort client IP for the request. It honors
 // X-Forwarded-For and X-Real-IP headers if present (common behind load
 // balancers/reverse proxies) and falls back to RemoteAddr otherwise.
 func clientIP(r *http.Request) string {
