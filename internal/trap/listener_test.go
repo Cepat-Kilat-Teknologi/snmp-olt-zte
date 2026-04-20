@@ -127,8 +127,8 @@ func TestParseOnuIndex(t *testing.T) {
 		},
 		{
 			name:      "with_onu_index_prefix",
-			fullOID:   OIDOnuIndex + ".285278465.42",
-			prefix:    OIDOnuIndex,
+			fullOID:   OIDOnuName + ".285278465.42",
+			prefix:    OIDOnuName,
 			wantBoard: 1,
 			wantPON:   1,
 			wantOnuID: 42,
@@ -358,8 +358,8 @@ func TestHandleTrap_ONUIndex_ByteName(t *testing.T) {
 	if received.Board != 2 || received.PON != 1 || received.OnuID != 5 {
 		t.Errorf("Expected board=2 pon=1 onu=5, got board=%d pon=%d onu=%d", received.Board, received.PON, received.OnuID)
 	}
-	if received.Description != "ONU-Customer-1" {
-		t.Errorf("Expected description ONU-Customer-1, got %s", received.Description)
+	if received.Name != "ONU-Customer-1" {
+		t.Errorf("Expected name ONU-Customer-1, got %s", received.Name)
 	}
 }
 
@@ -389,8 +389,8 @@ func TestHandleTrap_ONUIndex_StringName(t *testing.T) {
 	if received.Board != 1 || received.PON != 6 || received.OnuID != 3 {
 		t.Errorf("Expected board=1 pon=6 onu=3, got board=%d pon=%d onu=%d", received.Board, received.PON, received.OnuID)
 	}
-	if received.Description != "ONU-String-Name" {
-		t.Errorf("Expected description ONU-String-Name, got %s", received.Description)
+	if received.Name != "ONU-String-Name" {
+		t.Errorf("Expected name ONU-String-Name, got %s", received.Name)
 	}
 }
 
@@ -493,8 +493,10 @@ func TestHandleTrap_StatusWithDescription(t *testing.T) {
 
 	listener.handleTrap(packet, addr)
 
-	if received.Description != "ONU 1/1/1 Online detected" {
-		t.Errorf("Expected auto-generated description, got %s", received.Description)
+	// With the new parser, status OID sets board/pon/onu but description
+	// is only set from OIDOnuDescription — auto-generation was removed
+	if received.Board != 1 || received.PON != 1 || received.OnuID != 1 {
+		t.Errorf("Expected board=1 pon=1 onu=1, got board=%d pon=%d onu=%d", received.Board, received.PON, received.OnuID)
 	}
 }
 
@@ -510,14 +512,177 @@ func TestListener_StartAndClose(t *testing.T) {
 		errCh <- listener.Start()
 	}()
 
-	// Wait for listener to be ready
 	select {
 	case <-listener.Listening():
-		// OK - listener is ready
 	case <-time.After(5 * time.Second):
 		t.Fatal("Listener did not start within 5 seconds")
 	}
 
 	// Close should stop it
 	_ = listener.Close()
+}
+
+// --- mapTrapOID ---
+
+func TestMapTrapOID(t *testing.T) {
+	tests := []struct {
+		trapOID       string
+		wantEventType string
+		wantStatus    string
+	}{
+		{OIDTrapOnuOffline, "StatusChange", ""},
+		{OIDTrapOnuOnline, "StatusChange", ""},
+		{".1.3.6.1.4.1.3902.1082.500.20.3.1.1", "", ""},
+		{"", "", ""},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.trapOID, func(t *testing.T) {
+			eventType, status := mapTrapOID(tt.trapOID)
+			if eventType != tt.wantEventType {
+				t.Errorf("mapTrapOID(%q) eventType = %q, want %q", tt.trapOID, eventType, tt.wantEventType)
+			}
+			if status != tt.wantStatus {
+				t.Errorf("mapTrapOID(%q) status = %q, want %q", tt.trapOID, status, tt.wantStatus)
+			}
+		})
+	}
+}
+
+// --- extractString ---
+
+func TestExtractString(t *testing.T) {
+	tests := []struct {
+		name  string
+		value interface{}
+		want  string
+	}{
+		{"bytes", []byte("hello"), "hello"},
+		{"string", "world", "world"},
+		{"int", 42, ""},
+		{"nil", nil, ""},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := extractString(tt.value); got != tt.want {
+				t.Errorf("extractString(%v) = %q, want %q", tt.value, got, tt.want)
+			}
+		})
+	}
+}
+
+// --- handleTrap with full trap data (snmpTrapOID + ONU data) ---
+
+func TestHandleTrap_FullTrapWithSnmpTrapOID(t *testing.T) {
+	var received model.TrapEvent
+	listener := NewListener(ListenerConfig{
+		Port:      1620,
+		Community: "public",
+		OnEvent: func(event model.TrapEvent) {
+			received = event
+		},
+	})
+
+	addr := &net.UDPAddr{IP: net.ParseIP("192.168.213.174"), Port: 162}
+	packet := &gosnmp.SnmpPacket{
+		Variables: []gosnmp.SnmpPDU{
+			{Name: ".1.3.6.1.2.1.1.3.0", Type: gosnmp.TimeTicks, Value: 12345},
+			{Name: OIDSnmpTrapOID, Type: gosnmp.ObjectIdentifier, Value: OIDTrapOnuOffline},
+			{Name: OIDOnuName + ".285278465.29", Type: gosnmp.OctetString, Value: []byte("Taryono")},
+			{Name: OIDOnuType + ".285278465.29", Type: gosnmp.OctetString, Value: []byte("ZTE_F660")},
+			{Name: OIDOnuDescription + ".285278465.29", Type: gosnmp.OctetString, Value: []byte("Jl. Gatot Subroto")},
+			{Name: OIDOnuSerial + ".285278465.29", Type: gosnmp.OctetString, Value: []byte("1,CDTCAF857ECE")},
+		},
+	}
+
+	listener.handleTrap(packet, addr)
+
+	if received.EventType != "StatusChange" {
+		t.Errorf("EventType = %q, want StatusChange", received.EventType)
+	}
+	if received.Board != 1 || received.PON != 1 || received.OnuID != 29 {
+		t.Errorf("Board/PON/ONU = %d/%d/%d, want 1/1/29", received.Board, received.PON, received.OnuID)
+	}
+	if received.Name != "Taryono" {
+		t.Errorf("Name = %q, want Taryono", received.Name)
+	}
+	if received.OnuType != "ZTE_F660" {
+		t.Errorf("OnuType = %q, want ZTE_F660", received.OnuType)
+	}
+	if received.Description != "Jl. Gatot Subroto" {
+		t.Errorf("Description = %q, want Jl. Gatot Subroto", received.Description)
+	}
+	if received.SerialNumber != "CDTCAF857ECE" {
+		t.Errorf("SerialNumber = %q, want CDTCAF857ECE", received.SerialNumber)
+	}
+}
+
+func TestHandleTrap_OnlineTrapOID(t *testing.T) {
+	var received model.TrapEvent
+	listener := NewListener(ListenerConfig{
+		Port: 1620, Community: "public",
+		OnEvent: func(event model.TrapEvent) { received = event },
+	})
+
+	addr := &net.UDPAddr{IP: net.ParseIP("192.168.1.1"), Port: 162}
+	packet := &gosnmp.SnmpPacket{
+		Variables: []gosnmp.SnmpPDU{
+			{Name: OIDSnmpTrapOID, Type: gosnmp.ObjectIdentifier, Value: OIDTrapOnuOnline},
+			{Name: OIDOnuName + ".285278475.12", Type: gosnmp.OctetString, Value: []byte("Customer")},
+		},
+	}
+
+	listener.handleTrap(packet, addr)
+
+	if received.EventType != "StatusChange" {
+		t.Errorf("EventType = %q, want StatusChange", received.EventType)
+	}
+	if received.Board != 1 || received.PON != 11 || received.OnuID != 12 {
+		t.Errorf("Board/PON/ONU = %d/%d/%d, want 1/11/12", received.Board, received.PON, received.OnuID)
+	}
+}
+
+func TestHandleTrap_SerialWithoutComma(t *testing.T) {
+	var received model.TrapEvent
+	listener := NewListener(ListenerConfig{
+		Port: 1620, Community: "public",
+		OnEvent: func(event model.TrapEvent) { received = event },
+	})
+
+	addr := &net.UDPAddr{IP: net.ParseIP("192.168.1.1"), Port: 162}
+	packet := &gosnmp.SnmpPacket{
+		Variables: []gosnmp.SnmpPDU{
+			{Name: OIDOnuName + ".285278465.1", Type: gosnmp.OctetString, Value: []byte("Test")},
+			{Name: OIDOnuSerial + ".285278465.1", Type: gosnmp.OctetString, Value: []byte("PLAIN_SERIAL")},
+		},
+	}
+
+	listener.handleTrap(packet, addr)
+
+	if received.SerialNumber != "PLAIN_SERIAL" {
+		t.Errorf("SerialNumber = %q, want PLAIN_SERIAL", received.SerialNumber)
+	}
+}
+
+func TestHandleTrap_DescriptionFromOIDOnuDescription(t *testing.T) {
+	var received model.TrapEvent
+	listener := NewListener(ListenerConfig{
+		Port: 1620, Community: "public",
+		OnEvent: func(event model.TrapEvent) { received = event },
+	})
+
+	addr := &net.UDPAddr{IP: net.ParseIP("192.168.1.1"), Port: 162}
+	packet := &gosnmp.SnmpPacket{
+		Variables: []gosnmp.SnmpPDU{
+			{Name: OIDOnuName + ".285278465.1", Type: gosnmp.OctetString, Value: []byte("Customer")},
+			{Name: OIDOnuDescription + ".285278465.1", Type: gosnmp.OctetString, Value: "String address via string type"},
+		},
+	}
+
+	listener.handleTrap(packet, addr)
+
+	if received.Description != "String address via string type" {
+		t.Errorf("Description = %q, want string address", received.Description)
+	}
 }

@@ -11,7 +11,7 @@ import (
 )
 
 func TestNewWebhookClient(t *testing.T) {
-	client := NewWebhookClient("http://example.com/webhook", 3, 10)
+	client := NewWebhookClient("http://example.com/webhook", 3, 10, nil)
 
 	if client == nil {
 		t.Fatal("expected non-nil WebhookClient")
@@ -47,7 +47,7 @@ func TestWebhookSend_Success(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := NewWebhookClient(server.URL, 3, 5)
+	client := NewWebhookClient(server.URL, 3, 5, nil)
 
 	event := model.TrapEvent{
 		Timestamp: time.Now(),
@@ -83,7 +83,7 @@ func TestWebhookSend_RetryOnFailure(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := NewWebhookClient(server.URL, 3, 5)
+	client := NewWebhookClient(server.URL, 3, 5, nil)
 
 	event := model.TrapEvent{
 		Timestamp: time.Now(),
@@ -111,7 +111,7 @@ func TestWebhookSend_AllRetriesExhausted(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := NewWebhookClient(server.URL, 2, 5)
+	client := NewWebhookClient(server.URL, 2, 5, nil)
 
 	event := model.TrapEvent{
 		Timestamp: time.Now(),
@@ -139,7 +139,7 @@ func TestWebhookSend_ConnectionError(t *testing.T) {
 	serverURL := server.URL
 	server.Close() // Close immediately to cause connection errors
 
-	client := NewWebhookClient(serverURL, 1, 1)
+	client := NewWebhookClient(serverURL, 1, 1, nil)
 
 	event := model.TrapEvent{
 		Timestamp: time.Now(),
@@ -164,7 +164,7 @@ func TestWebhookSend_Status201Accepted(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := NewWebhookClient(server.URL, 3, 5)
+	client := NewWebhookClient(server.URL, 3, 5, nil)
 
 	event := model.TrapEvent{
 		Timestamp: time.Now(),

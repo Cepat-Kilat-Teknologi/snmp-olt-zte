@@ -89,16 +89,55 @@ func (a *App) Start(ctx context.Context) error {
 
 	// Start SNMP Trap listener if enabled.
 	if cfg.TrapCfg.Enabled {
+		trap.SetActionMessages(
+			cfg.TrapCfg.ActionCritical,
+			cfg.TrapCfg.ActionHigh,
+			cfg.TrapCfg.ActionMedium,
+			cfg.TrapCfg.ActionLow,
+		)
+
 		var webhookClient *trap.WebhookClient
 		if cfg.TrapCfg.WebhookURL != "" {
-			webhookClient = trap.NewWebhookClient(
+			formatter, finalURL := trap.NewFormatter(
 				cfg.TrapCfg.WebhookURL,
+				cfg.TrapCfg.WebhookType,
+				cfg.TrapCfg.WebhookChatID,
+			)
+			webhookClient = trap.NewWebhookClient(
+				finalURL,
 				cfg.TrapCfg.WebhookRetries,
 				cfg.TrapCfg.WebhookTimeout,
+				formatter,
 			)
+			logger.Info("webhook_client_initialized",
+				zap.String("platform", trap.DetectPlatform(cfg.TrapCfg.WebhookURL)),
+				zap.String("url", finalURL))
 		}
 
-		trapHandler := trap.NewHandler(webhookClient, onuUsecase)
+		var batcher *trap.Batcher
+		if webhookClient != nil {
+			intervals := trap.BuildIntervals(
+				cfg.TrapCfg.CriticalInterval,
+				cfg.TrapCfg.HighInterval,
+				cfg.TrapCfg.MediumInterval,
+				cfg.TrapCfg.LowInterval,
+			)
+			if len(intervals) > 0 {
+				batcher = trap.NewBatcher(webhookClient, onuUsecase, intervals)
+				batcher.HighThreshold = cfg.TrapCfg.RxPowerHighThreshold
+				batcher.LowThreshold = cfg.TrapCfg.RxPowerLowThreshold
+				batcher.RepeatIntervals = trap.BuildRepeatIntervals(
+					cfg.TrapCfg.CriticalRepeat,
+					cfg.TrapCfg.HighRepeat,
+					cfg.TrapCfg.MediumRepeat,
+					cfg.TrapCfg.LowRepeat,
+				)
+				go batcher.Start()
+				defer func() { _ = batcher.Close() }()
+			}
+		}
+
+		trapHandler := trap.NewHandler(webhookClient, batcher, onuUsecase)
 		trapListener := trap.NewListener(trap.ListenerConfig{
 			Port:      cfg.TrapCfg.Port,
 			Community: cfg.TrapCfg.Community,
@@ -126,6 +165,9 @@ func (a *App) Start(ctx context.Context) error {
 				LowThreshold:  cfg.TrapCfg.RxPowerLowThreshold,
 				Source:        cfg.SnmpCfg.IP,
 			}, onuUsecase, webhookClient)
+			if batcher != nil {
+				powerMonitor.SetBatcher(batcher)
+			}
 			go powerMonitor.Start()
 			defer func() { _ = powerMonitor.Close() }()
 			logger.Info("rx power monitor started",

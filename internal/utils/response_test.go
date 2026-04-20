@@ -9,7 +9,7 @@ import (
 )
 
 func TestSendRequestJSONResponse(t *testing.T) {
-	// Initialising ResponseWriter dan Request
+	// Initializing ResponseWriter dan Request
 	rr := httptest.NewRecorder()
 
 	// Response for 200 OK
@@ -39,11 +39,10 @@ func TestSendRequestJSONResponse(t *testing.T) {
 	if err != nil {
 		t.Errorf("Gagal mendekode respons JSON: %v", err)
 	}
-
 }
 
 func TestErrorBadRequestBos(t *testing.T) {
-	// Initialising ResponseWriter
+	// Initializing ResponseWriter
 	rr := httptest.NewRecorder()
 
 	// Cont error

@@ -68,6 +68,7 @@ type OnuUseCaseInterface interface {
 	UpdateEmptyOnuID(ctx context.Context, boardID, ponID int) error                                                            // Update empty ONU IDs cache
 	GetByBoardIDAndPonIDWithPagination(ctx context.Context, boardID, ponID, page, pageSize int) ([]model.ONUInfoPerBoard, int) // Get paginated ONU info
 	DeleteCache(ctx context.Context, boardID, ponID int) error                                                                 // Delete cache for specific board/pon
+	InvalidateONUCache(ctx context.Context, boardID, ponID, onuID int) error                                                   // Invalidate ONU detail + board/pon cache for fresh SNMP query
 	PreWarmCache(ctx context.Context)
 }
 
@@ -187,7 +188,6 @@ func (u *onuUsecase) GetByBoardIDAndPonID(ctx context.Context, boardID, ponID in
 
 		// Loop through an SNMP data map to get ONU information based on ONU ID and ONU Name stored in a map before and store
 		for _, pdu := range snmpDataMap {
-
 			// Create a new ONUInfoPerBoard struct and populate it with ONU ID, ONU Name, ONU Type, ONU Serial Number, ONU RX Power, ONU Status
 			onuInfo := model.ONUInfoPerBoard{
 				Board: boardID,                        // Set Board ID
@@ -372,7 +372,6 @@ func (u *onuUsecase) GetByBoardIDPonIDAndOnuID(ctx context.Context, boardID, pon
 
 		// Loop through an SNMP data map to get ONU information based on ONU ID and ONU Name stored in a map before and store
 		for _, pdu := range snmpDataMap {
-
 			// Create a new ONUInfoPerBoard struct and populate it with ONU ID, ONU Name, ONU Type, ONU Serial Number, ONU RX Power, ONU Status
 			onuInfo := model.ONUCustomerInfo{
 				Board: boardID,                        // Set board ID
@@ -955,6 +954,24 @@ func (u *onuUsecase) DeleteCache(ctx context.Context, boardID, ponID int) error 
 		zap.Int("board_id", boardID),
 		zap.Int("pon_id", ponID),
 	)
+
+	return nil
+}
+
+// InvalidateONUCache deletes the cached ONU detail and board/pon cache so
+// the next fetch goes directly to SNMP for fresh data. Called by trap handler
+// before status verification to avoid stale cache false negatives.
+func (u *onuUsecase) InvalidateONUCache(ctx context.Context, boardID, ponID, onuID int) error {
+	detailKey := GenerateONUDetailRedisKey(boardID, ponID, onuID)
+	_ = u.redisRepository.Delete(ctx, detailKey)
+
+	boardPonKey := GenerateRedisKey(RedisKeyTypeONUInfo, boardID, ponID)
+	_ = u.redisRepository.Delete(ctx, boardPonKey)
+
+	logger.Info("onu_cache_invalidated",
+		zap.Int("board", boardID),
+		zap.Int("pon", ponID),
+		zap.Int("onu_id", onuID))
 
 	return nil
 }

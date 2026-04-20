@@ -47,6 +47,20 @@ type TrapConfig struct {
 	Port                 uint16
 	Community            string
 	WebhookURL           string
+	WebhookType          string // TRAP_WEBHOOK_TYPE: discord|slack|telegram|generic (auto-detect if empty)
+	WebhookChatID        string // TRAP_WEBHOOK_CHAT_ID: required for Telegram
+	CriticalInterval     int    // TRAP_CRITICAL_INTERVAL: batch interval for CRITICAL events (seconds)
+	HighInterval         int    // TRAP_HIGH_INTERVAL: batch interval for HIGH events (seconds)
+	MediumInterval       int    // TRAP_MEDIUM_INTERVAL: batch interval for MEDIUM events (seconds)
+	LowInterval          int    // TRAP_LOW_INTERVAL: batch interval for LOW events (seconds)
+	CriticalRepeat       int    // TRAP_CRITICAL_REPEAT: repeat interval (minutes, 0 = no repeat)
+	HighRepeat           int    // TRAP_HIGH_REPEAT: repeat interval (minutes)
+	MediumRepeat         int    // TRAP_MEDIUM_REPEAT: repeat interval (minutes)
+	LowRepeat            int    // TRAP_LOW_REPEAT: repeat interval (minutes)
+	ActionCritical       string // TRAP_ACTION_CRITICAL: action text for critical severity
+	ActionHigh           string // TRAP_ACTION_HIGH: action text for high severity
+	ActionMedium         string // TRAP_ACTION_MEDIUM: action text for medium severity
+	ActionLow            string // TRAP_ACTION_LOW: action text for low severity
 	WebhookRetries       int
 	WebhookTimeout       int
 	PowerMonitor         bool    // POWER_MONITOR_ENABLED
@@ -185,6 +199,20 @@ func LoadConfig() (*Config, error) {
 		Port:                 getEnvAsUint16("TRAP_PORT", 1620),
 		Community:            getEnv("TRAP_COMMUNITY", cfg.SnmpCfg.Community),
 		WebhookURL:           getEnv("TRAP_WEBHOOK_URL", ""),
+		WebhookType:          getEnv("TRAP_WEBHOOK_TYPE", ""),
+		WebhookChatID:        getEnv("TRAP_WEBHOOK_CHAT_ID", ""),
+		ActionCritical:       getEnv("TRAP_ACTION_CRITICAL", "Mandatory customer visit within 1x24 hours"),
+		ActionHigh:           getEnv("TRAP_ACTION_HIGH", "Mandatory visit within 1x24 hours if Hard Restart does not resolve"),
+		ActionMedium:         getEnv("TRAP_ACTION_MEDIUM", "Mandatory visit within 2x24 hours after notification"),
+		ActionLow:            getEnv("TRAP_ACTION_LOW", "Coordinate with customer to ensure no electrical issues"),
+		CriticalInterval:     getEnvAsInt("TRAP_CRITICAL_INTERVAL", 300),
+		HighInterval:         getEnvAsInt("TRAP_HIGH_INTERVAL", 3600),
+		MediumInterval:       getEnvAsInt("TRAP_MEDIUM_INTERVAL", 14400),
+		LowInterval:          getEnvAsInt("TRAP_LOW_INTERVAL", 28800),
+		CriticalRepeat:       getEnvAsInt("TRAP_CRITICAL_REPEAT", 0),
+		HighRepeat:           getEnvAsInt("TRAP_HIGH_REPEAT", 0),
+		MediumRepeat:         getEnvAsInt("TRAP_MEDIUM_REPEAT", 0),
+		LowRepeat:            getEnvAsInt("TRAP_LOW_REPEAT", 0),
 		WebhookRetries:       getEnvAsInt("TRAP_WEBHOOK_RETRIES", 3),
 		WebhookTimeout:       getEnvAsInt("TRAP_WEBHOOK_TIMEOUT", 10),
 		PowerMonitor:         getEnv("POWER_MONITOR_ENABLED", "false") == "true",

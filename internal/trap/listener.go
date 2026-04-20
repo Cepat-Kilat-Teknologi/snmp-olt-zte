@@ -13,23 +13,30 @@ import (
 	"go.uber.org/zap"
 )
 
-// ZTE C320 OLT Trap OID prefixes
 const (
-	// ZTE enterprise OID prefix
 	ZTEEnterpriseOID = ".1.3.6.1.4.1.3902"
 
-	// Common trap variable OIDs for ZTE C320
-	// These are used to identify ONU events in trap PDUs
-	OIDOnuIndex     = ".1.3.6.1.4.1.3902.1082.500.10.2.3.3.1.2" // ONU index
-	OIDOnuStatus    = ".1.3.6.1.4.1.3902.1082.500.10.2.3.8.1.4" // ONU status
-	OIDOnuOffReason = ".1.3.6.1.4.1.3902.1082.500.10.2.3.8.1.7" // Offline reason
+	// snmpTrapOID values identifying the trap type
+	OIDSnmpTrapOID    = ".1.3.6.1.6.3.1.1.4.1.0"
+	OIDTrapOnuOffline = ".1.3.6.1.4.1.3902.1082.500.10.3.1.9"
+	OIDTrapOnuOnline  = ".1.3.6.1.4.1.3902.1082.500.10.3.1.10"
+
+	// ONU data OIDs carried inside the trap PDU
+	OIDOnuName        = ".1.3.6.1.4.1.3902.1082.500.10.2.3.3.1.2"
+	OIDOnuType        = ".1.3.6.1.4.1.3902.1082.500.10.2.3.3.1.1"
+	OIDOnuDescription = ".1.3.6.1.4.1.3902.1082.500.10.2.3.3.1.3"
+	OIDOnuSerial      = ".1.3.6.1.4.1.3902.1082.500.10.2.3.3.1.18"
+
+	// Legacy OIDs (status/reason — may appear in some firmware versions)
+	OIDOnuStatus    = ".1.3.6.1.4.1.3902.1082.500.10.2.3.8.1.4"
+	OIDOnuOffReason = ".1.3.6.1.4.1.3902.1082.500.10.2.3.8.1.7"
 )
 
 // ListenerConfig holds configuration for the trap listener
 type ListenerConfig struct {
 	Port      uint16
 	Community string
-	OnEvent   func(event model.TrapEvent) // callback for processed events
+	OnEvent   func(event model.TrapEvent)
 }
 
 // Listener wraps gosnmp.TrapListener
@@ -91,42 +98,60 @@ func (l *Listener) handleTrap(packet *gosnmp.SnmpPacket, addr *net.UDPAddr) {
 		Source:    source,
 	}
 
-	// Parse trap variables to extract ONU information
+	// Pass 1: determine event type from snmpTrapOID
+	for _, v := range packet.Variables {
+		if v.Name == OIDSnmpTrapOID {
+			if trapOID, ok := v.Value.(string); ok {
+				event.EventType, event.Status = mapTrapOID(trapOID)
+			}
+			break
+		}
+	}
+
+	// Pass 2: extract ONU data from the remaining variables.
+	// Check longer OID prefixes first to avoid collisions
+	// (e.g. OIDOnuSerial ".1...1.18" vs OIDOnuType ".1...1.1").
 	for _, v := range packet.Variables {
 		oid := v.Name
 
 		switch {
-		case strings.HasPrefix(oid, OIDOnuStatus):
-			// Extract board/PON/ONU from the OID suffix
-			event.Board, event.PON, event.OnuID = parseOnuIndex(oid, OIDOnuStatus)
+		case strings.HasPrefix(oid, OIDOnuSerial+"."):
+			serial := extractString(v.Value)
+			if idx := strings.Index(serial, ","); idx >= 0 {
+				serial = serial[idx+1:]
+			}
+			event.SerialNumber = serial
+
+		case strings.HasPrefix(oid, OIDOnuDescription+"."):
+			event.Description = extractString(v.Value)
+
+		case strings.HasPrefix(oid, OIDOnuName+"."):
+			event.Board, event.PON, event.OnuID = parseOnuIndex(oid, OIDOnuName)
+			event.Name = extractString(v.Value)
+
+		case strings.HasPrefix(oid, OIDOnuType+"."):
+			event.OnuType = extractString(v.Value)
+
+		case strings.HasPrefix(oid, OIDOnuStatus+"."):
+			if event.Board == 0 {
+				event.Board, event.PON, event.OnuID = parseOnuIndex(oid, OIDOnuStatus)
+			}
 			if status, ok := v.Value.(int); ok {
 				event.Status, event.EventType = mapStatus(status)
 			}
 
-		case strings.HasPrefix(oid, OIDOnuOffReason):
+		case strings.HasPrefix(oid, OIDOnuOffReason+"."):
 			if reason, ok := v.Value.(int); ok {
 				event.EventType = mapOfflineReason(reason)
-			}
-
-		case strings.HasPrefix(oid, OIDOnuIndex):
-			event.Board, event.PON, event.OnuID = parseOnuIndex(oid, OIDOnuIndex)
-			if name, ok := v.Value.([]byte); ok {
-				event.Description = string(name)
-			} else if name, ok := v.Value.(string); ok {
-				event.Description = name
 			}
 		}
 	}
 
-	// If we couldn't parse board/PON/ONU, try generic parsing
 	if event.Board == 0 && event.PON == 0 && event.OnuID == 0 {
 		event.EventType = "unknown"
-		event.Description = fmt.Sprintf("Unrecognized trap from %s with %d variables", source, len(packet.Variables))
-	}
-
-	// Build description if not set
-	if event.Description == "" && event.Board > 0 {
-		event.Description = fmt.Sprintf("ONU %d/%d/%d %s detected", event.Board, event.PON, event.OnuID, event.EventType)
+		if event.Description == "" {
+			event.Description = fmt.Sprintf("Unrecognized trap from %s with %d variables", source, len(packet.Variables))
+		}
 	}
 
 	logger.Info("trap_event_processed",
@@ -135,30 +160,51 @@ func (l *Listener) handleTrap(packet *gosnmp.SnmpPacket, addr *net.UDPAddr) {
 		zap.Int("pon", event.PON),
 		zap.Int("onu_id", event.OnuID),
 		zap.String("event_type", event.EventType),
-		zap.String("status", event.Status))
+		zap.String("status", event.Status),
+		zap.String("name", event.Name),
+		zap.String("description", event.Description),
+		zap.String("serial", event.SerialNumber))
 
 	if l.config.OnEvent != nil {
 		l.config.OnEvent(event)
 	}
 }
 
+// extractString converts gosnmp OctetString ([]byte) or string value to string
+func extractString(value interface{}) string {
+	switch v := value.(type) {
+	case []byte:
+		return string(v)
+	case string:
+		return v
+	default:
+		return ""
+	}
+}
+
+// mapTrapOID maps the snmpTrapOID value to a hint — the actual status
+// must be verified via SNMP GET by the handler before alerting.
+func mapTrapOID(trapOID string) (eventType, status string) {
+	switch trapOID {
+	case OIDTrapOnuOffline, OIDTrapOnuOnline:
+		return "StatusChange", ""
+	default:
+		return "", ""
+	}
+}
+
 // parseOnuIndex extracts board, PON, and ONU ID from an OID suffix
-// OID format: prefix.boardPonEncoded.onuID
 func parseOnuIndex(fullOID, prefix string) (board, pon, onuID int) {
 	suffix := strings.TrimPrefix(fullOID, prefix)
 	suffix = strings.TrimPrefix(suffix, ".")
 
 	parts := strings.Split(suffix, ".")
 
-	// The encoded value contains board and PON info
-	// For ZTE C320: board 1 PON 1 base = 285278465, increment by 1 per PON
-	// board 2 PON 1 base = 285278721
 	encoded, err := strconv.Atoi(parts[0])
 	if err != nil {
 		return 0, 0, 0
 	}
 
-	// Determine board and PON from encoded value
 	const board1Base = 285278464
 	const board2Base = 285278720
 
@@ -170,14 +216,12 @@ func parseOnuIndex(fullOID, prefix string) (board, pon, onuID int) {
 		board = 1
 		pon = encoded - board1Base
 	default:
-		// Try last part as ONU ID for simpler OID structures
 		if id, err := strconv.Atoi(parts[len(parts)-1]); err == nil {
 			onuID = id
 		}
 		return
 	}
 
-	// ONU ID is the next part if available
 	if len(parts) >= 2 {
 		if id, err := strconv.Atoi(parts[1]); err == nil {
 			onuID = id

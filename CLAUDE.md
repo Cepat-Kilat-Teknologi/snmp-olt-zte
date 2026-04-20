@@ -1,14 +1,41 @@
 # CLAUDE.md — go-snmp-olt-zte-c320
 
+> **READ FIRST (AI agents):** `~/Projects/knowledge-base/BOOTSTRAP.md` is
+> the canonical cold-start doc for this platform. This repo is 1 of 5
+> HTTP adapters subordinate to [[isp-agent]]. Current platform state:
+> `~/Projects/knowledge-base/STATUS.md`.
+
+## Wiki Update Discipline (HARD RULE)
+
+**"Release done" ≠ "tag pushed". Release done = tag + wiki + platform status
+all updated together.**
+
+When releasing a new version or making substantive changes:
+
+1. `CHANGELOG.md` — move Unreleased to `[vX.Y.Z] — DATE`
+2. Git tag + push: `git tag -a vX.Y.Z && git push origin vX.Y.Z`
+3. Verify release workflow success (multi-arch Docker)
+4. **Wiki entity page**:
+   `~/Projects/knowledge-base/wiki/go-snmp-olt-zte-c320.md`
+5. **Platform status**: `~/Projects/knowledge-base/STATUS.md`
+6. **Platform changelog**: `~/Projects/knowledge-base/PLATFORM_CHANGELOG.md`
+7. **Dependency manifest**: `~/Projects/knowledge-base/platform-deps.yaml`
+8. If breaking change: notify isp-agent dev lead for min-version bump
+
 ## Project Overview
 
-Read-oriented HTTP adapter for monitoring ZTE C320 OLT devices via SNMP. Exposes ONU status, optical power, uptime, and serial numbers through a REST API backed by a Redis cache and an SNMP connection pool. Part of the ISP billing ecosystem — the billing-agent will eventually consume this service for bandwidth and ONU status checks.
+Read-oriented HTTP adapter for monitoring ZTE C320 OLT devices via SNMP.
+Exposes ONU status, optical power, uptime, and serial numbers through a
+REST API backed by a Redis cache and an SNMP connection pool. Part of the
+ISP SaaS platform — [[isp-agent]] (the Temporal worker orchestrator) consumes
+this service for ONU telemetry + status checks (reserved for v2+
+telemetry polling workflows; not actively used by v0.1.0 billing workflows).
 
 - **Module path:** `github.com/Cepat-Kilat-Teknologi/go-snmp-olt-zte-c320`
 - **Go version:** 1.26
 - **Entrypoint:** `cmd/api/main.go` → `app.New().Start(ctx)`
-- **HTTP framework:** chi v5 (NOT Fiber — differs from freeradius-api and genieacs-relay; see §Framework notes below)
-- **Reference implementation:** freeradius-api v1.2.0 (`pkg/httputil`, `pkg/logger`, `pkg/middleware/audit.go`, `pkg/metrics`) — adapted to chi conventions
+- **HTTP framework:** chi v5 — shared with genieacs-relay v2.0.0. Fiber v2 is used by freeradius-api and write-olt-zte-c320-svc. See §Framework notes below.
+- **Reference implementations:** freeradius-api v1.2.0 (`pkg/httputil`, `pkg/logger`, `pkg/middleware/audit.go`, `pkg/metrics`) — adapted to chi conventions. genieacs-relay v2.0.0 uses the same chi + leaf-package-reqctx pattern from this repo as its template.
 
 ## Architecture
 
@@ -40,17 +67,26 @@ pkg/
 
 ## Framework notes
 
-go-snmp-olt-zte-c320 uses **chi** while `freeradius-api` and `genieacs-relay` use **Fiber v2**. This is deliberate:
+Framework mix across the adapter fleet is deliberate:
 
-- Migration chi → Fiber is a significant refactor with little upside
+- **chi v5**: go-snmp-olt-zte-c320, genieacs-relay v2.0.0
+- **Fiber v2**: freeradius-api v1.2.0, write-olt-zte-c320-svc v3.0.0
+
+Rationale:
+- Migration chi ↔ Fiber is a significant refactor with little upside
 - chi is standard-library-compatible (`http.Handler`), simpler to test
-- The adapter standard (`isp-adapter-standard` wiki) specifies **JSON response format and HTTP contract**, not the framework
+- Fiber is slightly faster for pure HTTP but SNMP/SSH/GenieACS dominate in all adapter workloads
+- The adapter standard (`isp-adapter-standard` wiki) specifies **JSON response format + HTTP contract + logging schema**, not the framework
 
-When porting patterns from freeradius-api, adapt Fiber-specific APIs:
+When porting patterns from freeradius-api or write-olt-svc, adapt Fiber-specific APIs:
 - `fiber.Ctx` → `http.ResponseWriter + *http.Request`
 - `c.Next()` → `next.ServeHTTP(ww, r)` where `ww` is a `chimw.WrapResponseWriter`
 - `c.Locals("request_id")` → `reqctx.RequestIDFromContext(r.Context())`
 - `c.IP()` → see `middleware/audit.go`'s `clientIP` helper (X-Forwarded-For aware)
+
+Both chi adapters (this one + genieacs-relay v2.0.0) use the **leaf-package `reqctx`
+pattern** to avoid the utils ↔ middleware ↔ logger import cycle. Fiber adapters use
+`c.Locals` directly and don't need the leaf package.
 
 ## Module Boundaries & Import Rules
 

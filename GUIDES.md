@@ -111,16 +111,24 @@ API_KEY=your-secret-api-key
 
 ### SNMP Trap Configuration
 
-To enable real-time ONU offline detection:
+To enable real-time ONU event monitoring with batched webhook notifications:
 
 ```bash
 # SNMP Trap Configuration
 TRAP_ENABLED=true              # Enable trap listener
 TRAP_PORT=1620                 # UDP port for trap listener (default: 1620)
 TRAP_COMMUNITY=public          # SNMP community for trap validation
-TRAP_WEBHOOK_URL=https://your-webhook.example.com/olt-alerts
+TRAP_WEBHOOK_URL=https://hooks.example.com/snmp-alerts
+TRAP_WEBHOOK_TYPE=              # discord|slack|telegram|generic (auto-detected from URL if omitted)
+TRAP_WEBHOOK_CHAT_ID=           # Required for Telegram only
 TRAP_WEBHOOK_RETRIES=3         # Max retry attempts for webhook
 TRAP_WEBHOOK_TIMEOUT=10        # Webhook timeout in seconds
+
+# Per-severity batch intervals (seconds)
+TRAP_CRITICAL_INTERVAL=300     # CRITICAL (LOS, Offline, AuthFailed, PowerOff, LOSi, LOFi): 5 min
+TRAP_HIGH_INTERVAL=3600        # HIGH (Logging, Synchronization stuck): 1 hr
+TRAP_MEDIUM_INTERVAL=14400     # MEDIUM (HighRxPower, LowRxPower): 4 hr
+TRAP_LOW_INTERVAL=28800        # LOW (DyingGasp): 8 hr
 
 # RX Power Monitor (requires TRAP_ENABLED=true and TRAP_WEBHOOK_URL)
 POWER_MONITOR_ENABLED=true
@@ -136,7 +144,7 @@ RX_POWER_LOW_THRESHOLD=-25.0      # Weak signal threshold (dBm)
 snmp-server host <APP_SERVER_IP> version 2c <COMMUNITY> udp-port <TRAP_PORT>
 ```
 
-The trap listener detects ONU offline events (LOS, DyingGasp, PowerOff) and sends a webhook with ONU details (name, address, serial number, type).
+The trap listener classifies events into 4 severity tiers, batches them per severity, deduplicates per ONU, and re-verifies via SNMP before sending. See [`docs/SNMP_TRAP_WEBHOOK.md`](docs/SNMP_TRAP_WEBHOOK.md) for full details.
 
 ## Deployment Methods
 

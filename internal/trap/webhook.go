@@ -2,7 +2,6 @@ package trap
 
 import (
 	"bytes"
-	"encoding/json"
 	"fmt"
 	"math"
 	"net/http"
@@ -19,10 +18,14 @@ type WebhookClient struct {
 	maxRetries int
 	timeout    time.Duration
 	client     *http.Client
+	formatter  WebhookFormatter
 }
 
-// NewWebhookClient creates a new webhook client
-func NewWebhookClient(url string, maxRetries int, timeoutSec int) *WebhookClient {
+// NewWebhookClient creates a new webhook client with a platform-specific formatter.
+func NewWebhookClient(url string, maxRetries int, timeoutSec int, formatter WebhookFormatter) *WebhookClient {
+	if formatter == nil {
+		formatter = &GenericFormatter{}
+	}
 	return &WebhookClient{
 		url:        url,
 		maxRetries: maxRetries,
@@ -30,21 +33,28 @@ func NewWebhookClient(url string, maxRetries int, timeoutSec int) *WebhookClient
 		client: &http.Client{
 			Timeout: time.Duration(timeoutSec) * time.Second,
 		},
+		formatter: formatter,
 	}
 }
 
 // Send dispatches a trap event to the webhook URL with retry
 func (w *WebhookClient) Send(event model.TrapEvent) {
-	payload, err := json.Marshal(event)
+	payload, err := w.formatter.Format(event)
 	if err != nil {
-		logger.Error("webhook_marshal_failed", zap.Error(err))
+		logger.Error("webhook_format_failed", zap.Error(err))
 		return
 	}
+
+	w.sendPayload(payload)
+}
+
+// sendPayload sends raw payload bytes to the webhook URL with retry
+func (w *WebhookClient) sendPayload(payload []byte) {
+	contentType := w.formatter.ContentType()
 
 	var lastErr error
 	for attempt := 0; attempt <= w.maxRetries; attempt++ {
 		if attempt > 0 {
-			// Exponential backoff: 1s, 2s, 4s
 			backoff := time.Duration(math.Pow(2, float64(attempt-1))) * time.Second
 			logger.Warn("webhook_retry",
 				zap.Int("attempt", attempt),
@@ -52,7 +62,7 @@ func (w *WebhookClient) Send(event model.TrapEvent) {
 			time.Sleep(backoff)
 		}
 
-		resp, err := w.client.Post(w.url, "application/json", bytes.NewReader(payload))
+		resp, err := w.client.Post(w.url, contentType, bytes.NewReader(payload))
 		if err != nil {
 			lastErr = err
 			logger.Error("webhook_request_failed",
@@ -66,10 +76,7 @@ func (w *WebhookClient) Send(event model.TrapEvent) {
 			logger.Info("webhook_sent_successfully",
 				zap.String("url", w.url),
 				zap.Int("status", resp.StatusCode),
-				zap.Int("board", event.Board),
-				zap.Int("pon", event.PON),
-				zap.Int("onu_id", event.OnuID),
-				zap.String("event_type", event.EventType))
+				zap.Int("payload_bytes", len(payload)))
 			return
 		}
 

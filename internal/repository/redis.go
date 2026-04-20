@@ -12,6 +12,8 @@ import (
 	"go.uber.org/zap"
 )
 
+var jsonMarshal = json.Marshal
+
 // OnuRedisRepositoryInterface is an interface that represents the auth's repository contract
 // It defines the methods for interacting with Redis related to ONU data.
 type OnuRedisRepositoryInterface interface {
@@ -43,7 +45,6 @@ func NewOnuRedisRepo(redisClient *redis.Client) OnuRedisRepositoryInterface { //
 
 // GetOnuIDCtx is a method to get onu id from redis
 func (r *onuRedisRepo) GetOnuIDCtx(ctx context.Context, key string) ([]model.OnuID, error) {
-
 	onuBytes, err := r.redisClient.Get(ctx, key).Bytes() // Get value as bytes from Redis using a key
 
 	// Check for error
@@ -181,8 +182,7 @@ func (r *onuRedisRepo) GetTTL(ctx context.Context, key string) (time.Duration, e
 
 // SaveONUDetail saves ONU detail information to Redis with expiration
 func (r *onuRedisRepo) SaveONUDetail(ctx context.Context, key string, seconds int, detail model.ONUCustomerInfo) error {
-	// Marshal detail to JSON bytes
-	detailBytes, err := json.Marshal(detail)
+	detailBytes, err := jsonMarshal(detail)
 	if err != nil {
 		logger.WithRequestID(ctx).Error("failed_to_marshal_onu_detail", zap.Error(err))
 		return apperrors.NewInternalError("failed to marshal ONU detail", err)
@@ -216,7 +216,7 @@ func (r *onuRedisRepo) GetONUDetail(ctx context.Context, key string) (*model.ONU
 
 // SaveONUSerialList saves ONU serial number list to Redis
 func (r *onuRedisRepo) SaveONUSerialList(ctx context.Context, key string, seconds int, list []model.OnuSerialNumber) error {
-	dataBytes, err := json.Marshal(list)
+	dataBytes, err := jsonMarshal(list)
 	if err != nil {
 		logger.WithRequestID(ctx).Error("failed_to_marshal_onu_serial_list", zap.Error(err))
 		return apperrors.NewInternalError("failed to marshal ONU serial list", err)

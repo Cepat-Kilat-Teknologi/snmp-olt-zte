@@ -43,7 +43,7 @@ func TestPowerMonitor_HighRxPower(t *testing.T) {
 		},
 	}
 
-	webhook := NewWebhookClient(server.URL, 0, 5)
+	webhook := NewWebhookClient(server.URL, 0, 5, nil)
 	pm := NewPowerMonitor(PowerMonitorConfig{
 		Interval:      1 * time.Second,
 		HighThreshold: -8.0,
@@ -79,7 +79,7 @@ func TestPowerMonitor_LowRxPower(t *testing.T) {
 		},
 	}
 
-	webhook := NewWebhookClient(server.URL, 0, 5)
+	webhook := NewWebhookClient(server.URL, 0, 5, nil)
 	pm := NewPowerMonitor(PowerMonitorConfig{
 		Interval:      1 * time.Second,
 		HighThreshold: -8.0,
@@ -114,7 +114,7 @@ func TestPowerMonitor_NormalPower_NoAlert(t *testing.T) {
 		},
 	}
 
-	webhook := NewWebhookClient(server.URL, 0, 5)
+	webhook := NewWebhookClient(server.URL, 0, 5, nil)
 	pm := NewPowerMonitor(PowerMonitorConfig{
 		Interval:      1 * time.Second,
 		HighThreshold: -8.0,
@@ -148,7 +148,7 @@ func TestPowerMonitor_DuplicateAlertSuppressed(t *testing.T) {
 		},
 	}
 
-	webhook := NewWebhookClient(server.URL, 0, 5)
+	webhook := NewWebhookClient(server.URL, 0, 5, nil)
 	pm := NewPowerMonitor(PowerMonitorConfig{
 		Interval:      1 * time.Second,
 		HighThreshold: -8.0,
@@ -184,7 +184,7 @@ func TestPowerMonitor_EmptyRxPower_Skipped(t *testing.T) {
 		},
 	}
 
-	webhook := NewWebhookClient(server.URL, 0, 5)
+	webhook := NewWebhookClient(server.URL, 0, 5, nil)
 	pm := NewPowerMonitor(PowerMonitorConfig{
 		Interval:      1 * time.Second,
 		HighThreshold: -8.0,
@@ -253,7 +253,7 @@ func TestPowerMonitor_InvalidRxPower_Skipped(t *testing.T) {
 		},
 	}
 
-	webhook := NewWebhookClient(server.URL, 0, 5)
+	webhook := NewWebhookClient(server.URL, 0, 5, nil)
 	pm := NewPowerMonitor(PowerMonitorConfig{
 		Interval:      1 * time.Second,
 		HighThreshold: -8.0,
@@ -300,7 +300,7 @@ func TestPowerMonitor_NormalPower_ClearsAlert(t *testing.T) {
 	}))
 	defer server.Close()
 
-	webhook := NewWebhookClient(server.URL, 0, 5)
+	webhook := NewWebhookClient(server.URL, 0, 5, nil)
 
 	// First scan: ONU has high power -> triggers alert
 	fetcher := &mockONUListFetcher{

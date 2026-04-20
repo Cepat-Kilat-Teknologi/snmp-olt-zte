@@ -33,6 +33,7 @@ gen/*
 
 # Sensitive files - NEVER commit these
 secret.md
+.omc/
 .env
 .env.*
 *.env

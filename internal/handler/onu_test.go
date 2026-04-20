@@ -72,7 +72,8 @@ func (m *mockOnuUsecase) DeleteCache(ctx context.Context, boardID, ponID int) er
 	return nil
 }
 
-func (m *mockOnuUsecase) PreWarmCache(ctx context.Context) {}
+func (m *mockOnuUsecase) InvalidateONUCache(_ context.Context, _, _, _ int) error { return nil }
+func (m *mockOnuUsecase) PreWarmCache(ctx context.Context)                        {}
 
 // TestGetRequestID removed: the local getRequestID helper was replaced by
 // logger.WithRequestID(ctx) which uses the context-based reqctx package.
