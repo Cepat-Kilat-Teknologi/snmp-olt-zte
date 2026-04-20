@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.1.0] - 2026-04-21
+
 ### Added — SNMP Trap Webhook Notification System
 - **Multi-platform webhook formatter** with auto-detection: Discord (rich embeds), Slack (blocks), Telegram (HTML), Generic (raw JSON)
 - **4-tier severity system** with per-severity batch intervals and color-coded notifications:
@@ -51,6 +53,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 - **Field labels** standardized from Indonesian (Nama/Alamat) to English (Name/Address) for i18n consistency
 - **Action messages** moved from hardcoded Indonesian to configurable env vars with English defaults
+
+### Fixed
+- Resolve all 18 golangci-lint issues: exhaustive switch warnings (SeverityUnknown), `WriteString(Sprintf)` → `Fprintf`, American English spelling
+- Remove unnecessary type conversions and whitespace
+
+### Improved
+- Test coverage raised: repository 96.5%→100%, usecase 98.1%→100%
+- Added `jsonMarshal` mock pattern for `SaveONUDetail`/`SaveONUSerialList` marshal error paths
+- Added tests for `InvalidateONUCache`, `DeleteCache` edge cases, concurrent repository init
 
 ## [3.0.0] - 2026-04-12
 
