@@ -125,10 +125,10 @@ func TestSeverityAction(t *testing.T) {
 		sev  Severity
 		want string
 	}{
-		{SeverityCritical, "Wajib visit ke Customer maksimal 1x24 jam"},
-		{SeverityHigh, "Wajib visit maksimal 1x24 jam jika Hard Restart tidak Solved"},
-		{SeverityMedium, "Wajib visit maksimal 2x24 jam setelah notifikasi"},
-		{SeverityLow, "Koordinasi kepada Customer untuk memastikan tidak ada kendala kelistrikan"},
+		{SeverityCritical, "Mandatory customer visit within 1x24 hours"},
+		{SeverityHigh, "Mandatory visit within 1x24 hours if Hard Restart does not resolve"},
+		{SeverityMedium, "Mandatory visit within 2x24 hours after notification"},
+		{SeverityLow, "Coordinate with customer to ensure no electrical issues"},
 		{SeverityUnknown, ""},
 		{Severity(99), ""},
 	}
@@ -137,6 +137,52 @@ func TestSeverityAction(t *testing.T) {
 		if got := severityAction(tt.sev); got != tt.want {
 			t.Errorf("severityAction(%d) = %q, want %q", tt.sev, got, tt.want)
 		}
+	}
+}
+
+// --- SetActionMessages ---
+
+func TestSetActionMessages(t *testing.T) {
+	orig := map[Severity]string{}
+	for k, v := range actionMessages {
+		orig[k] = v
+	}
+	defer func() {
+		for k, v := range orig {
+			actionMessages[k] = v
+		}
+	}()
+
+	SetActionMessages("custom critical", "custom high", "custom medium", "custom low")
+	if got := severityAction(SeverityCritical); got != "custom critical" {
+		t.Errorf("critical = %q, want custom critical", got)
+	}
+	if got := severityAction(SeverityHigh); got != "custom high" {
+		t.Errorf("high = %q, want custom high", got)
+	}
+	if got := severityAction(SeverityMedium); got != "custom medium" {
+		t.Errorf("medium = %q, want custom medium", got)
+	}
+	if got := severityAction(SeverityLow); got != "custom low" {
+		t.Errorf("low = %q, want custom low", got)
+	}
+}
+
+func TestSetActionMessages_EmptySkipped(t *testing.T) {
+	orig := map[Severity]string{}
+	for k, v := range actionMessages {
+		orig[k] = v
+	}
+	defer func() {
+		for k, v := range orig {
+			actionMessages[k] = v
+		}
+	}()
+
+	before := actionMessages[SeverityCritical]
+	SetActionMessages("", "", "", "")
+	if got := severityAction(SeverityCritical); got != before {
+		t.Errorf("empty string should not overwrite, got %q, want %q", got, before)
 	}
 }
 
@@ -484,8 +530,8 @@ func TestDiscordFormatter_Format_AllFields(t *testing.T) {
 		fieldMap[f.Name] = f.Value
 	}
 
-	if v := fieldMap["Nama"]; v != "Customer-023" {
-		t.Errorf("Nama = %q, want Customer-023", v)
+	if v := fieldMap["Name"]; v != "Customer-023" {
+		t.Errorf("Name = %q, want Customer-023", v)
 	}
 	if v := fieldMap["Event"]; v != "LOS" {
 		t.Errorf("Event = %q, want LOS", v)
@@ -496,13 +542,13 @@ func TestDiscordFormatter_Format_AllFields(t *testing.T) {
 	if v := fieldMap["Serial Number"]; v != "ZTEGC12345678" {
 		t.Errorf("Serial Number = %q, want ZTEGC12345678", v)
 	}
-	if v := fieldMap["Alamat"]; v != "Perumahan Graha Ria Blok F No.6" {
-		t.Errorf("Alamat = %q", v)
+	if v := fieldMap["Address"]; v != "Perumahan Graha Ria Blok F No.6" {
+		t.Errorf("Address = %q", v)
 	}
 	if v := fieldMap["Last Offline"]; !strings.Contains(v, "WIB") {
 		t.Errorf("Last Offline = %q, want WIB suffix", v)
 	}
-	if v := fieldMap["\u26A0\uFE0F Action"]; !strings.Contains(v, "1x24 jam") {
+	if v := fieldMap["\u26A0\uFE0F Action"]; !strings.Contains(v, "1x24 hours") {
 		t.Errorf("Action = %q, want action text", v)
 	}
 }
@@ -523,16 +569,16 @@ func TestDiscordFormatter_Format_MinimalFields(t *testing.T) {
 		fieldMap[f.Name] = f.Value
 	}
 
-	// Nama should be "-" for empty
-	if v := fieldMap["Nama"]; v != "-" {
-		t.Errorf("Nama = %q, want '-' for empty", v)
+	// Name should be "-" for empty
+	if v := fieldMap["Name"]; v != "-" {
+		t.Errorf("Name = %q, want '-' for empty", v)
 	}
 	// No optional fields
 	if _, ok := fieldMap["Serial Number"]; ok {
 		t.Error("minimal event should not have Serial Number")
 	}
-	if _, ok := fieldMap["Alamat"]; ok {
-		t.Error("minimal event should not have Alamat")
+	if _, ok := fieldMap["Address"]; ok {
+		t.Error("minimal event should not have Address")
 	}
 }
 
@@ -722,7 +768,7 @@ func TestTelegramFormatter_Format_AllFields(t *testing.T) {
 	for _, expected := range []string{
 		"CRITICAL", "LOS", "Customer-023", "ZTEGC12345678", "F670LV7.1",
 		"-22.50 dBm", "Perumahan Graha Ria Blok F No.6",
-		"1x24 jam", "WIB", "1/5/23",
+		"1x24 hours", "WIB", "1/5/23",
 	} {
 		if !strings.Contains(text, expected) {
 			t.Errorf("text missing %q", expected)
@@ -736,7 +782,7 @@ func TestTelegramFormatter_Format_MinimalFields(t *testing.T) {
 	var payload telegramPayload
 	_ = json.Unmarshal(data, &payload)
 
-	for _, absent := range []string{"Serial:", "ONU Type:", "RX Power:", "Alamat:"} {
+	for _, absent := range []string{"Serial:", "ONU Type:", "RX Power:", "Address:"} {
 		if strings.Contains(payload.Text, "<b>"+absent+"</b>") {
 			t.Errorf("minimal event should not contain %s", absent)
 		}
@@ -1030,7 +1076,7 @@ func TestTelegramFormatter_FormatBatch(t *testing.T) {
 	data, err := f.FormatBatch(SeverityHigh, []model.TrapEvent{
 		{Board: 1, PON: 1, OnuID: 1, EventType: "Logging", Name: "Customer A"},
 		{Board: 1, PON: 2, OnuID: 2, EventType: "Logging", Name: "Customer B",
-			Description: "Alamat B", RXPower: "-15.00"},
+			Description: "Address B", RXPower: "-15.00"},
 	})
 	if err != nil {
 		t.Fatalf("FormatBatch error = %v", err)

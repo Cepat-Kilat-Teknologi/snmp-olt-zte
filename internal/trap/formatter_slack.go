@@ -39,7 +39,7 @@ func (f *SlackFormatter) Format(event model.TrapEvent) ([]byte, error) {
 	}
 
 	detailFields := []slackText{
-		{Type: "mrkdwn", Text: fmt.Sprintf("*Nama:*\n%s", fieldOrDash(event.Name))},
+		{Type: "mrkdwn", Text: fmt.Sprintf("*Name:*\n%s", fieldOrDash(event.Name))},
 		{Type: "mrkdwn", Text: fmt.Sprintf("*Event:*\n%s", fieldOrDash(event.EventType))},
 		{Type: "mrkdwn", Text: fmt.Sprintf("*Last Offline:*\n%s", formatTimestampWIB(ts))},
 		{Type: "mrkdwn", Text: fmt.Sprintf("*Board/PON/ONU:*\n%d/%d/%d", event.Board, event.PON, event.OnuID)},
@@ -69,7 +69,7 @@ func (f *SlackFormatter) Format(event model.TrapEvent) ([]byte, error) {
 	if event.Description != "" {
 		blocks = append(blocks, slackBlock{
 			Type: "section",
-			Text: &slackText{Type: "mrkdwn", Text: fmt.Sprintf("*Alamat:* %s", event.Description)},
+			Text: &slackText{Type: "mrkdwn", Text: fmt.Sprintf("*Address:* %s", event.Description)},
 		})
 	}
 

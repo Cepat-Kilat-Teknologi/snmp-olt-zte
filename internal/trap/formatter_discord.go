@@ -42,7 +42,7 @@ func (f *DiscordFormatter) Format(event model.TrapEvent) ([]byte, error) {
 	}
 
 	fields := []discordField{
-		{Name: "Nama", Value: fieldOrDash(event.Name), Inline: true},
+		{Name: "Name", Value: fieldOrDash(event.Name), Inline: true},
 		{Name: "Event", Value: fieldOrDash(event.EventType), Inline: true},
 		{Name: "Last Offline", Value: formatTimestampWIB(ts), Inline: true},
 		{Name: "Board/PON/ONU", Value: fmt.Sprintf("%d/%d/%d", event.Board, event.PON, event.OnuID), Inline: true},
@@ -58,7 +58,7 @@ func (f *DiscordFormatter) Format(event model.TrapEvent) ([]byte, error) {
 		fields = append(fields, discordField{Name: "RX Power", Value: event.RXPower + " dBm", Inline: true})
 	}
 	if event.Description != "" {
-		fields = append(fields, discordField{Name: "Alamat", Value: event.Description, Inline: false})
+		fields = append(fields, discordField{Name: "Address", Value: event.Description, Inline: false})
 	}
 
 	action := severityAction(sev)

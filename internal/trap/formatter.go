@@ -72,19 +72,30 @@ func severityLabel(s Severity) string {
 	}
 }
 
-func severityAction(s Severity) string {
-	switch s {
-	case SeverityCritical:
-		return "Wajib visit ke Customer maksimal 1x24 jam"
-	case SeverityHigh:
-		return "Wajib visit maksimal 1x24 jam jika Hard Restart tidak Solved"
-	case SeverityMedium:
-		return "Wajib visit maksimal 2x24 jam setelah notifikasi"
-	case SeverityLow:
-		return "Koordinasi kepada Customer untuk memastikan tidak ada kendala kelistrikan"
-	default:
-		return ""
+var actionMessages = map[Severity]string{
+	SeverityCritical: "Mandatory customer visit within 1x24 hours",
+	SeverityHigh:     "Mandatory visit within 1x24 hours if Hard Restart does not resolve",
+	SeverityMedium:   "Mandatory visit within 2x24 hours after notification",
+	SeverityLow:      "Coordinate with customer to ensure no electrical issues",
+}
+
+func SetActionMessages(critical, high, medium, low string) {
+	if critical != "" {
+		actionMessages[SeverityCritical] = critical
 	}
+	if high != "" {
+		actionMessages[SeverityHigh] = high
+	}
+	if medium != "" {
+		actionMessages[SeverityMedium] = medium
+	}
+	if low != "" {
+		actionMessages[SeverityLow] = low
+	}
+}
+
+func severityAction(s Severity) string {
+	return actionMessages[s]
 }
 
 func severityColorDiscord(s Severity) int {

@@ -89,6 +89,13 @@ func (a *App) Start(ctx context.Context) error {
 
 	// Start SNMP Trap listener if enabled.
 	if cfg.TrapCfg.Enabled {
+		trap.SetActionMessages(
+			cfg.TrapCfg.ActionCritical,
+			cfg.TrapCfg.ActionHigh,
+			cfg.TrapCfg.ActionMedium,
+			cfg.TrapCfg.ActionLow,
+		)
+
 		var webhookClient *trap.WebhookClient
 		if cfg.TrapCfg.WebhookURL != "" {
 			formatter, finalURL := trap.NewFormatter(

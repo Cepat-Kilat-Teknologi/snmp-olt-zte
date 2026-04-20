@@ -30,7 +30,7 @@ func (f *TelegramFormatter) Format(event model.TrapEvent) ([]byte, error) {
 
 	var b strings.Builder
 	b.WriteString(fmt.Sprintf("<b>%s</b>\n\n", eventTitle(event)))
-	b.WriteString(fmt.Sprintf("<b>Nama:</b> %s\n", fieldOrDash(event.Name)))
+	b.WriteString(fmt.Sprintf("<b>Name:</b> %s\n", fieldOrDash(event.Name)))
 	b.WriteString(fmt.Sprintf("<b>Event:</b> %s\n", fieldOrDash(event.EventType)))
 	b.WriteString(fmt.Sprintf("<b>Last Offline:</b> %s\n", formatTimestampWIB(ts)))
 	b.WriteString(fmt.Sprintf("<b>Board/PON/ONU:</b> %d/%d/%d\n", event.Board, event.PON, event.OnuID))
@@ -45,7 +45,7 @@ func (f *TelegramFormatter) Format(event model.TrapEvent) ([]byte, error) {
 		b.WriteString(fmt.Sprintf("<b>RX Power:</b> %s dBm\n", event.RXPower))
 	}
 	if event.Description != "" {
-		b.WriteString(fmt.Sprintf("<b>Alamat:</b> %s\n", event.Description))
+		b.WriteString(fmt.Sprintf("<b>Address:</b> %s\n", event.Description))
 	}
 
 	action := severityAction(sev)

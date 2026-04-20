@@ -57,6 +57,10 @@ type TrapConfig struct {
 	HighRepeat           int    // TRAP_HIGH_REPEAT: repeat interval (minutes)
 	MediumRepeat         int    // TRAP_MEDIUM_REPEAT: repeat interval (minutes)
 	LowRepeat            int    // TRAP_LOW_REPEAT: repeat interval (minutes)
+	ActionCritical       string // TRAP_ACTION_CRITICAL: action text for critical severity
+	ActionHigh           string // TRAP_ACTION_HIGH: action text for high severity
+	ActionMedium         string // TRAP_ACTION_MEDIUM: action text for medium severity
+	ActionLow            string // TRAP_ACTION_LOW: action text for low severity
 	WebhookRetries       int
 	WebhookTimeout       int
 	PowerMonitor         bool    // POWER_MONITOR_ENABLED
@@ -197,6 +201,10 @@ func LoadConfig() (*Config, error) {
 		WebhookURL:           getEnv("TRAP_WEBHOOK_URL", ""),
 		WebhookType:          getEnv("TRAP_WEBHOOK_TYPE", ""),
 		WebhookChatID:        getEnv("TRAP_WEBHOOK_CHAT_ID", ""),
+		ActionCritical:       getEnv("TRAP_ACTION_CRITICAL", "Mandatory customer visit within 1x24 hours"),
+		ActionHigh:           getEnv("TRAP_ACTION_HIGH", "Mandatory visit within 1x24 hours if Hard Restart does not resolve"),
+		ActionMedium:         getEnv("TRAP_ACTION_MEDIUM", "Mandatory visit within 2x24 hours after notification"),
+		ActionLow:            getEnv("TRAP_ACTION_LOW", "Coordinate with customer to ensure no electrical issues"),
 		CriticalInterval:     getEnvAsInt("TRAP_CRITICAL_INTERVAL", 300),
 		HighInterval:         getEnvAsInt("TRAP_HIGH_INTERVAL", 3600),
 		MediumInterval:       getEnvAsInt("TRAP_MEDIUM_INTERVAL", 14400),
