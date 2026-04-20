@@ -20,7 +20,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`InvalidateONUCache`** method on usecase for fresh SNMP status checks
 - **`internal/trap/batcher.go`** — per-severity batch queue with dedup, re-verify, and RX power threshold checks
 - **`internal/trap/formatter*.go`** — WebhookFormatter interface with Format (single) and FormatBatch (batched) for all 4 platforms
-- **Batch message format** — per-customer blocks (Nama, Alamat, Event, Board/PON/ONU, RX Power, Terakhir Offline) with severity-specific action instructions
+- **Batch message format** — per-customer blocks (Full Name, Address, Event, Board/PON/ONU, RX Power, Last Online) with configurable action messages
+- **i18n action messages** — `TRAP_ACTION_CRITICAL/HIGH/MEDIUM/LOW` env vars with English defaults, customizable per language
+- **Repeat notifications** — `TRAP_*_REPEAT` env vars for periodic re-notification of persistent alerts
 - **`docs/SNMP_TRAP_WEBHOOK.md`** — full architecture documentation
 
 ### Changed
@@ -37,6 +39,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `TRAP_HIGH_INTERVAL` — HIGH batch flush interval (default 3600s)
 - `TRAP_MEDIUM_INTERVAL` — MEDIUM batch flush interval (default 14400s)
 - `TRAP_LOW_INTERVAL` — LOW batch flush interval (default 28800s)
+- `TRAP_CRITICAL_REPEAT` — CRITICAL repeat interval in minutes (default 60, 0 = once only)
+- `TRAP_HIGH_REPEAT` — HIGH repeat interval in minutes (default 60)
+- `TRAP_MEDIUM_REPEAT` — MEDIUM repeat interval in minutes (default 0)
+- `TRAP_LOW_REPEAT` — LOW repeat interval in minutes (default 0)
+- `TRAP_ACTION_CRITICAL` — configurable action message for CRITICAL (English default)
+- `TRAP_ACTION_HIGH` — configurable action message for HIGH (English default)
+- `TRAP_ACTION_MEDIUM` — configurable action message for MEDIUM (English default)
+- `TRAP_ACTION_LOW` — configurable action message for LOW (English default)
+
+### Changed
+- **Field labels** standardized from Indonesian (Nama/Alamat) to English (Name/Address) for i18n consistency
+- **Action messages** moved from hardcoded Indonesian to configurable env vars with English defaults
 
 ## [3.0.0] - 2026-04-12
 
@@ -120,7 +134,7 @@ No endpoint URLs changed. Only the JSON envelope of responses changed. Health en
 - **ONU detail fast fallback** — derives basic info from cached ONU list to avoid SNMP query
 - **SNMP Trap listener** for real-time ONU offline detection (LOS, DyingGasp, PowerOff)
 - **Webhook notifications** with exponential backoff retry on ONU offline events
-- **Trap event enrichment** — webhook payload includes ONU name, alamat, type, serial number
+- **Trap event enrichment** — webhook payload includes ONU name, address, type, serial number
 - **RX Power monitor** with configurable high/low thresholds and webhook alerts
 - **Cron scheduling** for power monitor via `POWER_MONITOR_CRON` (e.g., `0 8,12,15,17,0 * * *`)
 - **Timezone support** for cron schedule via `POWER_MONITOR_TIMEZONE` (IANA timezone)

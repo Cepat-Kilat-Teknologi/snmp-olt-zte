@@ -37,7 +37,7 @@ via SNMP before sending to eliminate false alarms.
                |
          Flush timer hit
                |
-    Re-verify setiap ONU (fresh SNMP)
+    Re-verify each ONU (fresh SNMP)
                |
         Still alert? ──→ Formatter.FormatBatch()
         Recovered?   ──→ Skip
@@ -52,80 +52,84 @@ via SNMP before sending to eliminate false alarms.
 
 ## Severity System
 
-| Severity | Color | Events | Interval | Tindakan |
-|----------|-------|--------|----------|----------|
-| CRITICAL | 🔴 Merah | LOS, LOSi, LOFi, Offline, AuthFailed, PowerOff | 5 menit | Wajib visit ke Customer maksimal 1x24 jam |
-| HIGH | 🟠 Orange | Logging, Synchronization (stuck) | 1 jam | Wajib visit maksimal 1x24 jam jika Hard Restart tidak Solved |
-| MEDIUM | 🟡 Kuning | HighRxPower (> -8 dBm), LowRxPower (< -28 dBm) | 4 jam | Wajib visit maksimal 2x24 jam setelah notifikasi |
-| LOW | 🔵 Biru | DyingGasp | 8 jam | Koordinasi kepada Customer untuk memastikan tidak ada kendala kelistrikan |
+| Severity | Color | Events | Interval | Action (default) |
+|----------|-------|--------|----------|------------------|
+| CRITICAL | 🔴 Red | LOS, LOSi, LOFi, Offline, AuthFailed, PowerOff | 5 min | Mandatory customer visit within 1x24 hours |
+| HIGH | 🟠 Orange | Logging, Synchronization (stuck) | 1 hr | Mandatory visit within 1x24 hours if Hard Restart does not resolve |
+| MEDIUM | 🟡 Yellow | HighRxPower (> -8 dBm), LowRxPower (< -28 dBm) | 4 hr | Mandatory visit within 2x24 hours after notification |
+| LOW | 🔵 Blue | DyingGasp | 8 hr | Coordinate with customer to ensure no electrical issues |
+
+> **i18n:** Action messages are configurable via `TRAP_ACTION_CRITICAL`, `TRAP_ACTION_HIGH`,
+> `TRAP_ACTION_MEDIUM`, `TRAP_ACTION_LOW` environment variables. Defaults are English.
+> Set your own language in `.env` (e.g., Indonesian, Thai, etc.).
 
 ## Flow Per Category
 
 ### CRITICAL (LOS, Offline, AuthFailed, PowerOff, LOSi, LOFi)
 
-**Source:** SNMP Trap dari OLT
+**Source:** SNMP Trap from OLT
 
-1. OLT kirim trap saat ONU state change
-2. Listener parse trap PDU → extract Board/PON/ONU + customer data
-3. Handler invalidate Redis cache → SNMP GET fresh status
-4. Status offline → `Batcher.Add()` ke CRITICAL queue (dedup by Board/PON/ONU)
-5. Status online → `Batcher.Remove()` hapus entry lama jika ada
-6. Setiap 5 menit → flush:
-   - Re-verify setiap ONU via SNMP GET (cache di-invalidate dulu)
-   - Masih offline → kirim ke Discord
-   - Sudah online (recovered) → skip, tidak kirim
+1. OLT sends trap on ONU state change
+2. Listener parses trap PDU → extracts Board/PON/ONU + customer data
+3. Handler invalidates Redis cache → SNMP GET fresh status
+4. Status offline → `Batcher.Add()` to CRITICAL queue (dedup by Board/PON/ONU)
+5. Status online → `Batcher.Remove()` clears stale entry if exists
+6. Every 5 minutes → flush:
+   - Re-verify each ONU via SNMP GET (cache invalidated first)
+   - Still offline → send to webhook
+   - Recovered (online) → skip, no notification
 
 ### HIGH (Logging, Synchronization)
 
-**Source:** SNMP Trap dari OLT
+**Source:** SNMP Trap from OLT
 
 1. Same flow as CRITICAL
-2. Handler verify status = "Logging" atau "Synchronization" (stuck state)
-3. Masuk HIGH queue, flush setiap 1 jam
-4. Re-verify: masih stuck → kirim. Sudah online → skip.
+2. Handler verifies status = "Logging" or "Synchronization" (stuck state)
+3. Enters HIGH queue, flush every 1 hour
+4. Re-verify: still stuck → send. Online → skip.
 
 ### MEDIUM (HighRxPower, LowRxPower)
 
 **Source:** PowerMonitor (periodic cron/interval scan)
 
-1. PowerMonitor scan semua ONU di semua Board/PON
-2. Parse RX Power → bandingkan dengan threshold:
+1. PowerMonitor scans all ONUs across all Board/PON
+2. Parses RX Power → compares against thresholds:
    - `> -8 dBm` → HighRxPower (overload risk)
    - `< -28 dBm` → LowRxPower (weak signal, approaching LOS)
-3. `Batcher.Add()` ke MEDIUM queue (dedup by Board/PON/ONU)
-4. Setiap 4 jam → flush:
+3. `Batcher.Add()` to MEDIUM queue (dedup by Board/PON/ONU)
+4. Every 4 hours → flush:
    - Re-verify RX Power via fresh SNMP GET
-   - Masih abnormal → kirim ke Discord
-   - Sudah normal (antara -28 dan -8 dBm) → skip
+   - Still abnormal → send to webhook
+   - Normalized (between -28 and -8 dBm) → skip
 
 ### LOW (DyingGasp)
 
-**Source:** SNMP Trap dari OLT
+**Source:** SNMP Trap from OLT
 
 1. Same flow as CRITICAL
-2. Handler verify status = "Dying Gasp" (power failure)
-3. Masuk LOW queue, flush setiap 8 jam
-4. Re-verify: masih Dying Gasp → kirim. Sudah online → skip.
+2. Handler verifies status = "Dying Gasp" (power failure)
+3. Enters LOW queue, flush every 8 hours
+4. Re-verify: still Dying Gasp → send. Online → skip.
 
 ## Key Features
 
 ### Deduplication
 
-Setiap ONU hanya muncul 1x per batch, menggunakan key `Board-PON-OnuID`.
-Jika trap masuk berulang untuk ONU yang sama, entry di-update (bukan ditambah).
+Each ONU appears only once per batch, keyed by `Board-PON-OnuID`.
+If multiple traps arrive for the same ONU, the entry is updated (not duplicated).
 
 ### Cache Invalidation
 
-Saat trap masuk DAN saat flush, Redis cache di-invalidate dulu sebelum
-SNMP GET. Ini memastikan data selalu fresh dari OLT, bukan dari cache
-yang mungkin stale.
+On both trap receive AND flush, Redis cache is invalidated before
+SNMP GET. This ensures data is always fresh from the OLT, not from
+potentially stale cache.
 
 ### Recovery Detection
 
-- **Saat trap masuk:** Jika handler verify ONU sudah Online, entry di-Remove
-  dari batcher queue.
-- **Saat flush:** Setiap ONU di re-verify lagi. Yang sudah recovered di-skip.
-- **Hasilnya:** Zero false alarm untuk ONU yang recover sebelum flush.
+- **On trap receive:** If handler verifies ONU is Online, entry is removed
+  from batcher queue.
+- **On flush:** Each ONU is re-verified again. Recovered ONUs are skipped.
+- **Result:** Zero false alarms for ONUs that recover before flush.
 
 ### Multi-Platform Formatter
 
@@ -141,27 +145,29 @@ Auto-detect platform dari URL, override via `TRAP_WEBHOOK_TYPE`:
 ### Batch Message Format
 
 ```
-🔴 [CRITICAL] 3 ONU LOS
+🔴 CRITICAL - 3 ONU LOS
 
-Nama Lengkap : Pelanggan A
-Alamat Lengkap : Alamat Lengkap A
+Full Name : Customer A
+Address : Address A
 Event : LOS
 Board/PON/ONU : 1/5/23
 RX Power : -22.50 dBm
-Terakhir Offline : 20-04-2026 / 17:56:18 WIB
+Last Online : 20-04-2026/17:56:18
 
-> (separator — quote di Discord, === di Slack/Telegram)
+> (separator — quote block on Discord, === on Slack/Telegram)
 
-Nama Lengkap : Pelanggan B
-Alamat Lengkap : Alamat Lengkap B
+Full Name : Customer B
+Address : Address B
 Event : LOS
 Board/PON/ONU : 1/13/40
-Terakhir Offline : 20-04-2026 / 18:01:30 WIB
+Last Online : 20-04-2026/18:01:30
 
 
-⚠️ Tindakan
-Wajib visit ke Customer maksimal 1x24 jam
+⚠️ Action
+Mandatory customer visit within 1x24 hours
 ```
+
+> Action text is configurable via `TRAP_ACTION_*` env vars for i18n.
 
 ## Environment Variables
 
@@ -178,6 +184,15 @@ Wajib visit ke Customer maksimal 1x24 jam
 | `TRAP_WEBHOOK_RETRIES` | `3` | Retry attempts on failure |
 | `TRAP_WEBHOOK_TIMEOUT` | `10` | HTTP timeout per request (seconds) |
 
+### Per-Severity Action Messages (i18n)
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `TRAP_ACTION_CRITICAL` | Mandatory customer visit within 1x24 hours | Action text for CRITICAL |
+| `TRAP_ACTION_HIGH` | Mandatory visit within 1x24 hours if Hard Restart does not resolve | Action text for HIGH |
+| `TRAP_ACTION_MEDIUM` | Mandatory visit within 2x24 hours after notification | Action text for MEDIUM |
+| `TRAP_ACTION_LOW` | Coordinate with customer to ensure no electrical issues | Action text for LOW |
+
 ### Per-Severity Batch Intervals
 
 | Variable | Default | Description |
@@ -186,6 +201,15 @@ Wajib visit ke Customer maksimal 1x24 jam
 | `TRAP_HIGH_INTERVAL` | `3600` | HIGH flush interval (seconds) |
 | `TRAP_MEDIUM_INTERVAL` | `14400` | MEDIUM flush interval (seconds) |
 | `TRAP_LOW_INTERVAL` | `28800` | LOW flush interval (seconds) |
+
+### Repeat Notification Intervals
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `TRAP_CRITICAL_REPEAT` | `60` | Re-notify interval for CRITICAL (minutes, 0 = once only) |
+| `TRAP_HIGH_REPEAT` | `60` | Re-notify interval for HIGH (minutes) |
+| `TRAP_MEDIUM_REPEAT` | `0` | Re-notify interval for MEDIUM (minutes) |
+| `TRAP_LOW_REPEAT` | `0` | Re-notify interval for LOW (minutes) |
 
 ### RX Power Thresholds (for MEDIUM alerts)
 
@@ -243,7 +267,7 @@ internal/trap/
 
 ```
 internal/trap: 100.0% of statements
-Full suite:    19/19 packages pass
+Full suite:    20/20 packages pass
 ```
 
 ### Test Scenarios Covered
@@ -272,7 +296,8 @@ Full suite:    19/19 packages pass
 **Formatter:**
 - Single event format (all 4 platforms)
 - Batch format with multiple ONUs (all 4 platforms)
-- Severity colors, labels, actions
+- Severity colors, labels, configurable action messages
+- SetActionMessages custom + empty-skip behavior
 - WIB timestamp formatting with fallback
 - Field truncation
 - Empty/missing fields → dash placeholder
@@ -295,7 +320,7 @@ Full suite:    19/19 packages pass
 - Invalid cron/timezone handling
 - Panic recovery in scan
 
-## Changelog (this session)
+## Changelog
 
 ### Added
 - Multi-platform webhook formatter (Discord, Slack, Telegram, Generic)
