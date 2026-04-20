@@ -33,6 +33,7 @@ type PowerMonitor struct {
 	config     PowerMonitorConfig
 	fetcher    ONUListFetcher
 	webhook    *WebhookClient
+	batcher    *Batcher
 	stopCh     chan struct{}
 	mu         sync.Mutex
 	alerted    map[string]time.Time // track alerted ONUs to avoid spam
@@ -78,6 +79,11 @@ func NewPowerMonitor(cfg PowerMonitorConfig, fetcher ONUListFetcher, webhook *We
 	}
 
 	return pm
+}
+
+// SetBatcher routes power alerts through the batcher instead of direct webhook.
+func (pm *PowerMonitor) SetBatcher(b *Batcher) {
+	pm.batcher = b
 }
 
 // Start begins the periodic power monitoring loop
@@ -250,7 +256,9 @@ func (pm *PowerMonitor) sendAlert(onu model.ONUInfoPerBoard, eventType, descript
 		zap.String("event_type", eventType),
 		zap.String("name", onu.Name))
 
-	if pm.webhook != nil {
+	if pm.batcher != nil {
+		pm.batcher.Add(event)
+	} else if pm.webhook != nil {
 		go pm.webhook.Send(event)
 	}
 }

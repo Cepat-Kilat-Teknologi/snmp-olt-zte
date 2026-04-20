@@ -99,4 +99,6 @@ type TrapEvent struct {
 	OnuType      string    `json:"onu_type,omitempty"`
 	SerialNumber string    `json:"serial_number,omitempty"`
 	RXPower      string    `json:"rx_power,omitempty"`
+	LastOffline  string    `json:"last_offline,omitempty"`
+	LastOnline   string    `json:"last_online,omitempty"`
 }

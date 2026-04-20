@@ -21,328 +21,32 @@ func (m *mockONUDetailFetcher) GetByBoardIDPonIDAndOnuID(_ context.Context, _, _
 	return m.result, m.err
 }
 
-func TestHandleEvent_OfflineLOS(t *testing.T) {
+func (m *mockONUDetailFetcher) InvalidateONUCache(_ context.Context, _, _, _ int) error {
+	return nil
+}
+
+func TestHandleEvent_VerifiedOffline_LOS(t *testing.T) {
 	fetcher := &mockONUDetailFetcher{
 		result: model.ONUCustomerInfo{
-			ID:           1,
-			Name:         "Customer-023",
-			Description:  "Perumahan Graha Ria Blok F No.6",
-			OnuType:      "F670LV7.1",
-			SerialNumber: "ZTEGC12345678",
+			ID:               1,
+			Name:             "Customer-023",
+			Description:      "Perumahan Graha Ria Blok F No.6",
+			OnuType:          "F670LV7.1",
+			SerialNumber:     "ZTEGC12345678",
+			Status:           "LOS",
+			LastOfflineReason: "",
 		},
 	}
 
-	// Create a handler with a nil webhook but an onEvent callback to capture
-	handler := NewHandler(nil, fetcher)
-
-	// We wrap HandleEvent to capture the enriched event
-	event := model.TrapEvent{
-		Timestamp: time.Now(),
-		Source:    "192.168.213.174",
-		Board:     1,
-		PON:       5,
-		OnuID:     23,
-		EventType: "LOS",
-		Status:    "offline",
-	}
-
-	// HandleEvent with nil webhook should not panic
-	handler.HandleEvent(event)
-}
-
-func TestHandleEvent_OfflineWithWebhook(t *testing.T) {
-	fetcher := &mockONUDetailFetcher{
-		result: model.ONUCustomerInfo{
-			ID:           1,
-			Name:         "Customer-023",
-			Description:  "Perumahan Graha Ria Blok F No.6",
-			OnuType:      "F670LV7.1",
-			SerialNumber: "ZTEGC12345678",
-		},
-	}
-
-	// We can't easily intercept the goroutine, so we test with an HTTP test server
-	// by using a real WebhookClient pointing to a test server.
-	// This is tested more thoroughly in webhook_test.go.
-	// Here we verify the handler calls webhook.Send (the goroutine fires).
-
-	// Create handler with nil webhook to ensure no panic and fetcher enrichment works
-	handler := NewHandler(nil, fetcher)
-
-	event := model.TrapEvent{
-		Timestamp: time.Now(),
-		Source:    "192.168.213.174",
-		Board:     1,
-		PON:       5,
-		OnuID:     23,
-		EventType: "LOS",
-		Status:    "offline",
-	}
-
-	handler.HandleEvent(event)
-}
-
-func TestHandleEvent_OnlineEvent_Skipped(t *testing.T) {
-	fetcher := &mockONUDetailFetcher{
-		result: model.ONUCustomerInfo{
-			ID:   1,
-			Name: "Should-Not-Be-Fetched",
-		},
-	}
-
-	handler := NewHandler(nil, fetcher)
-
-	event := model.TrapEvent{
-		Timestamp: time.Now(),
-		Source:    "192.168.213.174",
-		Board:     1,
-		PON:       5,
-		OnuID:     23,
-		EventType: "Online",
-		Status:    "online",
-	}
-
-	// Should not panic and should skip (Online is not in offlineEventTypes)
-	handler.HandleEvent(event)
-}
-
-func TestHandleEvent_UnknownEvent_Skipped(t *testing.T) {
-	handler := NewHandler(nil, nil)
-
-	event := model.TrapEvent{
-		Timestamp: time.Now(),
-		Source:    "192.168.213.174",
-		EventType: "Unknown",
-	}
-
-	// Should not panic
-	handler.HandleEvent(event)
-}
-
-func TestHandleEvent_NilWebhookClient(t *testing.T) {
-	handler := NewHandler(nil, nil)
-
-	event := model.TrapEvent{
-		Timestamp: time.Now(),
-		Source:    "192.168.213.174",
-		Board:     1,
-		PON:       3,
-		OnuID:     10,
-		EventType: "DyingGasp",
-		Status:    "offline",
-	}
-
-	// Should not panic even with nil webhook and nil fetcher
-	handler.HandleEvent(event)
-}
-
-func TestHandleEvent_AllOfflineEventTypes(t *testing.T) {
-	offlineTypes := []string{"LOS", "DyingGasp", "PowerOff", "Offline", "AuthFailed", "LOSi", "LOFi"}
-
-	for _, eventType := range offlineTypes {
-		t.Run(eventType, func(t *testing.T) {
-			handler := NewHandler(nil, nil)
-
-			event := model.TrapEvent{
-				Timestamp: time.Now(),
-				Source:    "192.168.213.174",
-				Board:     1,
-				PON:       1,
-				OnuID:     1,
-				EventType: eventType,
-				Status:    "offline",
-			}
-
-			// Should not panic for any offline event type
-			handler.HandleEvent(event)
-		})
-	}
-}
-
-func TestHandleEvent_NonOfflineEventTypes(t *testing.T) {
-	nonOfflineTypes := []string{"Online", "Logging", "Synchronization", "Unknown", ""}
-
-	for _, eventType := range nonOfflineTypes {
-		name := eventType
-		if name == "" {
-			name = "empty"
-		}
-		t.Run(name, func(t *testing.T) {
-			handler := NewHandler(nil, nil)
-
-			event := model.TrapEvent{
-				Timestamp: time.Now(),
-				Source:    "192.168.213.174",
-				Board:     1,
-				PON:       1,
-				OnuID:     1,
-				EventType: eventType,
-				Status:    "online",
-			}
-
-			// Should not panic and should skip
-			handler.HandleEvent(event)
-		})
-	}
-}
-
-func TestHandleEvent_EnrichmentWithMockFetcher(t *testing.T) {
-	fetcher := &mockONUDetailFetcher{
-		result: model.ONUCustomerInfo{
-			ID:           42,
-			Name:         "Customer-042",
-			Description:  "Jl. Merdeka No. 17",
-			OnuType:      "F660V6.0",
-			SerialNumber: "ZTEGD87654321",
-		},
-	}
-
-	// Use nil webhook so we can safely test enrichment logic runs
-	handler := NewHandler(nil, fetcher)
-
-	event := model.TrapEvent{
-		Timestamp: time.Now(),
-		Source:    "192.168.213.174",
-		Board:     2,
-		PON:       7,
-		OnuID:     42,
-		EventType: "PowerOff",
-		Status:    "offline",
-	}
-
-	// Should not panic and should enrich (we can't check the enriched event directly
-	// since it's a local variable, but we verify no errors/panics)
-	handler.HandleEvent(event)
-}
-
-func TestHandleEvent_FetcherError(t *testing.T) {
-	fetcher := &mockONUDetailFetcher{
-		result: model.ONUCustomerInfo{},
-		err:    context.DeadlineExceeded,
-	}
-
-	handler := NewHandler(nil, fetcher)
-
-	event := model.TrapEvent{
-		Timestamp: time.Now(),
-		Source:    "192.168.213.174",
-		Board:     1,
-		PON:       3,
-		OnuID:     10,
-		EventType: "LOS",
-		Status:    "offline",
-	}
-
-	// Should not panic even when fetcher returns error
-	handler.HandleEvent(event)
-}
-
-func TestHandleEvent_FetcherReturnsZeroID(t *testing.T) {
-	// When fetcher returns a result with ID=0, enrichment should be skipped
-	fetcher := &mockONUDetailFetcher{
-		result: model.ONUCustomerInfo{
-			ID:   0,
-			Name: "Should-Not-Enrich",
-		},
-	}
-
-	handler := NewHandler(nil, fetcher)
-
-	event := model.TrapEvent{
-		Timestamp: time.Now(),
-		Source:    "192.168.213.174",
-		Board:     1,
-		PON:       3,
-		OnuID:     10,
-		EventType: "LOS",
-		Status:    "offline",
-	}
-
-	// Should not panic, fetcher returns ID=0 so enrichment is skipped
-	handler.HandleEvent(event)
-}
-
-func TestHandleEvent_NonNilFetcherButZeroBoardPonOnuID(t *testing.T) {
-	fetcher := &mockONUDetailFetcher{
-		result: model.ONUCustomerInfo{
-			ID:   1,
-			Name: "Should-Not-Be-Called",
-		},
-	}
-
-	handler := NewHandler(nil, fetcher)
-
-	tests := []struct {
-		name  string
-		event model.TrapEvent
-	}{
-		{
-			name: "zero_board",
-			event: model.TrapEvent{
-				Timestamp: time.Now(),
-				Source:    "192.168.213.174",
-				Board:     0,
-				PON:       3,
-				OnuID:     10,
-				EventType: "LOS",
-				Status:    "offline",
-			},
-		},
-		{
-			name: "zero_pon",
-			event: model.TrapEvent{
-				Timestamp: time.Now(),
-				Source:    "192.168.213.174",
-				Board:     1,
-				PON:       0,
-				OnuID:     10,
-				EventType: "LOS",
-				Status:    "offline",
-			},
-		},
-		{
-			name: "zero_onuid",
-			event: model.TrapEvent{
-				Timestamp: time.Now(),
-				Source:    "192.168.213.174",
-				Board:     1,
-				PON:       3,
-				OnuID:     0,
-				EventType: "LOS",
-				Status:    "offline",
-			},
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			// Should not panic, enrichment skipped when board/pon/onuid is 0
-			handler.HandleEvent(tt.event)
-		})
-	}
-}
-
-func TestHandleEvent_WithRealWebhook(t *testing.T) {
 	var webhookCalled atomic.Int32
-
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		webhookCalled.Add(1)
-		w.WriteHeader(200)
+		w.WriteHeader(204)
 	}))
 	defer server.Close()
 
-	fetcher := &mockONUDetailFetcher{
-		result: model.ONUCustomerInfo{
-			ID:           1,
-			Name:         "Customer-001",
-			Description:  "Jl. Test No. 1",
-			OnuType:      "F670L",
-			SerialNumber: "ZTEGC11111111",
-		},
-	}
-
-	webhook := NewWebhookClient(server.URL, 0, 5)
-	handler := NewHandler(webhook, fetcher)
+	webhook := NewWebhookClient(server.URL, 0, 5, nil)
+	handler := NewHandler(webhook, nil, fetcher)
 
 	event := model.TrapEvent{
 		Timestamp: time.Now(),
@@ -350,23 +54,331 @@ func TestHandleEvent_WithRealWebhook(t *testing.T) {
 		Board:     1,
 		PON:       5,
 		OnuID:     23,
-		EventType: "DyingGasp",
-		Status:    "offline",
+		EventType: "StatusChange",
 	}
 
 	handler.HandleEvent(event)
 	time.Sleep(500 * time.Millisecond)
 
 	if webhookCalled.Load() != 1 {
-		t.Errorf("Expected webhook to be called once, got %d", webhookCalled.Load())
+		t.Errorf("Expected webhook for LOS ONU, got %d calls", webhookCalled.Load())
+	}
+}
+
+func TestHandleEvent_VerifiedOffline_DyingGasp(t *testing.T) {
+	fetcher := &mockONUDetailFetcher{
+		result: model.ONUCustomerInfo{
+			ID:     1,
+			Name:   "Customer-DG",
+			Status: "Dying Gasp",
+		},
+	}
+
+	var webhookCalled atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		webhookCalled.Add(1)
+		w.WriteHeader(204)
+	}))
+	defer server.Close()
+
+	webhook := NewWebhookClient(server.URL, 0, 5, nil)
+	handler := NewHandler(webhook, nil, fetcher)
+
+	event := model.TrapEvent{
+		Timestamp: time.Now(),
+		Source:    "192.168.213.174",
+		Board:     1,
+		PON:       3,
+		OnuID:     10,
+		EventType: "StatusChange",
+	}
+
+	handler.HandleEvent(event)
+	time.Sleep(500 * time.Millisecond)
+
+	if webhookCalled.Load() != 1 {
+		t.Errorf("Expected webhook for DyingGasp ONU, got %d calls", webhookCalled.Load())
+	}
+}
+
+func TestHandleEvent_VerifiedOnline_Skipped(t *testing.T) {
+	fetcher := &mockONUDetailFetcher{
+		result: model.ONUCustomerInfo{
+			ID:     1,
+			Name:   "Online-Customer",
+			Status: "Online",
+		},
+	}
+
+	var webhookCalled atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		webhookCalled.Add(1)
+		w.WriteHeader(204)
+	}))
+	defer server.Close()
+
+	webhook := NewWebhookClient(server.URL, 0, 5, nil)
+	handler := NewHandler(webhook, nil, fetcher)
+
+	event := model.TrapEvent{
+		Timestamp: time.Now(),
+		Source:    "192.168.213.174",
+		Board:     1,
+		PON:       5,
+		OnuID:     23,
+		EventType: "StatusChange",
+	}
+
+	handler.HandleEvent(event)
+	time.Sleep(300 * time.Millisecond)
+
+	if webhookCalled.Load() != 0 {
+		t.Errorf("Expected no webhook for Online ONU, got %d calls", webhookCalled.Load())
+	}
+}
+
+func TestHandleEvent_VerifiedOfflineWithReason(t *testing.T) {
+	fetcher := &mockONUDetailFetcher{
+		result: model.ONUCustomerInfo{
+			ID:               1,
+			Name:             "Customer-LOS",
+			Status:           "Offline",
+			LastOfflineReason: "LOS",
+		},
+	}
+
+	handler := NewHandler(nil, nil, fetcher)
+
+	event := model.TrapEvent{
+		Timestamp: time.Now(),
+		Source:    "192.168.213.174",
+		Board:     1,
+		PON:       1,
+		OnuID:     1,
+		EventType: "StatusChange",
+	}
+
+	// Should not panic with nil webhook
+	handler.HandleEvent(event)
+}
+
+func TestHandleEvent_ZeroBoardPonOnuID_Skipped(t *testing.T) {
+	handler := NewHandler(nil, nil, nil)
+
+	tests := []struct {
+		name  string
+		event model.TrapEvent
+	}{
+		{"zero_board", model.TrapEvent{Board: 0, PON: 3, OnuID: 10}},
+		{"zero_pon", model.TrapEvent{Board: 1, PON: 0, OnuID: 10}},
+		{"zero_onuid", model.TrapEvent{Board: 1, PON: 3, OnuID: 0}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			handler.HandleEvent(tt.event)
+		})
+	}
+}
+
+func TestHandleEvent_FetcherError_Skipped(t *testing.T) {
+	fetcher := &mockONUDetailFetcher{
+		err: context.DeadlineExceeded,
+	}
+
+	var webhookCalled atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		webhookCalled.Add(1)
+		w.WriteHeader(204)
+	}))
+	defer server.Close()
+
+	webhook := NewWebhookClient(server.URL, 0, 5, nil)
+	handler := NewHandler(webhook, nil, fetcher)
+
+	event := model.TrapEvent{
+		Timestamp: time.Now(),
+		Source:    "192.168.213.174",
+		Board:     1,
+		PON:       3,
+		OnuID:     10,
+		EventType: "StatusChange",
+	}
+
+	handler.HandleEvent(event)
+	time.Sleep(300 * time.Millisecond)
+
+	if webhookCalled.Load() != 0 {
+		t.Errorf("Expected no webhook when fetcher fails, got %d", webhookCalled.Load())
+	}
+}
+
+func TestHandleEvent_FetcherReturnsZeroID_Skipped(t *testing.T) {
+	fetcher := &mockONUDetailFetcher{
+		result: model.ONUCustomerInfo{ID: 0},
+	}
+
+	handler := NewHandler(nil, nil, fetcher)
+
+	event := model.TrapEvent{
+		Timestamp: time.Now(),
+		Board:     1, PON: 3, OnuID: 10,
+		EventType: "StatusChange",
+	}
+
+	handler.HandleEvent(event)
+}
+
+func TestHandleEvent_NilFetcher_Skipped(t *testing.T) {
+	var webhookCalled atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		webhookCalled.Add(1)
+		w.WriteHeader(204)
+	}))
+	defer server.Close()
+
+	webhook := NewWebhookClient(server.URL, 0, 5, nil)
+	handler := NewHandler(webhook, nil, nil)
+
+	event := model.TrapEvent{
+		Timestamp: time.Now(),
+		Board:     1, PON: 5, OnuID: 23,
+		EventType: "StatusChange",
+	}
+
+	handler.HandleEvent(event)
+	time.Sleep(300 * time.Millisecond)
+
+	// StatusChange is not in alertEventTypes, so webhook should not fire
+	if webhookCalled.Load() != 0 {
+		t.Errorf("Expected no webhook for unverified StatusChange, got %d", webhookCalled.Load())
+	}
+}
+
+func TestHandleEvent_NilWebhookClient(t *testing.T) {
+	fetcher := &mockONUDetailFetcher{
+		result: model.ONUCustomerInfo{
+			ID:     1,
+			Name:   "Offline-Customer",
+			Status: "LOS",
+		},
+	}
+
+	handler := NewHandler(nil, nil, fetcher)
+
+	event := model.TrapEvent{
+		Timestamp: time.Now(),
+		Board:     1, PON: 3, OnuID: 10,
+		EventType: "StatusChange",
+	}
+
+	// Should not panic with nil webhook
+	handler.HandleEvent(event)
+}
+
+func TestHandleEvent_Enrichment_PrefersSNMP(t *testing.T) {
+	fetcher := &mockONUDetailFetcher{
+		result: model.ONUCustomerInfo{
+			ID:           42,
+			Name:         "SNMP-Name",
+			Description:  "SNMP-Address",
+			OnuType:      "F670L",
+			SerialNumber: "ZTEG99999999",
+			Status:       "LOS",
+		},
+	}
+
+	var webhookCalled atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		webhookCalled.Add(1)
+		w.WriteHeader(204)
+	}))
+	defer server.Close()
+
+	webhook := NewWebhookClient(server.URL, 0, 5, nil)
+	handler := NewHandler(webhook, nil, fetcher)
+
+	event := model.TrapEvent{
+		Timestamp:   time.Now(),
+		Board:       1, PON: 5, OnuID: 23,
+		EventType:   "StatusChange",
+		Name:        "Trap-Name",
+		Description: "Trap-Address",
+	}
+
+	handler.HandleEvent(event)
+	time.Sleep(500 * time.Millisecond)
+
+	if webhookCalled.Load() != 1 {
+		t.Errorf("Expected 1 webhook call, got %d", webhookCalled.Load())
+	}
+}
+
+func TestHandleEvent_Enrichment_KeepsTrapDataIfSNMPEmpty(t *testing.T) {
+	fetcher := &mockONUDetailFetcher{
+		result: model.ONUCustomerInfo{
+			ID:     42,
+			Name:   "",
+			Status: "LOS",
+		},
+	}
+
+	handler := NewHandler(nil, nil, fetcher)
+
+	event := model.TrapEvent{
+		Timestamp:   time.Now(),
+		Board:       1, PON: 5, OnuID: 23,
+		EventType:   "StatusChange",
+		Name:        "Trap-Name",
+		Description: "Trap-Address",
+	}
+
+	handler.HandleEvent(event)
+	// Name should remain "Trap-Name" since SNMP returned empty
+}
+
+func TestHandleEvent_AllVerifiedOfflineStatuses(t *testing.T) {
+	offlineStatuses := []struct {
+		status    string
+		wantEvent string
+	}{
+		{"LOS", "LOS"},
+		{"Dying Gasp", "DyingGasp"},
+		{"PowerOff", "PowerOff"},
+		{"AuthFailed", "AuthFailed"},
+		{"Offline", "Offline"},
+		{"Logging", "Logging"},
+		{"Syncing", "Synchronization"},
+	}
+
+	for _, tt := range offlineStatuses {
+		t.Run(tt.status, func(t *testing.T) {
+			fetcher := &mockONUDetailFetcher{
+				result: model.ONUCustomerInfo{
+					ID:     1,
+					Name:   "Test",
+					Status: tt.status,
+				},
+			}
+
+			handler := NewHandler(nil, nil, fetcher)
+
+			event := model.TrapEvent{
+				Timestamp: time.Now(),
+				Board:     1, PON: 1, OnuID: 1,
+				EventType: "StatusChange",
+			}
+
+			handler.HandleEvent(event)
+		})
 	}
 }
 
 func TestNewHandler(t *testing.T) {
-	webhook := NewWebhookClient("http://example.com", 3, 5)
+	webhook := NewWebhookClient("http://example.com", 3, 5, nil)
 	fetcher := &mockONUDetailFetcher{}
 
-	handler := NewHandler(webhook, fetcher)
+	handler := NewHandler(webhook, nil, fetcher)
 	if handler == nil {
 		t.Fatal("expected non-nil Handler")
 	}
@@ -375,5 +387,139 @@ func TestNewHandler(t *testing.T) {
 	}
 	if handler.onuFetcher == nil {
 		t.Error("expected onuFetcher to be set")
+	}
+}
+
+func TestHandleEvent_OnlineRemovesFromBatcher(t *testing.T) {
+	fetcher := &mockONUDetailFetcher{
+		result: model.ONUCustomerInfo{
+			ID: 1, Name: "Recovered", Status: "Online",
+		},
+	}
+
+	webhook := NewWebhookClient("http://example.com", 0, 5, &GenericFormatter{})
+	batcher := NewBatcher(webhook, nil, map[Severity]time.Duration{SeverityCritical: time.Hour})
+
+	batcher.Add(model.TrapEvent{Board: 1, PON: 1, OnuID: 1, EventType: "LOS"})
+
+	handler := NewHandler(webhook, batcher, fetcher)
+	handler.HandleEvent(model.TrapEvent{
+		Timestamp: time.Now(),
+		Board: 1, PON: 1, OnuID: 1,
+		EventType: "StatusChange",
+	})
+
+	batcher.mu.Lock()
+	count := len(batcher.groups[SeverityCritical])
+	batcher.mu.Unlock()
+
+	if count != 0 {
+		t.Errorf("expected ONU removed from batcher after Online, got %d", count)
+	}
+}
+
+func TestHandleEvent_WithBatcher(t *testing.T) {
+	fetcher := &mockONUDetailFetcher{
+		result: model.ONUCustomerInfo{
+			ID: 1, Name: "Test", Status: "LOS",
+		},
+	}
+
+	var webhookCalls atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		webhookCalls.Add(1)
+		w.WriteHeader(204)
+	}))
+	defer server.Close()
+
+	webhook := NewWebhookClient(server.URL, 0, 5, &GenericFormatter{})
+	batcher := NewBatcher(webhook, nil, map[Severity]time.Duration{
+		SeverityCritical: 100 * time.Millisecond,
+	})
+
+	go batcher.Start()
+	defer func() { _ = batcher.Close() }()
+
+	handler := NewHandler(webhook, batcher, fetcher)
+
+	event := model.TrapEvent{
+		Timestamp: time.Now(),
+		Board: 1, PON: 1, OnuID: 1,
+		EventType: "StatusChange",
+	}
+
+	handler.HandleEvent(event)
+	time.Sleep(300 * time.Millisecond)
+
+	if webhookCalls.Load() < 1 {
+		t.Errorf("Expected batcher to flush and send webhook, got %d calls", webhookCalls.Load())
+	}
+}
+
+// --- resolveEventType ---
+
+func TestResolveEventType(t *testing.T) {
+	tests := []struct {
+		status        string
+		offlineReason string
+		want          string
+	}{
+		{"Online", "", "Online"},
+		{"online", "", "Online"},
+		{"LOS", "", "LOS"},
+		{"Dying Gasp", "", "DyingGasp"},
+		{"PowerOff", "", "PowerOff"},
+		{"AuthFailed", "", "AuthFailed"},
+		{"Logging", "", "Logging"},
+		{"Syncing", "", "Synchronization"},
+		{"Offline", "", "Offline"},
+		{"Offline", "LOS", "LOS"},
+		{"Offline", "DyingGasp", "DyingGasp"},
+		{"Offline", "PowerOff", "PowerOff"},
+		{"Offline", "AuthFail", "AuthFailed"},
+		{"Offline", "LOSi", "LOSi"},
+		{"Offline", "LOFi", "LOFi"},
+		{"Offline", "UnknownReason", "Offline"},
+		{"SomeWeirdStatus", "", "Online"},
+		{"", "", "Online"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.status+"_"+tt.offlineReason, func(t *testing.T) {
+			got := resolveEventType(tt.status, tt.offlineReason)
+			if got != tt.want {
+				t.Errorf("resolveEventType(%q, %q) = %q, want %q", tt.status, tt.offlineReason, got, tt.want)
+			}
+		})
+	}
+}
+
+// --- normalizeOfflineReason ---
+
+func TestNormalizeOfflineReason(t *testing.T) {
+	tests := []struct {
+		reason string
+		want   string
+	}{
+		{"LOS", "LOS"},
+		{"los", "LOS"},
+		{"DyingGasp", "DyingGasp"},
+		{"dying gasp", "DyingGasp"},
+		{"PowerOff", "PowerOff"},
+		{"power failure", "PowerOff"},
+		{"AuthFail", "AuthFailed"},
+		{"auth error", "AuthFailed"},
+		{"LOSi", "LOSi"},
+		{"LOFi", "LOFi"},
+		{"something unknown", "Offline"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.reason, func(t *testing.T) {
+			got := normalizeOfflineReason(tt.reason)
+			if got != tt.want {
+				t.Errorf("normalizeOfflineReason(%q) = %q, want %q", tt.reason, got, tt.want)
+			}
+		})
 	}
 }

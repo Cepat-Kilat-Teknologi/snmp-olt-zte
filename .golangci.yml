@@ -1,0 +1,81 @@
+version: "2"
+
+run:
+  timeout: 5m
+  tests: true
+
+formatters:
+  enable:
+    - gofmt
+    - goimports
+
+linters:
+  enable:
+    - errcheck
+    - govet
+    - ineffassign
+    - staticcheck
+    - unused
+    - bodyclose
+    - durationcheck
+    - errname
+    - exhaustive
+    - misspell
+    - nakedret
+    - nilerr
+    - unconvert
+    - whitespace
+  exclusions:
+    rules:
+      - path: _test\.go
+        linters:
+          - errcheck
+          - unused
+    presets:
+      - comments
+      - std-error-handling
+    paths:
+      - docs
+      - vendor
+      - third_party
+
+  settings:
+    errcheck:
+      check-type-assertions: false
+      check-blank: false
+      exclude-functions:
+        - (io.Closer).Close
+        - (*os.File).Close
+        - (net.Conn).Close
+        - (*database/sql.Tx).Rollback
+        - (*database/sql.Rows).Close
+        - (database/sql.Result).RowsAffected
+    govet:
+      enable:
+        - assign
+        - atomic
+        - bools
+        - buildtag
+        - copylocks
+        - httpresponse
+        - loopclosure
+        - lostcancel
+        - nilfunc
+        - printf
+        - shift
+        - stdmethods
+        - structtag
+        - tests
+        - unreachable
+        - unsafeptr
+      disable:
+        - shadow
+        - fieldalignment
+    misspell:
+      locale: US
+    nakedret:
+      max-func-lines: 50
+    staticcheck:
+      checks:
+        - all
+        - -SA5011

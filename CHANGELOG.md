@@ -7,6 +7,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — SNMP Trap Webhook Notification System
+- **Multi-platform webhook formatter** with auto-detection: Discord (rich embeds), Slack (blocks), Telegram (HTML), Generic (raw JSON)
+- **4-tier severity system** with per-severity batch intervals and color-coded notifications:
+  - CRITICAL (LOS, Offline, AuthFailed, PowerOff, LOSi, LOFi) — 5 min interval, red
+  - HIGH (Logging, Synchronization / stuck) — 1 hr interval, orange
+  - MEDIUM (HighRxPower, LowRxPower) — 4 hr interval, yellow
+  - LOW (DyingGasp) — 8 hr interval, blue
+- **Event batcher** with per-severity flush timers, deduplication by Board/PON/ONU, and severity migration handling
+- **Double SNMP verification** — cache invalidated + fresh SNMP GET both on trap receive and on batch flush to eliminate false alarms
+- **Recovery detection** — ONU that comes back online is removed from batch queue; re-verified at flush time
+- **`InvalidateONUCache`** method on usecase for fresh SNMP status checks
+- **`internal/trap/batcher.go`** — per-severity batch queue with dedup, re-verify, and RX power threshold checks
+- **`internal/trap/formatter*.go`** — WebhookFormatter interface with Format (single) and FormatBatch (batched) for all 4 platforms
+- **Batch message format** — per-customer blocks (Nama, Alamat, Event, Board/PON/ONU, RX Power, Terakhir Offline) with severity-specific action instructions
+- **`docs/SNMP_TRAP_WEBHOOK.md`** — full architecture documentation
+
+### Changed
+- **Trap listener** rewritten to parse snmpTrapOID + ONU data OIDs (name, type, description, serial) from real ZTE C320 trap PDUs
+- **Trap handler** no longer trusts trap OID for event type — always verifies via fresh SNMP GET
+- **PowerMonitor** routes alerts through batcher when available (was direct webhook)
+- **OID prefix matching** uses `.` suffix to prevent collisions (e.g. `.1.1` vs `.1.18`)
+- **`alertEventTypes`** expanded: Logging and Synchronization now trigger HIGH alerts (was skipped)
+
+### Added — Environment Variables
+- `TRAP_WEBHOOK_TYPE` — override auto-detected platform (discord/slack/telegram/generic)
+- `TRAP_WEBHOOK_CHAT_ID` — Telegram chat/group ID
+- `TRAP_CRITICAL_INTERVAL` — CRITICAL batch flush interval (default 300s)
+- `TRAP_HIGH_INTERVAL` — HIGH batch flush interval (default 3600s)
+- `TRAP_MEDIUM_INTERVAL` — MEDIUM batch flush interval (default 14400s)
+- `TRAP_LOW_INTERVAL` — LOW batch flush interval (default 28800s)
+
 ## [3.0.0] - 2026-04-12
 
 **Breaking changes** — this release updates the JSON response format to match the ISP adapter standard. Clients parsing `error.type` or `status:"OK"` must be updated. See migration notes at the bottom of this entry.

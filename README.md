@@ -222,33 +222,29 @@ Without a valid API key, the server returns `401 Unauthorized`. If `API_KEY` is 
 
 ## SNMP Trap Listener
 
-Real-time ONU event detection via SNMP Trap. When an ONU goes offline (LOS, DyingGasp, PowerOff), the trap listener detects it and sends a webhook notification with ONU details.
+Real-time ONU event monitoring via SNMP Trap with multi-platform webhook notifications (Discord, Slack, Telegram). Events are classified into a 4-tier severity system with per-severity batch intervals:
 
-### Enable Trap Listener
+| Severity | Events | Default Interval |
+|----------|--------|------------------|
+| CRITICAL | LOS, LOSi, LOFi, Offline, AuthFailed, PowerOff | 5 minutes |
+| HIGH | Logging, Synchronization (stuck) | 1 hour |
+| MEDIUM | HighRxPower, LowRxPower | 4 hours |
+| LOW | DyingGasp | 8 hours |
+
+Key features:
+- **Deduplication** — each ONU appears only once per batch (keyed by Board/PON/ONU)
+- **Recovery detection** — ONUs that come back online before flush are automatically removed
+- **Double verification** — SNMP GET on trap receive and again at batch flush to eliminate false alarms
+
 ```env
 TRAP_ENABLED=true
 TRAP_PORT=1620
-TRAP_WEBHOOK_URL=https://your-webhook.example.com/olt-alerts
+TRAP_WEBHOOK_URL=https://hooks.example.com/snmp-alerts
+TRAP_WEBHOOK_TYPE=discord          # discord|slack|telegram|generic (auto-detected from URL if omitted)
+TRAP_WEBHOOK_CHAT_ID=              # Required for Telegram only
 ```
 
-### Webhook Payload
-```json
-{
-  "timestamp": "2026-04-07T10:30:45+07:00",
-  "source": "192.168.213.174",
-  "board": 1,
-  "pon": 5,
-  "onu_id": 23,
-  "event_type": "LOS",
-  "status": "offline",
-  "name": "Customer-023",
-  "description": "Perumahan Graha Ria Blok F No.6",
-  "onu_type": "F670LV7.1",
-  "serial_number": "ZTEGC12345678"
-}
-```
-
-Events that trigger webhook: `LOS`, `DyingGasp`, `PowerOff`, `Offline`, `AuthFailed`, `LOSi`, `LOFi`.
+See [`docs/SNMP_TRAP_WEBHOOK.md`](docs/SNMP_TRAP_WEBHOOK.md) for full architecture documentation.
 
 ### RX Power Monitor
 
