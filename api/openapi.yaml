@@ -1,6 +1,6 @@
 openapi: 3.1.0
 info:
-  title: Go SNMP OLT ZTE C320 Monitoring API
+  title: snmp-olt-zte Monitoring API (ZTE C320/C300)
   description: |
     REST API for monitoring ZTE C320 and C300 OLT (Optical Line Terminal) via SNMP.
     Provides endpoints to query ONU status, optical power levels, serial numbers,
