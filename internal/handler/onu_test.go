@@ -21,6 +21,7 @@ type mockOnuUsecase struct {
 	UpdateEmptyOnuIDFunc                   func(ctx context.Context, boardID, ponID int) error
 	GetByBoardIDAndPonIDWithPaginationFunc func(ctx context.Context, boardID, ponID, page, pageSize int) ([]model.ONUInfoPerBoard, int)
 	DeleteCacheFunc                        func(ctx context.Context, boardID, ponID int) error
+	InvalidateONUCacheFunc                 func(ctx context.Context, boardID, ponID, onuID int) error
 	GetUplinkTopologyFunc                  func(ctx context.Context) (*model.UplinkTopology, error)
 }
 
@@ -73,8 +74,13 @@ func (m *mockOnuUsecase) DeleteCache(ctx context.Context, boardID, ponID int) er
 	return nil
 }
 
-func (m *mockOnuUsecase) InvalidateONUCache(_ context.Context, _, _, _ int) error { return nil }
-func (m *mockOnuUsecase) PreWarmCache(ctx context.Context)                        {}
+func (m *mockOnuUsecase) InvalidateONUCache(ctx context.Context, boardID, ponID, onuID int) error {
+	if m.InvalidateONUCacheFunc != nil {
+		return m.InvalidateONUCacheFunc(ctx, boardID, ponID, onuID)
+	}
+	return nil
+}
+func (m *mockOnuUsecase) PreWarmCache(ctx context.Context) {}
 
 func (m *mockOnuUsecase) GetUplinkTopology(ctx context.Context) (*model.UplinkTopology, error) {
 	if m.GetUplinkTopologyFunc != nil {
@@ -664,5 +670,68 @@ func TestOnuHandler_DeleteCache_Error(t *testing.T) {
 
 	if rr.Code == http.StatusOK {
 		t.Error("Expected error status, got OK")
+	}
+}
+
+func invalidateReq(board, pon, onu int) *http.Request {
+	req := httptest.NewRequest("DELETE", "/api/v1/board/1/pon/1/onu/1/cache", nil)
+	ctx := context.WithValue(req.Context(), middleware.BoardIDKey, board)
+	ctx = context.WithValue(ctx, middleware.PonIDKey, pon)
+	ctx = context.WithValue(ctx, middleware.OnuIDKey, onu)
+	return req.WithContext(ctx)
+}
+
+func TestInvalidateOnuCache_Success(t *testing.T) {
+	var got [3]int
+	usecase := &mockOnuUsecase{
+		InvalidateONUCacheFunc: func(_ context.Context, boardID, ponID, onuID int) error {
+			got = [3]int{boardID, ponID, onuID}
+			return nil
+		},
+	}
+	h := NewOnuHandler(usecase)
+	w := httptest.NewRecorder()
+	h.InvalidateOnuCache(w, invalidateReq(2, 7, 11))
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d (%s)", w.Code, w.Body.String())
+	}
+	if got != [3]int{2, 7, 11} {
+		t.Errorf("usecase got %v, want [2 7 11]", got)
+	}
+}
+
+func TestInvalidateOnuCache_UsecaseError(t *testing.T) {
+	usecase := &mockOnuUsecase{
+		InvalidateONUCacheFunc: func(_ context.Context, _, _, _ int) error {
+			return errors.New("redis down")
+		},
+	}
+	h := NewOnuHandler(usecase)
+	w := httptest.NewRecorder()
+	h.InvalidateOnuCache(w, invalidateReq(1, 1, 1))
+
+	if w.Code != http.StatusInternalServerError {
+		t.Fatalf("want 500, got %d (%s)", w.Code, w.Body.String())
+	}
+}
+
+func TestGetOnuIDAndSerialNumber_NoCacheParam(t *testing.T) {
+	usecase := &mockOnuUsecase{
+		GetOnuIDAndSerialNumberFunc: func(_ context.Context, boardID, ponID int) ([]model.OnuSerialNumber, error) {
+			return []model.OnuSerialNumber{{Board: boardID, PON: ponID, ID: 1, SerialNumber: "ZTEGC1234567"}}, nil
+		},
+	}
+	h := NewOnuHandler(usecase)
+
+	// ?nocache=true exercises the forced-fresh branch (usecase.WithNoCache).
+	req := httptest.NewRequest("GET", "/api/v1/board/1/pon/1/onu_id_sn?nocache=true", nil)
+	ctx := context.WithValue(req.Context(), middleware.BoardIDKey, 1)
+	ctx = context.WithValue(ctx, middleware.PonIDKey, 1)
+	w := httptest.NewRecorder()
+	h.GetOnuIDAndSerialNumber(w, req.WithContext(ctx))
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d (%s)", w.Code, w.Body.String())
 	}
 }
