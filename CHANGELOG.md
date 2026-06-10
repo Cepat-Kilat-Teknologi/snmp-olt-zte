@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.2.0] - 2026-06-10
+
+First release as the **relocated standalone module**: repository renamed
+`go-snmp-olt-zte-c320` → **`snmp-olt-zte`**, module path
+`github.com/Cepat-Kilat-Teknologi/go-snmp-olt-zte-c320` →
+**`github.com/Cepat-Kilat-Teknologi/snmp-olt-zte`** (old GitHub URLs
+auto-redirect; update Go imports). Consolidates the multi-OLT / C300 work
+developed inside the `olt-provisioning` monorepo since v3.1.0.
+
 ### Added — OLT uplink auto-detect
 - **`GET /api/v1/olt/{id}/uplinks`** (and the bare `/api/v1/uplinks`) — SNMP auto-detect of OLT **cards** (ENTITY-MIB `entPhysicalDescr` / `entPhysicalClass` → role: `gpon` / `control` / `uplink` / `power`) and **uplink ethernet ports** (IF-MIB `ifName` / admin / oper / speed → `xgei` = 10G, `gei` = 1G with slot/port). Field-agnostic across ZTE C320 / C300 regardless of card layout or port numbering.
 
