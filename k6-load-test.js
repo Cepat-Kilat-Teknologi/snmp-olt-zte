@@ -477,6 +477,33 @@ export function mixedOperations() {
       sleep(0.5);
     });
 
+    // 2b. Forced-fresh serial list (?nocache=true) — bypasses + refreshes the
+    // serial-list Redis cache; the write-olt-zte pre-write check path.
+    group('onu_id_sn_nocache', () => {
+      const url = `${base}/board/${board}/pon/${pon}/onu_id_sn?nocache=true`;
+      const response = http.get(url, params({ name: 'onu_id_sn_nocache' }, key));
+      checkResponse(response, 'onu_id_sn_nocache');
+      sleep(0.5);
+    });
+
+    // 2c. Uplink/card auto-detect (ENTITY-MIB + IF-MIB; detection-only).
+    group('uplinks', () => {
+      const url = `${base}/uplinks`;
+      const response = http.get(url, params({ name: 'uplinks' }, key));
+      checkResponse(response, 'uplinks');
+      if (response.status === 200) {
+        check(response, {
+          'uplinks: body has cards+ports': (r) => {
+            try {
+              const d = JSON.parse(r.body).data;
+              return d && Array.isArray(d.cards) && Array.isArray(d.ports);
+            } catch { return false; }
+          },
+        });
+      }
+      sleep(0.5);
+    });
+
     // 3. Update empty ONU ID cache (POST)
     group('update_empty_onu', () => {
       const url = `${base}/board/${board}/pon/${pon}/onu_id/update`;
