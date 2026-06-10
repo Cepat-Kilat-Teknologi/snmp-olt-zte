@@ -151,3 +151,59 @@ func TestRegistryStartupTimeout(t *testing.T) {
 		t.Fatalf("unparsable -> default, got %s", got)
 	}
 }
+
+// FetchWebhookConfig happy path: decodes the device-registry envelope.
+func TestFetchWebhookConfig_OK(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/webhook" || r.Header.Get("X-API-Key") != "k" {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		_, _ = w.Write([]byte(`{"data":{"url":"https://hook","type":"telegram","chat_id":"42","enabled":true,"retries":3,"timeout":9}}`))
+	}))
+	defer srv.Close()
+
+	got, err := FetchWebhookConfig(srv.URL, "k")
+	if err != nil {
+		t.Fatalf("fetch: %v", err)
+	}
+	if got.URL != "https://hook" || got.Type != "telegram" || got.ChatID != "42" ||
+		!got.Enabled || got.Retries != 3 || got.Timeout != 9 {
+		t.Fatalf("unexpected webhook config: %+v", got)
+	}
+}
+
+func TestFetchWebhookConfig_Non200(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusBadGateway)
+	}))
+	defer srv.Close()
+	if _, err := FetchWebhookConfig(srv.URL, ""); err == nil {
+		t.Fatal("expected error on non-200")
+	}
+}
+
+func TestFetchWebhookConfig_BadJSON(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`not json`))
+	}))
+	defer srv.Close()
+	if _, err := FetchWebhookConfig(srv.URL, ""); err == nil {
+		t.Fatal("expected decode error")
+	}
+}
+
+func TestFetchWebhookConfig_BadURL(t *testing.T) {
+	// http.NewRequestWithContext fails for a control-char URL — covers the
+	// request-build error return.
+	if _, err := FetchWebhookConfig("http://\x7f", ""); err == nil {
+		t.Fatal("expected request build error")
+	}
+}
+
+func TestFetchWebhookConfig_Unreachable(t *testing.T) {
+	// Do() error path: nothing listening on this port.
+	if _, err := FetchWebhookConfig("http://127.0.0.1:1", ""); err == nil {
+		t.Fatal("expected transport error")
+	}
+}

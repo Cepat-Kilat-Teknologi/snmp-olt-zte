@@ -1,6 +1,8 @@
 package config
 
 import (
+	"net/http"
+	"net/http/httptest"
 	"testing"
 )
 
@@ -501,5 +503,68 @@ func TestConfig_StructFields(t *testing.T) {
 
 	if cfg.BoardPonMap == nil {
 		t.Error("BoardPonMap should not be nil")
+	}
+}
+
+// parseBoardSpecs clamps an out-of-range defaultPons back to MaxPonID. Driving a
+// defaultPons of 0 (and 99) covers the clamp branch.
+func TestParseBoardSpecs_DefaultPonsOutOfRange(t *testing.T) {
+	for _, dp := range []int{0, 99} {
+		_, specs := parseBoardSpecs("3", dp)
+		if specs[3] != MaxPonID {
+			t.Fatalf("defaultPons=%d: expected slot 3 PON count clamped to %d, got %d", dp, MaxPonID, specs[3])
+		}
+	}
+}
+
+// ValidateConfig clamps an out-of-range per-slot PON count to MaxPonID before
+// checking the map.
+func TestValidateConfig_PonCountClamped(t *testing.T) {
+	m, err := InitializeBoardPonMapFromSpecs(map[int]int{1: MaxPonID})
+	if err != nil {
+		t.Fatalf("init map: %v", err)
+	}
+	// BoardPons declares an out-of-range count (99) which ValidateConfig clamps to
+	// MaxPonID; the map above has all MaxPonID PONs so validation must pass.
+	c := &Config{BoardPons: map[int]int{1: 99}, BoardPonMap: m}
+	if err := c.ValidateConfig(); err != nil {
+		t.Fatalf("expected validation to pass after clamp, got: %v", err)
+	}
+}
+
+// LoadConfig falls through to REGISTRY_URL when OLTS/OLTS_FILE are empty, and the
+// registry view becomes the OLT registry.
+func TestLoadConfig_FromRegistryURL(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`{"data":[{"id":"reg-1","host":"10.9.9.9","port":161,"community":"pub","boards":"1,2"}]}`))
+	}))
+	defer srv.Close()
+
+	t.Setenv("OLTS", "")
+	t.Setenv("OLTS_FILE", "")
+	t.Setenv("SNMP_HOST", "")
+	t.Setenv("SNMP_COMMUNITY", "")
+	t.Setenv("REGISTRY_URL", srv.URL)
+	t.Setenv("REGISTRY_API_KEY", "")
+
+	cfg, err := LoadConfig()
+	if err != nil {
+		t.Fatalf("LoadConfig: %v", err)
+	}
+	if len(cfg.OLTs) != 1 || cfg.OLTs[0].ID != "reg-1" || cfg.DefaultOLT != "reg-1" {
+		t.Fatalf("expected registry-derived OLT, got %+v default=%s", cfg.OLTs, cfg.DefaultOLT)
+	}
+}
+
+// LoadConfig is fail-fast when REGISTRY_URL is set but unreachable.
+func TestLoadConfig_RegistryURLError(t *testing.T) {
+	t.Setenv("OLTS", "")
+	t.Setenv("OLTS_FILE", "")
+	t.Setenv("SNMP_HOST", "")
+	t.Setenv("SNMP_COMMUNITY", "")
+	t.Setenv("REGISTRY_URL", "http://127.0.0.1:1")
+
+	if _, err := LoadConfig(); err == nil {
+		t.Fatal("expected fail-fast error for unreachable REGISTRY_URL")
 	}
 }

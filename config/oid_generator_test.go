@@ -1,6 +1,7 @@
 package config
 
 import (
+	"strings"
 	"testing"
 )
 
@@ -278,5 +279,32 @@ func BenchmarkGenerateBoardPonOID(b *testing.B) {
 func BenchmarkInitializeBoardPonMap(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		_, _ = InitializeBoardPonMap(nil, 0)
+	}
+}
+
+// InitializeBoardPonMapFromSpecs clamps a per-slot PON count that is out of
+// range to MaxPonID.
+func TestInitializeBoardPonMapFromSpecs_PonCountClamped(t *testing.T) {
+	m, err := InitializeBoardPonMapFromSpecs(map[int]int{2: 0})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	// 0 clamps to MaxPonID, so every PON 1..MaxPonID must be present for slot 2.
+	for pon := 1; pon <= MaxPonID; pon++ {
+		if _, ok := m[BoardPonKey{BoardID: 2, PonID: pon}]; !ok {
+			t.Fatalf("expected slot 2 pon %d in map after clamp", pon)
+		}
+	}
+}
+
+// InitializeBoardPonMapFromSpecs surfaces the GenerateBoardPonOID error for an
+// out-of-range slot.
+func TestInitializeBoardPonMapFromSpecs_InvalidSlot(t *testing.T) {
+	_, err := InitializeBoardPonMapFromSpecs(map[int]int{MaxBoardID + 1: 4})
+	if err == nil {
+		t.Fatal("expected error for out-of-range slot")
+	}
+	if !strings.Contains(err.Error(), "board") {
+		t.Fatalf("unexpected error: %v", err)
 	}
 }
