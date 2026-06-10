@@ -1,26 +1,12 @@
 # CLAUDE.md — snmp-olt-zte
 
-> **READ FIRST (AI agents):** `~/Projects/knowledge-base/BOOTSTRAP.md` is
-> the canonical cold-start doc for this platform. This repo is 1 of 5
-> HTTP adapters subordinate to [[isp-agent]]. Current platform state:
-> `~/Projects/knowledge-base/STATUS.md`.
+Guidance for AI coding agents (and human contributors) working on this repo.
 
-## Wiki Update Discipline (HARD RULE)
+## Release checklist
 
-**"Release done" ≠ "tag pushed". Release done = tag + wiki + platform status
-all updated together.**
-
-When releasing a new version or making substantive changes:
-
-1. `CHANGELOG.md` — move Unreleased to `[vX.Y.Z] — DATE`
+1. `CHANGELOG.md` — move Unreleased to `[X.Y.Z] — DATE`
 2. Git tag + push: `git tag -a vX.Y.Z && git push origin vX.Y.Z`
-3. Verify release workflow success (multi-arch Docker)
-4. **Wiki entity page**:
-   `~/Projects/knowledge-base/wiki/snmp-olt-zte.md`
-5. **Platform status**: `~/Projects/knowledge-base/STATUS.md`
-6. **Platform changelog**: `~/Projects/knowledge-base/PLATFORM_CHANGELOG.md`
-7. **Dependency manifest**: `~/Projects/knowledge-base/platform-deps.yaml`
-8. If breaking change: notify isp-agent dev lead for min-version bump
+3. Verify the release workflow succeeds (multi-arch Docker image + helm chart)
 
 ## Project Overview
 
@@ -28,10 +14,10 @@ Read-oriented HTTP adapter for monitoring ZTE C320 and C300 OLT devices via SNMP
 (both V2.1.0 share an identical MIB tree / ifIndex encoding; the populated GPON
 slots are configured via `OLT_BOARDS`).
 Exposes ONU status, optical power, uptime, and serial numbers through a
-REST API backed by a Redis cache and an SNMP connection pool. Part of the
-ISP SaaS platform — [[isp-agent]] (the Temporal worker orchestrator) consumes
-this service for ONU telemetry + status checks (reserved for v2+
-telemetry polling workflows; not actively used by v0.1.0 billing workflows).
+REST API backed by a Redis cache and an SNMP connection pool. The write
+counterpart (SSH provisioning) is
+[write-olt-zte](https://github.com/Cepat-Kilat-Teknologi/write-olt-zte), which
+also consumes this service for its pre-write ONU existence checks.
 
 - **Module path:** `github.com/Cepat-Kilat-Teknologi/snmp-olt-zte`
 - **Go version:** 1.26
@@ -72,13 +58,13 @@ pkg/
 Framework mix across the adapter fleet is deliberate:
 
 - **chi v5**: snmp-olt-zte, genieacs-relay v2.0.0
-- **Fiber v2**: freeradius-api v1.2.0, write-olt-zte v3.0.0
+- **Fiber v2**: freeradius-api v1.2.0, write-olt-zte v1.3.0
 
 Rationale:
 - Migration chi ↔ Fiber is a significant refactor with little upside
 - chi is standard-library-compatible (`http.Handler`), simpler to test
 - Fiber is slightly faster for pure HTTP but SNMP/SSH/GenieACS dominate in all adapter workloads
-- The adapter standard (`isp-adapter-standard` wiki) specifies **JSON response format + HTTP contract + logging schema**, not the framework
+- The adapter standard specifies **JSON response format + HTTP contract + logging schema**, not the framework
 
 When porting patterns from freeradius-api or write-olt-zte, adapt Fiber-specific APIs:
 - `fiber.Ctx` → `http.ResponseWriter + *http.Request`
@@ -150,7 +136,11 @@ Infrastructure requirements (local dev): Redis + a reachable SNMP target (real O
 - **redis** (5s TTL): `redisClient.Ping`
 - **snmp** (30s TTL): `snmpRepo.Ping()` — sysUpTime SNMP Get against the OLT
 
-Successful results are cached per-probe TTL; failures are re-probed on every request so recovery is detected immediately.
+Successful results are cached per-probe TTL; failures are cached for at most
+5s (`failureTTL`) so a down dependency never triggers a re-probe storm while
+recovery is still detected within a typical k8s probe interval. The SNMP probe
+itself is bounded by the checker's 2s context (a synchronous gosnmp Ping runs
+in a goroutine and is abandoned on timeout).
 
 ### Request ID Propagation
 
@@ -177,7 +167,7 @@ The `/metrics` endpoint is unauthenticated — Prometheus scrapers typically run
 - **Mocks**: interface mocks in `usecase/onu_test.go` (`mockSnmpRepository`, `mockRedisRepository`) — functional fields (e.g. `GetFunc func(...)`)
 - **Log capture**: `pkg/logger.SetForTest(newTestLogger(buf))` + restore closure
 - **Health checker**: tests can pass `nil` to `loadRoutes` to skip dependency gating (`/readyz` then always returns 200)
-- **Coverage**: aim for >95% (currently ~99% per wiki)
+- **Coverage**: aim for >95%
 - **Integration**: `examples/` contains Docker Compose + Helm for end-to-end smoke tests
 
 ## Environment Configuration
@@ -200,9 +190,8 @@ Metrics and audit logging are always on; there is no `METRICS_ENABLED` flag (the
 
 ## Related docs
 
-- Wiki: `isp-development-requirements` — MUST READ for adapter standards
-- Wiki: `isp-adapter-standard` — JSON response format, error codes, HTTP contract
-- Wiki: `isp-logging-standard` — zap schema, request ID, snake_case conventions
-- `TODO.md` — agent integration readiness checklist (updated as this migration progresses)
 - `CHANGELOG.md` — version history
 - `api/openapi.yaml` — OpenAPI 3.1 spec
+- `docs/SNMP_TRAP_WEBHOOK.md` — trap listener + webhook notifier
+- `GUIDES.md` — operational guides
+- `TODO.md` — historical record of the v3.0.0 standardization work
