@@ -6,12 +6,12 @@ We release security updates for the following versions:
 
 | Version | Supported          |
 | ------- | ------------------ |
-| 1.x.x   | :white_check_mark: |
-| < 1.0   | :x:                |
+| 3.2.x   | :white_check_mark: |
+| < 3.2   | :x:                |
 
 ## Reporting a Vulnerability
 
-We take the security of Go SNMP OLT ZTE C320 seriously. If you believe you have found a security vulnerability, please report it to us as described below.
+We take the security of snmp-olt-zte (ZTE C320/C300 SNMP adapter) seriously. If you believe you have found a security vulnerability, please report it to us as described below.
 
 ### Reporting Process
 
@@ -112,7 +112,7 @@ sudo ufw allow from <trusted_ip> to any port 6379  # Redis (if external)
 **Network restrictions:**
 ```bash
 # Configure OLT to accept SNMP only from specific IPs
-# Check your ZTE C320 OLT documentation
+# Check your ZTE C320/C300 OLT documentation
 ```
 
 ### Application Security
