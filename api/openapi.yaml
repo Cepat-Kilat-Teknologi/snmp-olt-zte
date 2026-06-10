@@ -475,6 +475,36 @@ paths:
   # above, but {olt_id} selects which OLT in the OLTS/OLTS_FILE registry to
   # target. The configured DEFAULT_OLT also answers the bare paths above.
   # ───────────────────────────────────────────────────────────────────────────
+  /api/v1/uplinks:
+    get:
+      summary: Auto-detect OLT cards and uplink ethernet ports (default OLT)
+      description: >
+        SNMP auto-detect of the OLT's physical cards (ENTITY-MIB
+        entPhysicalDescr/entPhysicalClass, classified as gpon / control /
+        uplink / power) and uplink ethernet ports (IF-MIB ifName/admin/oper/
+        speed; xgei_ = 10G, gei_ = 1G). Detection-only — no configuration
+        writes. Works identically on ZTE C320 and C300 regardless of card
+        layout or port numbering.
+      operationId: getUplinkTopology
+      tags:
+        - Uplink
+      responses:
+        "200":
+          description: Auto-detected card + uplink-port topology
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/WebResponse"
+                  - type: object
+                    properties:
+                      data:
+                        $ref: "#/components/schemas/UplinkTopology"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
   /api/v1/olt/{olt_id}/board/{board_id}/pon/{pon_id}:
     get:
       summary: Get all ONUs for a board/PON (multi-OLT)
@@ -751,6 +781,34 @@ paths:
         "500":
           $ref: "#/components/responses/InternalError"
 
+  /api/v1/olt/{olt_id}/uplinks:
+    get:
+      summary: Auto-detect OLT cards and uplink ethernet ports (specific OLT)
+      description: Multi-OLT variant of /api/v1/uplinks for the OLT selected by olt_id.
+      operationId: getUplinkTopologyByOlt
+      tags:
+        - Uplink
+      parameters:
+        - $ref: "#/components/parameters/OltId"
+      responses:
+        "200":
+          description: Auto-detected card + uplink-port topology
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/WebResponse"
+                  - type: object
+                    properties:
+                      data:
+                        $ref: "#/components/schemas/UplinkTopology"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
 components:
   securitySchemes:
     ApiKeyAuth:
@@ -830,6 +888,67 @@ components:
         example: true
 
   schemas:
+    UplinkTopology:
+      type: object
+      description: Auto-detected OLT card + uplink-port topology (detection-only).
+      properties:
+        cards:
+          type: array
+          items:
+            $ref: "#/components/schemas/UplinkCard"
+        ports:
+          type: array
+          items:
+            $ref: "#/components/schemas/UplinkPort"
+    UplinkCard:
+      type: object
+      description: Physical card/module discovered via ENTITY-MIB (entPhysicalClass == 3).
+      properties:
+        ent_index:
+          type: integer
+          description: Raw entPhysical index
+          example: 200
+        slot:
+          type: integer
+          description: "Heuristic slot: entIndex/10 - 1"
+          example: 19
+        type:
+          type: string
+          description: entPhysicalDescr text
+          example: HUVQ
+        role:
+          type: string
+          enum: [gpon, control, uplink, power, other]
+          example: uplink
+    UplinkPort:
+      type: object
+      description: Uplink ethernet port discovered via IF-MIB (ifName xgei_/gei_).
+      properties:
+        name:
+          type: string
+          example: xgei_1/19/1
+        shelf:
+          type: integer
+          example: 1
+        slot:
+          type: integer
+          example: 19
+        port:
+          type: integer
+          example: 1
+        kind:
+          type: string
+          enum: ["10G", "1G"]
+          example: "10G"
+        admin_status:
+          type: string
+          example: up
+        oper_status:
+          type: string
+          example: up
+        speed_mbps:
+          type: integer
+          example: 10000
     WebResponse:
       type: object
       description: Standard success response wrapper
@@ -1246,3 +1365,5 @@ tags:
     description: ONU ID listing and serial number lookup
   - name: Cache
     description: Cache management operations
+  - name: Uplink
+    description: Uplink / card auto-detect (read-only topology discovery)
