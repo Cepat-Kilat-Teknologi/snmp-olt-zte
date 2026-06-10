@@ -3413,3 +3413,24 @@ func TestGetOnuIDAndSerialNumber_SaveCacheError(t *testing.T) {
 		t.Errorf("Expected no error (save failure is logged only), got %v", err)
 	}
 }
+
+func TestOltLocation(t *testing.T) {
+	mk := func(tz string) *onuUsecase {
+		cfg := &config.Config{}
+		cfg.OltCfg.Timezone = tz
+		return NewOnuUsecase(&mockSnmpRepository{}, &mockRedisRepository{}, cfg).(*onuUsecase)
+	}
+
+	// Empty -> Asia/Jakarta default.
+	if got := mk("").oltLocation().String(); got != "Asia/Jakarta" {
+		t.Errorf("empty tz -> %q, want Asia/Jakarta", got)
+	}
+	// Valid IANA name.
+	if got := mk("UTC").oltLocation().String(); got != "UTC" {
+		t.Errorf("UTC tz -> %q", got)
+	}
+	// Invalid name -> fixed WIB fallback (never errors).
+	if got := mk("Not/AZone").oltLocation().String(); got != "WIB" {
+		t.Errorf("invalid tz -> %q, want WIB", got)
+	}
+}
