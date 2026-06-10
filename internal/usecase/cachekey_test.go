@@ -1,6 +1,9 @@
 package usecase
 
-import "testing"
+import (
+	"context"
+	"testing"
+)
 
 // TestCacheKeyNamespacing verifies per-OLT Redis key namespacing: the default
 // OLT (empty id) keeps legacy unprefixed keys, while a named OLT is prefixed so
@@ -14,5 +17,15 @@ func TestCacheKeyNamespacing(t *testing.T) {
 	ns := &onuUsecase{oltID: "c300a"}
 	if got := ns.cacheKey("board_3_pon_1"); got != "olt_c300a_board_3_pon_1" {
 		t.Errorf("namespaced key = %q, want olt_c300a_board_3_pon_1", got)
+	}
+}
+
+func TestWithNoCache(t *testing.T) {
+	ctx := context.Background()
+	if noCacheFromContext(ctx) {
+		t.Error("plain context must not be no-cache")
+	}
+	if !noCacheFromContext(WithNoCache(ctx)) {
+		t.Error("WithNoCache context must report no-cache")
 	}
 }
