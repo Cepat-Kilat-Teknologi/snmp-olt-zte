@@ -289,6 +289,38 @@ curl -sS 'http://localhost:8081/api/v1/paginate/board/2/pon/8?limit=3&page=2' | 
 curl -sS -X DELETE localhost:8081/api/v1/board/2/pon/7/cache/clear | jq
 ```
 
+### Uplink / Card Auto-Detect
+```shell
+curl -sS localhost:8081/api/v1/uplinks | jq
+
+# Multi-OLT variant
+curl -sS localhost:8081/api/v1/olt/c300a/uplinks | jq
+```
+```json
+{
+  "code": 200,
+  "status": "success",
+  "data": {
+    "cards": [
+      {"ent_index": 40, "slot": 3, "type": "GTGH", "role": "gpon"},
+      {"ent_index": 200, "slot": 19, "type": "HUVQ", "role": "uplink"}
+    ],
+    "ports": [
+      {"name": "xgei_1/19/1", "shelf": 1, "slot": 19, "port": 1, "kind": "10G",
+       "admin_status": "up", "oper_status": "up", "speed_mbps": 10000}
+    ]
+  }
+}
+```
+
+SNMP auto-detect of the OLT's **cards** (ENTITY-MIB `entPhysicalDescr` /
+`entPhysicalClass`, classified as `gpon` / `control` / `uplink` / `power`) and
+**uplink ethernet ports** (IF-MIB `ifName`/admin/oper/speed; `xgei_` = 10G,
+`gei_` = 1G). Detection-only — no configuration writes. Field-agnostic across
+C320/C300: it works regardless of card layout or port numbering, so an
+operator UI can discover which `gei_`/`xgei_` ports exist before configuring
+trunks via write-olt-zte.
+
 ## Authentication
 
 When `API_KEY` environment variable is set, all `/api/v1` routes require the `X-API-Key` header:
