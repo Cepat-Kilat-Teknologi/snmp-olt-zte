@@ -226,7 +226,21 @@ func (a *App) Start(ctx context.Context) error {
 	for _, s := range stacks {
 		repo := s.repo // capture for the closure
 		probeName := "snmp_" + s.olt.ID
-		probe := func(_ context.Context) error { return repo.Ping() }
+		// repo.Ping is a synchronous gosnmp call with its own (longer)
+		// timeout+retry budget, so run it under the checker's 2s context —
+		// otherwise one unreachable OLT pins every readyz call for the full
+		// SNMP retry window. An abandoned Ping goroutine just drains on the
+		// SNMP timeout and exits.
+		probe := func(ctx context.Context) error {
+			done := make(chan error, 1)
+			go func() { done <- repo.Ping() }()
+			select {
+			case err := <-done:
+				return err
+			case <-ctx.Done():
+				return ctx.Err()
+			}
+		}
 		if s.olt.ID == cfg.DefaultOLT {
 			checker.Register(probeName, 30*time.Second, probe)
 		} else {
