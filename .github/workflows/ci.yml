@@ -232,5 +232,7 @@ jobs:
         with:
           charts_dir: examples/helm
           skip_existing: "true"
+          # Chart releases must not steal the "Latest" badge from app releases.
+          mark_as_latest: false
         env:
           CR_TOKEN: "${{ secrets.GITHUB_TOKEN }}"
