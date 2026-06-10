@@ -32,6 +32,16 @@ REST API service for monitoring ZTE **C320 and C300** OLT devices via SNMP proto
 * [k6](https://k6.io/) - Load testing
 
 ### Key Features
+- **ZTE C320 & C300 in one image** — identical MIB/ifIndex encoding; only the
+  populated GPON slots differ (`OLT_BOARDS`, per-slot PON counts `slot:pons`)
+- **Multi-OLT in a single instance** (`OLTS` / `OLTS_FILE` / device-registry):
+  any mix of C320/C300, each with its own SNMP pool, slot topology, and
+  namespaced Redis cache; per-OLT paths `/api/v1/olt/{id}/...` + per-OLT
+  readiness probes
+- **Per-tenant access control** (`API_USERS`): each API key sees only the OLTs
+  it owns (cross-tenant → 404); `role:"admin"` sees all
+- **Uplink/card auto-detect** (`GET /uplinks`): ENTITY-MIB + IF-MIB topology
+  discovery, detection-only
 - SNMP connection pool (4 connections) with concurrency semaphore (max 5 concurrent ops)
 - Redis caching with configurable TTL and cache pre-warming at startup
 - Cron-based and interval-based scheduling for RX Power monitor
