@@ -2,7 +2,7 @@
 [![ci](https://github.com/Cepat-Kilat-Teknologi/snmp-olt-zte/actions/workflows/ci.yml/badge.svg)](https://github.com/Cepat-Kilat-Teknologi/snmp-olt-zte/actions/workflows/ci.yml)
 [![Go Report Card](https://goreportcard.com/badge/github.com/Cepat-Kilat-Teknologi/snmp-olt-zte)](https://goreportcard.com/report/github.com/Cepat-Kilat-Teknologi/snmp-olt-zte)
 [![codecov](https://codecov.io/gh/Cepat-Kilat-Teknologi/snmp-olt-zte/graph/badge.svg?token=NB3N7GMUX3)](https://codecov.io/gh/Cepat-Kilat-Teknologi/snmp-olt-zte)
-[![Helm Chart](https://img.shields.io/badge/helm-v3.0.0-blue)](https://github.com/Cepat-Kilat-Teknologi/snmp-olt-zte/releases/tag/v3.0.0)
+[![Helm Chart](https://img.shields.io/badge/helm-v3.2.0-blue)](https://github.com/Cepat-Kilat-Teknologi/snmp-olt-zte/releases/tag/v3.2.0)
 
 > **Repository moved (v3.2.0).** This module was previously published as
 > `github.com/Cepat-Kilat-Teknologi/go-snmp-olt-zte-c320` (C320-only). It is now
@@ -171,7 +171,7 @@ docker run -d -p 8081:8081 --name snmp-olt-zte \
 -e REDIS_MIN_IDLE_CONNECTIONS=10 -e REDIS_POOL_SIZE=100 \
 -e REDIS_POOL_TIMEOUT=30 -e SNMP_HOST=x.x.x.x \
 -e SNMP_PORT=161 -e SNMP_COMMUNITY=xxxx \
-cepatkilatteknologi/snmp-olt-zte:3.0.0
+cepatkilatteknologi/snmp-olt-zte:3.2.0
 ```
 
 ## API Endpoints
