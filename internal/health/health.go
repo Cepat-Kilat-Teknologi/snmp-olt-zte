@@ -19,6 +19,13 @@ import (
 // with a bounded context so they cannot hang the readyz endpoint.
 type Probe func(ctx context.Context) error
 
+// failureTTL caps how long a FAILED probe result is served from cache. Without
+// it every readyz call re-probes a down dependency — each caller paying the
+// probe timeout while holding the dependency mutex, so concurrent readyz calls
+// pile up behind one down OLT. 5s still detects recovery within a typical
+// k8s probe interval while preventing that probe storm.
+const failureTTL = 5 * time.Second
+
 // dependency is a registered probe with its own TTL and cached state.
 type dependency struct {
 	name     string
@@ -52,7 +59,8 @@ func NewChecker(timeout time.Duration) *Checker {
 }
 
 // Register adds a critical probe. ttl controls how long a successful result is
-// cached; failures are re-probed every call so recovery is detected immediately.
+// cached; a failure is cached for at most failureTTL so recovery is detected
+// within a few seconds without re-probing a down dependency on every call.
 // A failing critical probe flips the overall readiness flag to not-ready.
 func (c *Checker) Register(name string, ttl time.Duration, probe Probe) {
 	c.deps = append(c.deps, &dependency{
@@ -84,7 +92,13 @@ func (c *Checker) Check(ctx context.Context) (statuses []Status, healthy bool) {
 
 	for _, d := range c.deps {
 		d.mu.Lock()
-		cached := d.lastErr == nil && !d.lastAt.IsZero() && now.Sub(d.lastAt) < d.ttl
+		// Successes cache for the dependency's ttl; failures for at most
+		// failureTTL (recover fast, but never re-probe a down dep per call).
+		ttl := d.ttl
+		if d.lastErr != nil && failureTTL < ttl {
+			ttl = failureTTL
+		}
+		cached := !d.lastAt.IsZero() && now.Sub(d.lastAt) < ttl
 		if !cached {
 			probeCtx, cancel := context.WithTimeout(ctx, c.timeout)
 			d.lastErr = d.probe(probeCtx)

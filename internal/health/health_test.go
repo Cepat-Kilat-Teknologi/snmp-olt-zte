@@ -102,7 +102,7 @@ func TestChecker_SuccessIsCachedWithinTTL(t *testing.T) {
 	assert.Equal(t, 1, count, "probe should not re-run within TTL")
 }
 
-func TestChecker_FailureIsNotCached(t *testing.T) {
+func TestChecker_FailureIsCachedBriefly(t *testing.T) {
 	c := NewChecker(time.Second)
 	var count int
 	failing := true
@@ -118,19 +118,18 @@ func TestChecker_FailureIsNotCached(t *testing.T) {
 	assert.False(t, healthy)
 	assert.Equal(t, 1, count)
 
+	// Within failureTTL the cached failure is served — no re-probe storm.
 	_, healthy = c.Check(context.Background())
 	assert.False(t, healthy)
-	assert.Equal(t, 2, count, "failure must be re-probed each call")
+	assert.Equal(t, 1, count, "failure must be served from cache within failureTTL")
 
-	_, healthy = c.Check(context.Background())
-	assert.False(t, healthy)
-	assert.Equal(t, 3, count)
-
-	// Now recover: the next call should probe and succeed.
+	// Force the failure cache to expire, then recover: the next call probes
+	// again and sees the dependency back up.
 	failing = false
+	c.deps[0].lastAt = time.Now().Add(-failureTTL - time.Second)
 	_, healthy = c.Check(context.Background())
 	assert.True(t, healthy)
-	assert.Equal(t, 4, count)
+	assert.Equal(t, 2, count, "expired failure cache must re-probe")
 }
 
 func TestChecker_CacheExpiresAfterTTL(t *testing.T) {
