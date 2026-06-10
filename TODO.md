@@ -5,6 +5,10 @@
 > All standardization tasks listed below have been delivered. This file is
 > kept as a historical record of the work that landed in v3.0.0. New tasks
 > should go to GitHub Issues, not back into this file.
+>
+> The repository has since been renamed `go-snmp-olt-zte-c320` →
+> **`snmp-olt-zte`** (v3.2.0); the old name below is accurate for the era
+> this record describes.
 
 ## Result
 
