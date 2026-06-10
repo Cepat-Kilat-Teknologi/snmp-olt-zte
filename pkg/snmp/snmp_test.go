@@ -5,7 +5,7 @@ import (
 	"strconv"
 	"testing"
 
-	"github.com/Cepat-Kilat-Teknologi/go-snmp-olt-zte-c320/config"
+	"github.com/Cepat-Kilat-Teknologi/snmp-olt-zte/config"
 )
 
 func TestSetupSnmpConnection_FromEnvironment(t *testing.T) {

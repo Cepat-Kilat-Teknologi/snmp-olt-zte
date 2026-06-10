@@ -5,8 +5,8 @@ import (
 	"runtime/debug"
 	"time"
 
-	"github.com/Cepat-Kilat-Teknologi/go-snmp-olt-zte-c320/internal/utils"
-	"github.com/Cepat-Kilat-Teknologi/go-snmp-olt-zte-c320/pkg/logger"
+	"github.com/Cepat-Kilat-Teknologi/snmp-olt-zte/internal/utils"
+	"github.com/Cepat-Kilat-Teknologi/snmp-olt-zte/pkg/logger"
 	chimw "github.com/go-chi/chi/v5/middleware"
 	"go.uber.org/zap"
 )

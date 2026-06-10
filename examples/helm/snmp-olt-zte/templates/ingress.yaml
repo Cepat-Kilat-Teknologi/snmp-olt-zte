@@ -2,9 +2,9 @@
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
-  name: {{ include "snmp-olt-zte-c320.fullname" . }}
+  name: {{ include "snmp-olt-zte.fullname" . }}
   labels:
-    {{- include "snmp-olt-zte-c320.labels" . | nindent 4 }}
+    {{- include "snmp-olt-zte.labels" . | nindent 4 }}
   {{- with .Values.ingress.annotations }}
   annotations:
     {{- toYaml . | nindent 4 }}
@@ -33,7 +33,7 @@ spec:
             pathType: {{ .pathType }}
             backend:
               service:
-                name: {{ include "snmp-olt-zte-c320.fullname" $ }}
+                name: {{ include "snmp-olt-zte.fullname" $ }}
                 port:
                   number: {{ $.Values.service.port }}
           {{- end }}

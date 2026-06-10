@@ -5,14 +5,15 @@ import (
 	"fmt"
 	"sort"
 	"strconv"
+	"strings"
 	"time"
 
-	"github.com/Cepat-Kilat-Teknologi/go-snmp-olt-zte-c320/config"
-	apperrors "github.com/Cepat-Kilat-Teknologi/go-snmp-olt-zte-c320/internal/errors"
-	"github.com/Cepat-Kilat-Teknologi/go-snmp-olt-zte-c320/internal/model"
-	"github.com/Cepat-Kilat-Teknologi/go-snmp-olt-zte-c320/internal/repository"
-	"github.com/Cepat-Kilat-Teknologi/go-snmp-olt-zte-c320/internal/utils"
-	"github.com/Cepat-Kilat-Teknologi/go-snmp-olt-zte-c320/pkg/logger"
+	"github.com/Cepat-Kilat-Teknologi/snmp-olt-zte/config"
+	apperrors "github.com/Cepat-Kilat-Teknologi/snmp-olt-zte/internal/errors"
+	"github.com/Cepat-Kilat-Teknologi/snmp-olt-zte/internal/model"
+	"github.com/Cepat-Kilat-Teknologi/snmp-olt-zte/internal/repository"
+	"github.com/Cepat-Kilat-Teknologi/snmp-olt-zte/internal/utils"
+	"github.com/Cepat-Kilat-Teknologi/snmp-olt-zte/pkg/logger"
 	"github.com/gosnmp/gosnmp"
 	"go.uber.org/zap"
 	"golang.org/x/sync/singleflight"
@@ -69,6 +70,7 @@ type OnuUseCaseInterface interface {
 	GetByBoardIDAndPonIDWithPagination(ctx context.Context, boardID, ponID, page, pageSize int) ([]model.ONUInfoPerBoard, int) // Get paginated ONU info
 	DeleteCache(ctx context.Context, boardID, ponID int) error                                                                 // Delete cache for specific board/pon
 	InvalidateONUCache(ctx context.Context, boardID, ponID, onuID int) error                                                   // Invalidate ONU detail + board/pon cache for fresh SNMP query
+	GetUplinkTopology(ctx context.Context) (*model.UplinkTopology, error)                                                      // Auto-detect cards + uplink ethernet ports via standard MIBs (read-only)
 	PreWarmCache(ctx context.Context)
 }
 
@@ -77,18 +79,41 @@ type onuUsecase struct {
 	snmpRepository  repository.SnmpRepositoryInterface     // SNMP repository dependency
 	redisRepository repository.OnuRedisRepositoryInterface // Redis repository dependency
 	cfg             *config.Config                         // Configuration dependency
-	sg              singleflight.Group                     // Singleflight group for request coalescing
+	oltID           string                                 // OLT identifier for Redis cache namespacing (empty = no prefix, legacy/default OLT)
+	sg              singleflight.Group                     // Singleflight group for request coalescing (per-OLT instance, so keys need no OLT prefix)
 }
 
-// NewOnuUsecase will create an object that represents the auth usecase
+// cacheKey namespaces a Redis cache key with the OLT id so that multiple OLTs
+// sharing one Redis instance never collide (e.g. board 1/pon 1 on two devices).
+// An empty oltID returns the key unchanged — preserving legacy single-OLT keys.
+func (u *onuUsecase) cacheKey(base string) string {
+	if u.oltID == "" {
+		return base
+	}
+	return "olt_" + u.oltID + "_" + base
+}
+
+// NewOnuUsecase will create an object that represents the auth usecase.
+// It uses no cache-key namespace (legacy single-OLT behavior).
 func NewOnuUsecase(
 	snmpRepository repository.SnmpRepositoryInterface, redisRepository repository.OnuRedisRepositoryInterface,
 	cfg *config.Config,
+) OnuUseCaseInterface {
+	return NewOnuUsecaseForOLT(snmpRepository, redisRepository, cfg, "")
+}
+
+// NewOnuUsecaseForOLT creates a usecase bound to a specific OLT id, used by the
+// multi-OLT registry. The oltID namespaces this OLT's Redis cache keys; pass ""
+// for the default/legacy OLT to keep keys unprefixed.
+func NewOnuUsecaseForOLT(
+	snmpRepository repository.SnmpRepositoryInterface, redisRepository repository.OnuRedisRepositoryInterface,
+	cfg *config.Config, oltID string,
 ) OnuUseCaseInterface {
 	return &onuUsecase{
 		snmpRepository:  snmpRepository,       // Inject SNMP repository
 		redisRepository: redisRepository,      // Inject Redis repository
 		cfg:             cfg,                  // Inject configuration
+		oltID:           oltID,                // Cache-key namespace
 		sg:              singleflight.Group{}, // Initialize a singleflight group
 	}
 }
@@ -151,7 +176,7 @@ func (u *onuUsecase) GetByBoardIDAndPonID(ctx context.Context, boardID, ponID in
 		}
 
 		// Redis key using helper function
-		redisKey := GenerateRedisKey(RedisKeyTypeONUInfo, boardID, ponID)
+		redisKey := u.cacheKey(GenerateRedisKey(RedisKeyTypeONUInfo, boardID, ponID))
 
 		// Check if data is already cached in Redis
 		cachedOnuData, err := u.redisRepository.GetONUInfoList(ctx, redisKey) // Get ONU Information from Redis
@@ -225,8 +250,12 @@ func (u *onuUsecase) GetByBoardIDAndPonID(ctx context.Context, boardID, ponID in
 		})
 
 		// Save the ONU information list to Redis with a 10-minute expiration time
-		// Balanced: 600s (10min) - fresh enough while maintaining a good cache hit rate
-		err = u.redisRepository.SaveONUInfoList(ctx, redisKey, u.cfg.CacheCfg.ONUInfoTTL, onuInformationList)
+		// Balanced: 600s (10min) - fresh enough while maintaining a good cache hit rate.
+		// Detached context: the walk is done, so don't abort the cache write if the
+		// original caller went away (see the serial-list save for the full rationale).
+		saveCtx, cancelSave := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+		err = u.redisRepository.SaveONUInfoList(saveCtx, redisKey, u.cfg.CacheCfg.ONUInfoTTL, onuInformationList)
+		cancelSave()
 		if err != nil {
 			logger.WithRequestID(ctx).Error("redis_save_onu_info_failed", zap.Error(err), zap.String("redis_key", redisKey))
 		} else {
@@ -306,49 +335,12 @@ func (u *onuUsecase) GetByBoardIDPonIDAndOnuID(ctx context.Context, boardID, pon
 			return model.ONUCustomerInfo{}, err
 		}
 
-		// Check Redis cache for ONU detail
-		redisKey := GenerateONUDetailRedisKey(boardID, ponID, onuID)
-		cached, cacheErr := u.redisRepository.GetONUDetail(ctx, redisKey)
-		if cacheErr == nil && cached != nil {
-			logger.WithRequestID(ctx).Info("onu_detail_cache_hit", zap.String("redis_key", redisKey))
-			return *cached, nil
-		}
-
-		// Fallback: try to derive basic info from cached ONU info list (pre-warmed)
-		// Fallback: derive basic info from cached ONU info list (pre-warmed).
-		// Note: This returns partial data (no Description, IP, LastOnline, etc.)
-		// but avoids a heavy SNMP query. Full detail is fetched on cache miss below.
-		listKey := GenerateRedisKey(RedisKeyTypeONUInfo, boardID, ponID)
-		cachedList, listErr := u.redisRepository.GetONUInfoList(ctx, listKey)
-		if listErr == nil && cachedList != nil {
-			found := false
-			for _, onu := range cachedList {
-				if onu.ID == onuID {
-					detail := model.ONUCustomerInfo{
-						Board: boardID, PON: ponID, ID: onuID,
-						Name:         onu.Name,
-						OnuType:      onu.OnuType,
-						SerialNumber: onu.SerialNumber,
-						RXPower:      onu.RXPower,
-						Status:       onu.Status,
-					}
-					// Cache this derived detail with shorter TTL
-					_ = u.redisRepository.SaveONUDetail(ctx, redisKey, u.cfg.CacheCfg.ONUDetailTTL, detail)
-					logger.WithRequestID(ctx).Info("onu_detail_derived_from_cache", zap.Int("onu_id", onuID))
-					return detail, nil
-				}
-			}
-			if !found {
-				// ONU not in cached list — it doesn't exist on this board/pon.
-				// Skip expensive SNMP query and return empty immediately.
-				logger.WithRequestID(ctx).Debug("onu_not_found_in_cache_skip_snmp",
-					zap.Int("board", boardID),
-					zap.Int("pon", ponID),
-					zap.Int("onu_id", onuID),
-				)
-				return model.ONUCustomerInfo{}, nil
-			}
-		}
+		// ONU detail is intentionally CACHE-FREE: always perform a live SNMP read
+		// so the modal reflects the device in real time (right after a restart,
+		// re-provision, power change, etc.) instead of a stale or partial
+		// snapshot. The board/PON LIST stays cached for fast browsing — only this
+		// per-ONU detail bypasses the cache. Singleflight (above) still coalesces
+		// concurrent identical opens into one read.
 
 		var onuInformationList model.ONUCustomerInfo   // Create a variable to store ONU information
 		snmpDataMap := make(map[string]gosnmp.SnmpPDU) // Create a map to store SNMP Walk results
@@ -449,9 +441,7 @@ func (u *onuUsecase) GetByBoardIDPonIDAndOnuID(ctx context.Context, boardID, pon
 			onuInformationList = onuInfo // Append ONU information to the onuInformationList
 		}
 
-		// Save ONU detail to Redis cache
-		_ = u.redisRepository.SaveONUDetail(ctx, redisKey, u.cfg.CacheCfg.ONUDetailTTL, onuInformationList)
-
+		// No cache write: detail is always served live (see note above).
 		return onuInformationList, nil // Return the ONU information list
 	})
 
@@ -476,7 +466,7 @@ func (u *onuUsecase) GetEmptyOnuID(ctx context.Context, boardID, ponID int) ([]m
 		}
 
 		// Redis Key using helper function
-		redisKey := GenerateRedisKey(RedisKeyTypeEmptyOnuID, boardID, ponID)
+		redisKey := u.cacheKey(GenerateRedisKey(RedisKeyTypeEmptyOnuID, boardID, ponID))
 
 		// Try to get data from Redis using the GetOnuIDCtx method with context and Redis key as a parameter
 		cachedOnuData, err := u.redisRepository.GetOnuIDCtx(ctx, redisKey)
@@ -553,6 +543,23 @@ func (u *onuUsecase) GetEmptyOnuID(ctx context.Context, boardID, ponID int) ([]m
 	return result.([]model.OnuID), nil // Return cast result
 }
 
+// noCacheCtxKey marks a context that must bypass cached reads (forced fresh).
+type noCacheCtxKey struct{}
+
+// WithNoCache returns a context that makes cached-read usecase paths skip Redis
+// and read live from SNMP (and refresh the cache). Set by the HTTP handler when
+// the request carries ?nocache=true — used by write-olt-zte's pre-write ONU
+// existence/uniqueness checks so a delete/replace right after a provision sees
+// the OLT's real state instead of a stale serial-list cache.
+func WithNoCache(ctx context.Context) context.Context {
+	return context.WithValue(ctx, noCacheCtxKey{}, true)
+}
+
+func noCacheFromContext(ctx context.Context) bool {
+	v, _ := ctx.Value(noCacheCtxKey{}).(bool)
+	return v
+}
+
 func (u *onuUsecase) GetOnuIDAndSerialNumber(ctx context.Context, boardID, ponID int) ([]model.OnuSerialNumber, error) {
 	// Set key for simple flight
 	key := fmt.Sprintf("onu_id_and_serial_number:%d:%d", boardID, ponID)
@@ -566,12 +573,18 @@ func (u *onuUsecase) GetOnuIDAndSerialNumber(ctx context.Context, boardID, ponID
 			return nil, err
 		}
 
-		// Check Redis cache first
-		redisKey := fmt.Sprintf("board_%d_pon_%d_serial_list", boardID, ponID)
-		cached, cacheErr := u.redisRepository.GetONUSerialList(ctx, redisKey)
-		if cacheErr == nil && cached != nil {
-			logger.WithRequestID(ctx).Info("onu_serial_list_cache_hit", zap.String("redis_key", redisKey))
-			return cached, nil
+		// Check Redis cache first — unless the caller forced a fresh read
+		// (WithNoCache). A forced read still walks SNMP and re-saves the cache
+		// below, so it doubles as a cache refresh. Used by write-olt-zte's
+		// pre-write existence checks (?nocache=true), which must see the OLT's
+		// real state, not a possibly-stale snapshot.
+		redisKey := u.cacheKey(fmt.Sprintf("board_%d_pon_%d_serial_list", boardID, ponID))
+		if !noCacheFromContext(ctx) {
+			cached, cacheErr := u.redisRepository.GetONUSerialList(ctx, redisKey)
+			if cacheErr == nil && cached != nil {
+				logger.WithRequestID(ctx).Info("onu_serial_list_cache_hit", zap.String("redis_key", redisKey))
+				return cached, nil
+			}
 		}
 
 		// Perform SNMP Walk to get ONU ID
@@ -617,10 +630,17 @@ func (u *onuUsecase) GetOnuIDAndSerialNumber(ctx context.Context, boardID, ponID
 			return onuSerialNumberList[i].ID < onuSerialNumberList[j].ID
 		})
 
-		// Save to Redis cache
-		if err := u.redisRepository.SaveONUSerialList(ctx, redisKey, u.cfg.CacheCfg.ONUInfoTTL, onuSerialNumberList); err != nil {
+		// Save to Redis cache using a context DETACHED from the request. The SNMP
+		// walk already completed, so the cache write must not be aborted just
+		// because the original caller went away (a canceled/timed-out delete
+		// existence check, or a singleflight leader that gave up). Tying the save
+		// to the request context produced spurious "context canceled" errors and
+		// left the cache unpopulated.
+		saveCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+		if err := u.redisRepository.SaveONUSerialList(saveCtx, redisKey, u.cfg.CacheCfg.ONUInfoTTL, onuSerialNumberList); err != nil {
 			logger.WithRequestID(ctx).Error("redis_save_onu_serial_list_failed", zap.Error(err), zap.String("redis_key", redisKey))
 		}
+		cancel()
 
 		return onuSerialNumberList, nil
 	})
@@ -690,7 +710,7 @@ func (u *onuUsecase) UpdateEmptyOnuID(ctx context.Context, boardID, ponID int) e
 		})
 
 		// Set data to Redis using the SetOnuIDCtx method and helper function
-		redisKey := GenerateRedisKey(RedisKeyTypeEmptyOnuID, boardID, ponID)
+		redisKey := u.cacheKey(GenerateRedisKey(RedisKeyTypeEmptyOnuID, boardID, ponID))
 		err = u.redisRepository.SetOnuIDCtx(ctx, redisKey, u.cfg.CacheCfg.EmptyOnuIDTTL, emptyOnuIDList)
 		if err != nil {
 			logger.WithRequestID(ctx).Error("redis_update_empty_onu_ids_failed", zap.Error(err), zap.String("redis_key", redisKey))
@@ -863,21 +883,51 @@ func (u *onuUsecase) getOnuGponOpticalDistance(OnuGponOpticalDistanceOID, onuID 
 	return utils.ExtractGponOpticalDistance(result.Variables[0].Value), nil // Extract and return distance
 }
 
-func (u *onuUsecase) getUptimeDuration(lastOnline string) (string, error) {
-	currentTime := time.Now().UTC() // Get current time in UTC
+// oltLocation resolves the OLT's clock timezone (OLT_TIMEZONE, default
+// Asia/Jakarta) to a *time.Location. The IANA tz database is embedded
+// (time/tzdata in main), so this works in the distroless image; if the name is
+// invalid it falls back to a fixed WIB (+7) zone so uptime never regresses to
+// the old UTC bug.
+func (u *onuUsecase) oltLocation() *time.Location {
+	tz := u.cfg.OltCfg.Timezone
+	if tz == "" {
+		tz = "Asia/Jakarta"
+	}
+	if loc, err := time.LoadLocation(tz); err == nil {
+		return loc
+	}
+	logger.Warn("olt_timezone_load_failed_fallback_wib", zap.String("timezone", tz))
+	return time.FixedZone("WIB", int(TimezoneOffsetWIB/time.Second))
+}
 
-	lastOnlineTime, err := time.Parse(DateTimeFormat, lastOnline) // Parse last online string
+func (u *onuUsecase) getUptimeDuration(lastOnline string) (string, error) {
+	// The OLT reports last_online in its own local wall-clock (e.g. WIB). Parse
+	// it IN that timezone so it becomes the correct absolute instant, then diff
+	// against the real "now" — dynamic for any OLT_TIMEZONE, and never the
+	// ~7h-negative value the old parse-as-UTC produced.
+	loc := u.oltLocation()
+	lastOnlineTime, err := time.ParseInLocation(DateTimeFormat, lastOnline, loc)
 	if err != nil {
 		logger.Error("parse_last_online_failed", zap.Error(err), zap.String("last_online", lastOnline))
 		return "", err
 	}
 
-	duration := currentTime.Sub(lastOnlineTime)         // Calculate duration
+	duration := time.Since(lastOnlineTime) // both are absolute instants now
+	if duration < 0 {
+		duration = 0 // Guard against clock skew producing a tiny negative uptime
+	}
 	return utils.ConvertDurationToString(duration), nil // Convert to string and return
 }
 
 // Last Down Duration
 func (u *onuUsecase) getLastDownDuration(lastOffline, lastOnline string) (string, error) {
+	// An ONU that has never gone offline reports an empty last-offline (and/or
+	// last-online) timestamp. That is a normal state, not an error — return an
+	// empty duration without logging, so logs aren't spammed for healthy ONUs.
+	if strings.TrimSpace(lastOffline) == "" || strings.TrimSpace(lastOnline) == "" {
+		return "", nil
+	}
+
 	lastOfflineTime, err := time.Parse(DateTimeFormat, lastOffline) // Parse last offline time
 	if err != nil {
 		logger.Error("parse_last_offline_failed", zap.Error(err), zap.String("last_offline", lastOffline))
@@ -930,8 +980,10 @@ func (u *onuUsecase) DeleteCache(ctx context.Context, boardID, ponID int) error 
 			map[string]interface{}{"board_id": boardID, "pon_id": ponID})
 	}
 
-	// Delete cache using the same key pattern as in GetByBoardIDAndPonID
-	redisKey := GenerateRedisKey(RedisKeyTypeONUInfo, boardID, ponID)
+	// Delete the SAME namespaced key the read path writes (the read uses
+	// u.cacheKey(...)). Without cacheKey this deleted the wrong key for a named
+	// OLT (e.g. olt_c300_onu_info_...), so a multi-OLT cache never cleared.
+	redisKey := u.cacheKey(GenerateRedisKey(RedisKeyTypeONUInfo, boardID, ponID))
 
 	// Delete from Redis
 	err := u.redisRepository.Delete(ctx, redisKey)
@@ -944,7 +996,7 @@ func (u *onuUsecase) DeleteCache(ctx context.Context, boardID, ponID int) error 
 	}
 
 	// Also delete serial list cache
-	serialKey := fmt.Sprintf("board_%d_pon_%d_serial_list", boardID, ponID)
+	serialKey := u.cacheKey(fmt.Sprintf("board_%d_pon_%d_serial_list", boardID, ponID))
 	if err := u.redisRepository.Delete(ctx, serialKey); err != nil {
 		logger.WithRequestID(ctx).Debug("delete_serial_list_cache_failed", zap.Error(err), zap.String("key", serialKey))
 	}
@@ -962,11 +1014,17 @@ func (u *onuUsecase) DeleteCache(ctx context.Context, boardID, ponID int) error 
 // the next fetch goes directly to SNMP for fresh data. Called by trap handler
 // before status verification to avoid stale cache false negatives.
 func (u *onuUsecase) InvalidateONUCache(ctx context.Context, boardID, ponID, onuID int) error {
-	detailKey := GenerateONUDetailRedisKey(boardID, ponID, onuID)
+	detailKey := u.cacheKey(GenerateONUDetailRedisKey(boardID, ponID, onuID))
 	_ = u.redisRepository.Delete(ctx, detailKey)
 
-	boardPonKey := GenerateRedisKey(RedisKeyTypeONUInfo, boardID, ponID)
+	boardPonKey := u.cacheKey(GenerateRedisKey(RedisKeyTypeONUInfo, boardID, ponID))
 	_ = u.redisRepository.Delete(ctx, boardPonKey)
+
+	// Also clear the separate serial-list cache (onu_id_sn) — it has its own key
+	// and was previously left stale here, so a freshly provisioned/removed ONU
+	// kept failing later existence checks. Keeps it coherent with the ONU list.
+	serialKey := u.cacheKey(fmt.Sprintf("board_%d_pon_%d_serial_list", boardID, ponID))
+	_ = u.redisRepository.Delete(ctx, serialKey)
 
 	logger.Info("onu_cache_invalidated",
 		zap.Int("board", boardID),

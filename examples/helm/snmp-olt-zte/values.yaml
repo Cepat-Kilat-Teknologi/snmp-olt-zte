@@ -3,11 +3,11 @@ replicaCount: 1
 
 image:
   # -- Docker image repository
-  repository: cepatkilatteknologi/snmp-olt-zte-c320
+  repository: cepatkilatteknologi/snmp-olt-zte
   # -- Image pull policy
   pullPolicy: IfNotPresent
   # -- Image tag (defaults to appVersion from Chart.yaml)
-  tag: "2.1.0"
+  tag: ""
 
 # -- Image pull secrets for private registries
 imagePullSecrets: []
@@ -61,6 +61,30 @@ snmp:
   community: ""
   # -- Maximum concurrent SNMP operations
   maxConcurrent: 5
+
+# -- OLT slot/PON topology (multi-model: C320 + C300)
+# The OID encoding is identical for C320 and C300 — only the populated GPON
+# slots/cards differ. boards supports per-slot PON counts as "slot:pons"
+# (GTGO=8, GTGH=16):
+#   ZTE C320 -> "1,2" (default)   |   ZTE C300 (sample) -> "3:16,5:8"
+olt:
+  # -- Physical GPON slots, optionally "slot:pons" (maps to OLT_BOARDS)
+  boards: "1,2"
+  # -- Default PON count for bare slots: 8 (GTGO) or 16 (GTGH) (maps to OLT_PONS_PER_BOARD)
+  ponsPerBoard: 16
+  # -- Multi-OLT in one instance: raw JSON array (maps to OLTS). When set it
+  #    overrides snmp.host + olt.boards. Empty = single-OLT mode.
+  #    e.g. '[{"id":"c320","host":"10.0.0.1","community":"public","boards":"1,2"},
+  #          {"id":"c300a","host":"10.0.0.2","port":1161,"community":"public","boards":"3:16,5:8"}]'
+  olts: ""
+  # -- Multi-OLT via file (preferred for many OLTs): JSON array content rendered
+  #    into a Secret (it holds community strings) and mounted at /etc/olt/olts.json,
+  #    with OLTS_FILE pointed at it. Takes effect only when olt.olts is empty.
+  #    Same shape as olt.olts. Loading is fail-fast: a set-but-unreadable/empty
+  #    file aborts startup rather than silently using SNMP_*.
+  oltsFile: ""
+  # -- Default OLT id served on the bare /board paths (maps to DEFAULT_OLT)
+  defaultOlt: ""
 
 # -- Redis connection settings
 # When redis.enabled=true, host is auto-configured to the subchart service.
@@ -131,6 +155,12 @@ cors:
 auth:
   # -- API key for X-API-Key header authentication (stored in Secret)
   apiKey: ""
+  # -- Per-tenant API_USERS registry (JSON array of {user_id,api_key,role});
+  #    overrides apiKey when set. Holds API keys, so it is stored in the Secret.
+  #    Pair with per-OLT "user_id" in olt.olts/olt.oltsFile so each user only
+  #    sees their own OLTs (cross-tenant -> 404; role "admin" sees all).
+  #    e.g. '[{"user_id":1,"api_key":"keyA"},{"user_id":0,"api_key":"adm","role":"admin"}]'
+  apiUsers: ""
 
 # -- SNMP Trap listener settings
 trap:
@@ -140,12 +170,39 @@ trap:
   port: 1620
   # -- Trap community string (defaults to snmp.community)
   community: ""
-  # -- Webhook URL for trap notifications
+  # -- Webhook URL for trap notifications (stored in Secret; ignored if existingSecret set)
   webhookURL: ""
+  # -- Reference an existing Secret instead of creating one from webhookURL
+  existingSecret: ""
+  # -- Key inside existingSecret that holds the webhook URL
+  existingSecretKey: "TRAP_WEBHOOK_URL"
+  # -- Webhook platform: discord|slack|telegram|generic. Empty = auto-detect from URL.
+  webhookType: ""
+  # -- Telegram chat ID (required when webhookType=telegram)
+  webhookChatID: ""
   # -- Number of webhook delivery retries
   webhookRetries: 3
   # -- Webhook request timeout in seconds
   webhookTimeout: 10
+  # -- Per-severity batching and repeat behavior
+  # interval: batch window seconds; repeat: re-notify interval in minutes (0=off); action: instruction text
+  severity:
+    critical:
+      interval: 60
+      repeat: 3
+      action: ""
+    high:
+      interval: 60
+      repeat: 3
+      action: ""
+    medium:
+      interval: 60
+      repeat: 0
+      action: ""
+    low:
+      interval: 60
+      repeat: 0
+      action: ""
 
 # -- RX Power monitor settings
 powerMonitor:

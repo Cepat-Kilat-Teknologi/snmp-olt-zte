@@ -7,8 +7,8 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/Cepat-Kilat-Teknologi/go-snmp-olt-zte-c320/internal/middleware"
-	"github.com/Cepat-Kilat-Teknologi/go-snmp-olt-zte-c320/internal/model"
+	"github.com/Cepat-Kilat-Teknologi/snmp-olt-zte/internal/middleware"
+	"github.com/Cepat-Kilat-Teknologi/snmp-olt-zte/internal/model"
 	"github.com/go-chi/chi/v5"
 )
 
@@ -21,6 +21,7 @@ type mockOnuUsecase struct {
 	UpdateEmptyOnuIDFunc                   func(ctx context.Context, boardID, ponID int) error
 	GetByBoardIDAndPonIDWithPaginationFunc func(ctx context.Context, boardID, ponID, page, pageSize int) ([]model.ONUInfoPerBoard, int)
 	DeleteCacheFunc                        func(ctx context.Context, boardID, ponID int) error
+	GetUplinkTopologyFunc                  func(ctx context.Context) (*model.UplinkTopology, error)
 }
 
 func (m *mockOnuUsecase) GetByBoardIDAndPonID(ctx context.Context, boardID, ponID int) ([]model.ONUInfoPerBoard, error) {
@@ -74,6 +75,13 @@ func (m *mockOnuUsecase) DeleteCache(ctx context.Context, boardID, ponID int) er
 
 func (m *mockOnuUsecase) InvalidateONUCache(_ context.Context, _, _, _ int) error { return nil }
 func (m *mockOnuUsecase) PreWarmCache(ctx context.Context)                        {}
+
+func (m *mockOnuUsecase) GetUplinkTopology(ctx context.Context) (*model.UplinkTopology, error) {
+	if m.GetUplinkTopologyFunc != nil {
+		return m.GetUplinkTopologyFunc(ctx)
+	}
+	return &model.UplinkTopology{}, nil
+}
 
 // TestGetRequestID removed: the local getRequestID helper was replaced by
 // logger.WithRequestID(ctx) which uses the context-based reqctx package.
@@ -165,6 +173,43 @@ func TestOnuHandler_InterfaceCompliance(t *testing.T) {
 	// Verify that OnuHandler implements OnuHandlerInterface
 	var _ OnuHandlerInterface = NewOnuHandler(&mockOnuUsecase{})
 	// The fact that this compiles confirms interface compliance
+}
+
+func TestOnuHandler_GetUplinkTopology_Success(t *testing.T) {
+	usecase := &mockOnuUsecase{
+		GetUplinkTopologyFunc: func(ctx context.Context) (*model.UplinkTopology, error) {
+			return &model.UplinkTopology{
+				Cards: []model.UplinkCard{{EntIndex: 30, Slot: 2, Type: "uplink card", Role: "uplink"}},
+				Ports: []model.UplinkPort{{Name: "xgei_1/19/1", Shelf: 1, Slot: 19, Port: 1, Kind: "10G", AdminStatus: "up", OperStatus: "up", SpeedMbps: 10000}},
+			}, nil
+		},
+	}
+	handler := NewOnuHandler(usecase)
+
+	req := httptest.NewRequest("GET", "/api/v1/uplinks", nil)
+	rr := httptest.NewRecorder()
+	handler.GetUplinkTopology(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Errorf("Expected status OK, got %d", rr.Code)
+	}
+}
+
+func TestOnuHandler_GetUplinkTopology_Error(t *testing.T) {
+	usecase := &mockOnuUsecase{
+		GetUplinkTopologyFunc: func(ctx context.Context) (*model.UplinkTopology, error) {
+			return nil, errors.New("snmp walk failed")
+		},
+	}
+	handler := NewOnuHandler(usecase)
+
+	req := httptest.NewRequest("GET", "/api/v1/uplinks", nil)
+	rr := httptest.NewRecorder()
+	handler.GetUplinkTopology(rr, req)
+
+	if rr.Code == http.StatusOK {
+		t.Error("Expected error status, got OK")
+	}
 }
 
 func TestOnuHandler_ContextValues(t *testing.T) {
@@ -466,6 +511,23 @@ func TestOnuHandler_DeleteCache_Success(t *testing.T) {
 
 	rr := httptest.NewRecorder()
 	handler.DeleteCache(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Errorf("Expected status OK, got %d", rr.Code)
+	}
+}
+
+func TestOnuHandler_InvalidateOnuCache_Success(t *testing.T) {
+	handler := NewOnuHandler(&mockOnuUsecase{})
+
+	req := httptest.NewRequest("DELETE", "/api/v1/board/3/pon/1/onu/1/cache/clear", nil)
+	ctx := context.WithValue(req.Context(), middleware.BoardIDKey, 3)
+	ctx = context.WithValue(ctx, middleware.PonIDKey, 1)
+	ctx = context.WithValue(ctx, middleware.OnuIDKey, 1)
+	req = req.WithContext(ctx)
+
+	rr := httptest.NewRecorder()
+	handler.InvalidateOnuCache(rr, req)
 
 	if rr.Code != http.StatusOK {
 		t.Errorf("Expected status OK, got %d", rr.Code)

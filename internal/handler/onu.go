@@ -3,12 +3,12 @@ package handler
 import (
 	"net/http"
 
-	apperrors "github.com/Cepat-Kilat-Teknologi/go-snmp-olt-zte-c320/internal/errors"
-	"github.com/Cepat-Kilat-Teknologi/go-snmp-olt-zte-c320/internal/middleware"
-	"github.com/Cepat-Kilat-Teknologi/go-snmp-olt-zte-c320/internal/usecase"
-	"github.com/Cepat-Kilat-Teknologi/go-snmp-olt-zte-c320/internal/utils"
-	"github.com/Cepat-Kilat-Teknologi/go-snmp-olt-zte-c320/pkg/logger"
-	"github.com/Cepat-Kilat-Teknologi/go-snmp-olt-zte-c320/pkg/pagination"
+	apperrors "github.com/Cepat-Kilat-Teknologi/snmp-olt-zte/internal/errors"
+	"github.com/Cepat-Kilat-Teknologi/snmp-olt-zte/internal/middleware"
+	"github.com/Cepat-Kilat-Teknologi/snmp-olt-zte/internal/usecase"
+	"github.com/Cepat-Kilat-Teknologi/snmp-olt-zte/internal/utils"
+	"github.com/Cepat-Kilat-Teknologi/snmp-olt-zte/pkg/logger"
+	"github.com/Cepat-Kilat-Teknologi/snmp-olt-zte/pkg/pagination"
 	"go.uber.org/zap"
 )
 
@@ -21,6 +21,8 @@ type OnuHandlerInterface interface {
 	UpdateEmptyOnuID(w http.ResponseWriter, r *http.Request)                 // Handler to update empty ONU IDs
 	GetByBoardIDAndPonIDWithPaginate(w http.ResponseWriter, r *http.Request) // Handler to get paginated ONU info
 	DeleteCache(w http.ResponseWriter, r *http.Request)                      // Handler to delete cache for board/pon
+	InvalidateOnuCache(w http.ResponseWriter, r *http.Request)               // Handler to invalidate list + detail cache for one ONU
+	GetUplinkTopology(w http.ResponseWriter, r *http.Request)                // Handler to auto-detect cards + uplink ports via SNMP
 }
 
 // OnuHandler is a struct that represents the auth handler
@@ -214,8 +216,16 @@ func (o *OnuHandler) GetOnuIDAndSerialNumber(w http.ResponseWriter, r *http.Requ
 		zap.Int("pon_id", ponIDInt),
 	)
 
+	// ?nocache=true forces a fresh SNMP read (bypassing the serial-list cache)
+	// and refreshes it — used by write-olt-zte's pre-write existence checks so a
+	// delete/replace right after a provision isn't rejected by a stale cache.
+	ctx := r.Context()
+	if r.URL.Query().Get("nocache") == "true" {
+		ctx = usecase.WithNoCache(ctx)
+	}
+
 	// Call usecase to get Serial Number from SNMP
-	onuSerialNumber, err := o.ponUsecase.GetOnuIDAndSerialNumber(r.Context(), boardIDInt, ponIDInt)
+	onuSerialNumber, err := o.ponUsecase.GetOnuIDAndSerialNumber(ctx, boardIDInt, ponIDInt)
 	if err != nil {
 		log.Error("failed_to_get_onu_serial_numbers_from_snmp",
 			zap.Error(err),
@@ -389,6 +399,71 @@ func (o *OnuHandler) DeleteCache(w http.ResponseWriter, r *http.Request) {
 			"message":  "Cache deleted successfully",
 			"board_id": boardIDInt,
 			"pon_id":   ponIDInt,
+		},
+	})
+}
+
+// GetUplinkTopology auto-detects the OLT's cards and uplink ethernet ports via
+// SNMP (read-only). It is not board/pon-scoped — it walks standard MIBs.
+// example: GET /api/v1/uplinks  or  GET /api/v1/olt/{id}/uplinks
+func (o *OnuHandler) GetUplinkTopology(w http.ResponseWriter, r *http.Request) {
+	log := logger.WithRequestID(r.Context())
+	log.Info("getting_uplink_topology")
+
+	topo, err := o.ponUsecase.GetUplinkTopology(r.Context())
+	if err != nil {
+		log.Error("failed_to_get_uplink_topology", zap.Error(err))
+		utils.HandleError(w, r, err)
+		return
+	}
+
+	log.Info("successfully_retrieved_uplink_topology",
+		zap.Int("card_count", len(topo.Cards)),
+		zap.Int("uplink_port_count", len(topo.Ports)),
+	)
+
+	utils.SendJSONResponse(w, http.StatusOK, utils.WebResponse{
+		Code:   http.StatusOK,
+		Status: "success",
+		Data:   topo,
+	})
+}
+
+// InvalidateOnuCache clears the cached board/PON list AND the per-ONU detail so
+// the next read re-queries SNMP. Used after a write-olt-zte delete/replace/restart
+// (which snmp-olt-zte's cache can't see) so the ONU Browser shows fresh state.
+// example: DELETE /api/v1/olt/{id}/board/{board}/pon/{pon}/onu/{onu}/cache/clear
+func (o *OnuHandler) InvalidateOnuCache(w http.ResponseWriter, r *http.Request) {
+	boardIDInt, _ := middleware.GetBoardID(r.Context())
+	ponIDInt, _ := middleware.GetPonID(r.Context())
+	onuIDInt, _ := middleware.GetOnuID(r.Context())
+
+	log := logger.WithRequestID(r.Context())
+	log.Info("invalidating_onu_cache",
+		zap.Int("board_id", boardIDInt),
+		zap.Int("pon_id", ponIDInt),
+		zap.Int("onu_id", onuIDInt),
+	)
+
+	if err := o.ponUsecase.InvalidateONUCache(r.Context(), boardIDInt, ponIDInt, onuIDInt); err != nil {
+		log.Error("failed_to_invalidate_onu_cache",
+			zap.Error(err),
+			zap.Int("board_id", boardIDInt),
+			zap.Int("pon_id", ponIDInt),
+			zap.Int("onu_id", onuIDInt),
+		)
+		utils.HandleError(w, r, err)
+		return
+	}
+
+	utils.SendJSONResponse(w, http.StatusOK, utils.WebResponse{
+		Code:   http.StatusOK,
+		Status: "success",
+		Data: map[string]interface{}{
+			"message":  "ONU cache invalidated",
+			"board_id": boardIDInt,
+			"pon_id":   ponIDInt,
+			"onu_id":   onuIDInt,
 		},
 	})
 }

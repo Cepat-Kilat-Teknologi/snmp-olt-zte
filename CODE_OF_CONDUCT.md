@@ -59,7 +59,7 @@ representative at an online or offline event.
 
 Instances of abusive, harassing, or otherwise unacceptable behavior may be
 reported to the community leaders responsible for enforcement at
-[GitHub Issues](https://github.com/Cepat-Kilat-Teknologi/go-snmp-olt-zte-c320/issues)
+[GitHub Issues](https://github.com/Cepat-Kilat-Teknologi/snmp-olt-zte/issues)
 or by contacting the repository maintainers directly.
 
 All complaints will be reviewed and investigated promptly and fairly.

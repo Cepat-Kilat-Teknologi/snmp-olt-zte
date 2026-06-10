@@ -1,4 +1,4 @@
-# snmp-olt-zte-c320 Helm Chart
+# snmp-olt-zte Helm Chart
 
 Helm chart for deploying the SNMP OLT ZTE C320 monitoring application on Kubernetes.
 
@@ -12,10 +12,10 @@ Helm chart for deploying the SNMP OLT ZTE C320 monitoring application on Kuberne
 ### Option 1: Install from Helm Repository (Recommended)
 
 ```bash
-helm repo add snmp-olt https://cepat-kilat-teknologi.github.io/go-snmp-olt-zte-c320/
+helm repo add snmp-olt https://cepat-kilat-teknologi.github.io/snmp-olt-zte/
 helm repo update
 
-helm install olt-monitor snmp-olt/snmp-olt-zte-c320 \
+helm install olt-monitor snmp-olt/snmp-olt-zte \
   --set snmp.host=192.168.1.1 \
   --set snmp.community=your-community
 ```
@@ -28,7 +28,7 @@ helm repo add bitnami https://charts.bitnami.com/bitnami
 helm repo update
 
 # Install chart dependencies
-cd examples/helm/snmp-olt-zte-c320
+cd examples/helm/snmp-olt-zte
 helm dependency build
 
 # Install with required values
@@ -50,7 +50,7 @@ helm install olt-monitor . \
 
 ```bash
 # Production install with all options
-helm install my-olt ./examples/helm/snmp-olt-zte-c320 \
+helm install my-olt ./examples/helm/snmp-olt-zte \
   --set snmp.host=10.0.0.100 \
   --set snmp.community=myCommunity \
   --set auth.apiKey=my-secret-key \
@@ -61,6 +61,33 @@ helm install my-olt ./examples/helm/snmp-olt-zte-c320 \
   --set ingress.enabled=true \
   --set ingress.hosts[0].host=olt.example.com
 ```
+
+### Multi-OLT & per-tenant access
+
+Serve many OLTs from one release and scope each to a tenant. `olt.olts` is the
+inline JSON registry (or `olt.oltsFile` to render it into a Secret mounted at
+`/etc/olt/olts.json`); `auth.apiUsers` maps API keys to users. A caller sees
+only the OLTs whose `user_id` matches theirs (cross-tenant → 404); role
+`admin` sees all.
+
+```yaml
+olt:
+  # Per-OLT topology + owner. boards supports per-slot PON counts ("3:16,5:8").
+  olts: |
+    [{"id":"c320","user_id":1,"host":"10.0.0.1","community":"public","boards":"1,2"},
+     {"id":"c300a","user_id":2,"host":"10.0.0.2","port":1161,"community":"public","boards":"3:16,5:8"}]
+  defaultOlt: "c320"   # also served on the bare /api/v1/board/... paths
+  # oltsFile: ""       # alternative: same JSON via a mounted Secret file
+
+auth:
+  # Per-tenant API keys (overrides auth.apiKey). Stored in the Secret.
+  apiUsers: |
+    [{"user_id":1,"api_key":"keyA"},
+     {"user_id":2,"api_key":"keyB"},
+     {"user_id":0,"api_key":"adminKey","role":"admin"}]
+```
+
+Single-OLT deployments keep using `snmp.host` / `olt.boards` and `auth.apiKey`.
 
 ### Using a values file
 
@@ -114,7 +141,7 @@ resources:
 Then install:
 
 ```bash
-helm install my-olt ./examples/helm/snmp-olt-zte-c320 -f my-values.yaml
+helm install my-olt ./examples/helm/snmp-olt-zte -f my-values.yaml
 ```
 
 ### External Redis
@@ -132,7 +159,7 @@ redis:
 ## Upgrading
 
 ```bash
-helm upgrade my-olt ./examples/helm/snmp-olt-zte-c320 -f my-values.yaml
+helm upgrade my-olt ./examples/helm/snmp-olt-zte -f my-values.yaml
 ```
 
 ## Uninstalling

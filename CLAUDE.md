@@ -1,4 +1,4 @@
-# CLAUDE.md — go-snmp-olt-zte-c320
+# CLAUDE.md — snmp-olt-zte
 
 > **READ FIRST (AI agents):** `~/Projects/knowledge-base/BOOTSTRAP.md` is
 > the canonical cold-start doc for this platform. This repo is 1 of 5
@@ -16,7 +16,7 @@ When releasing a new version or making substantive changes:
 2. Git tag + push: `git tag -a vX.Y.Z && git push origin vX.Y.Z`
 3. Verify release workflow success (multi-arch Docker)
 4. **Wiki entity page**:
-   `~/Projects/knowledge-base/wiki/go-snmp-olt-zte-c320.md`
+   `~/Projects/knowledge-base/wiki/snmp-olt-zte.md`
 5. **Platform status**: `~/Projects/knowledge-base/STATUS.md`
 6. **Platform changelog**: `~/Projects/knowledge-base/PLATFORM_CHANGELOG.md`
 7. **Dependency manifest**: `~/Projects/knowledge-base/platform-deps.yaml`
@@ -24,17 +24,19 @@ When releasing a new version or making substantive changes:
 
 ## Project Overview
 
-Read-oriented HTTP adapter for monitoring ZTE C320 OLT devices via SNMP.
+Read-oriented HTTP adapter for monitoring ZTE C320 and C300 OLT devices via SNMP
+(both V2.1.0 share an identical MIB tree / ifIndex encoding; the populated GPON
+slots are configured via `OLT_BOARDS`).
 Exposes ONU status, optical power, uptime, and serial numbers through a
 REST API backed by a Redis cache and an SNMP connection pool. Part of the
 ISP SaaS platform — [[isp-agent]] (the Temporal worker orchestrator) consumes
 this service for ONU telemetry + status checks (reserved for v2+
 telemetry polling workflows; not actively used by v0.1.0 billing workflows).
 
-- **Module path:** `github.com/Cepat-Kilat-Teknologi/go-snmp-olt-zte-c320`
+- **Module path:** `github.com/Cepat-Kilat-Teknologi/snmp-olt-zte`
 - **Go version:** 1.26
 - **Entrypoint:** `cmd/api/main.go` → `app.New().Start(ctx)`
-- **HTTP framework:** chi v5 — shared with genieacs-relay v2.0.0. Fiber v2 is used by freeradius-api and write-olt-zte-c320-svc. See §Framework notes below.
+- **HTTP framework:** chi v5 — shared with genieacs-relay v2.0.0. Fiber v2 is used by freeradius-api and write-olt-zte. See the Framework notes section below.
 - **Reference implementations:** freeradius-api v1.2.0 (`pkg/httputil`, `pkg/logger`, `pkg/middleware/audit.go`, `pkg/metrics`) — adapted to chi conventions. genieacs-relay v2.0.0 uses the same chi + leaf-package-reqctx pattern from this repo as its template.
 
 ## Architecture
@@ -69,8 +71,8 @@ pkg/
 
 Framework mix across the adapter fleet is deliberate:
 
-- **chi v5**: go-snmp-olt-zte-c320, genieacs-relay v2.0.0
-- **Fiber v2**: freeradius-api v1.2.0, write-olt-zte-c320-svc v3.0.0
+- **chi v5**: snmp-olt-zte, genieacs-relay v2.0.0
+- **Fiber v2**: freeradius-api v1.2.0, write-olt-zte v3.0.0
 
 Rationale:
 - Migration chi ↔ Fiber is a significant refactor with little upside
@@ -78,7 +80,7 @@ Rationale:
 - Fiber is slightly faster for pure HTTP but SNMP/SSH/GenieACS dominate in all adapter workloads
 - The adapter standard (`isp-adapter-standard` wiki) specifies **JSON response format + HTTP contract + logging schema**, not the framework
 
-When porting patterns from freeradius-api or write-olt-svc, adapt Fiber-specific APIs:
+When porting patterns from freeradius-api or write-olt-zte, adapt Fiber-specific APIs:
 - `fiber.Ctx` → `http.ResponseWriter + *http.Request`
 - `c.Next()` → `next.ServeHTTP(ww, r)` where `ww` is a `chimw.WrapResponseWriter`
 - `c.Locals("request_id")` → `reqctx.RequestIDFromContext(r.Context())`
@@ -121,7 +123,7 @@ Infrastructure requirements (local dev): Redis + a reachable SNMP target (real O
 
 - **Success**: `{"code":200, "status":"success", "data":..., "meta":{...}}`
 - **Error**: `{"code":400, "status":"Bad Request", "error_code":"VALIDATION_ERROR", "data":..., "request_id":"..."}`
-- Error codes: `VALIDATION_ERROR`, `NOT_FOUND`, `SNMP_ERROR`, `REDIS_ERROR`, `CONFIG_ERROR`, `INTERNAL_ERROR`
+- Error codes: `VALIDATION_ERROR`, `NOT_FOUND`, `UNAUTHORIZED`, `SNMP_ERROR`, `REDIS_ERROR`, `CONFIG_ERROR`, `INTERNAL_ERROR`
 
 `utils.HandleError(w, r, err)` is the single entry point. It inspects the error (via `errors.As` on `*apperrors.AppError`) and writes the appropriate status code, error code, and data payload, with `request_id` auto-extracted from the request context.
 
@@ -175,7 +177,7 @@ The `/metrics` endpoint is unauthenticated — Prometheus scrapers typically run
 - **Mocks**: interface mocks in `usecase/onu_test.go` (`mockSnmpRepository`, `mockRedisRepository`) — functional fields (e.g. `GetFunc func(...)`)
 - **Log capture**: `pkg/logger.SetForTest(newTestLogger(buf))` + restore closure
 - **Health checker**: tests can pass `nil` to `loadRoutes` to skip dependency gating (`/readyz` then always returns 200)
-- **Coverage**: aim for >95% (currently 98.6% per wiki)
+- **Coverage**: aim for >95% (currently ~99% per wiki)
 - **Integration**: `examples/` contains Docker Compose + Helm for end-to-end smoke tests
 
 ## Environment Configuration
@@ -184,8 +186,12 @@ Loaded from `.env` via godotenv. Key variables:
 
 - `APP_ENV` — `development` / `production` / `staging` (controls zap encoder)
 - `SERVER_PORT` — HTTP listen port (default 8081)
-- `API_KEY` — optional; when set, all `/api/v1/*` endpoints require `X-API-Key` header
+- `API_KEY` — optional single key; when set, all `/api/v1/*` endpoints require `X-API-Key` header
+- `API_USERS` — optional **per-tenant** access control (JSON array of `{user_id, api_key, role}`), keyed by `api_key`. Overrides the single `API_KEY`. Each `X-API-Key` resolves to a `user_id`+role; an OLT (which carries its own `user_id` in `OLTS`) is visible only to its owner — a cross-tenant request returns **404** (not 403, to avoid enumeration). `role:"admin"` sees all OLTs; an OLT with `user_id` 0/unset is admin-only. Registry in `config/users.go` (`buildUserRegistry`); enforced by `middleware.Authenticator` (key→`reqctx.Principal`) + `middleware.RequireOLTOwner` (per-OLT 404). JSON-only for now (no file variant yet).
 - `SNMP_HOST`, `SNMP_PORT`, `SNMP_COMMUNITY` — OLT connection
+- `OLT_BOARDS` — physical GPON slots, optionally `slot:pons` (default `1,2`; a C300 e.g. `3:16,5:8` for a GTGH in slot 3 + GTGO in slot 5). Drives OID generation, validation, pre-warm, power-monitor, and trap decoding. `OLT_PONS_PER_BOARD` (default 16) is the default PON count for bare slots. C320 and C300 V2.1.0 are OID-identical; only the slots/cards differ.
+- `OLTS` — **multi-OLT in one instance**: JSON array of `{id,host,port,community,boards}` (boards supports `slot:pons`). When set, overrides `SNMP_*`/`OLT_BOARDS`; each OLT is served at `/api/v1/olt/{id}/...` with a per-OLT SNMP pool + namespaced Redis cache (`olt_<id>_...`). `DEFAULT_OLT` picks which OLT also answers the bare `/board/...` paths. Registry built in `config/olts.go` (`OLTRuntimeConfig`, `buildOLTRegistry`); wired per-OLT in `app/app.go` via `loadRoutesMulti`.
+- `OLTS_FILE` — path to a file holding the same JSON array as `OLTS`; preferred for many OLTs and for mounting community strings as a k8s Secret. Inline `OLTS` wins over `OLTS_FILE`. Resolution (`resolveOLTSJSON` in `config/olts.go`) is **fail-fast**: a set-but-unreadable/empty file aborts startup rather than silently falling back to `SNMP_*`. The Helm chart (`olt.oltsFile`) renders it into a Secret mounted at `/etc/olt/olts.json`.
 - `REDIS_HOST`, `REDIS_PORT`, `REDIS_PASSWORD`, `REDIS_DB` — cache
 - `TRAP_*` — SNMP trap listener configuration (optional)
 - Power monitor knobs: `POWER_MONITOR_INTERVAL`, `POWER_MONITOR_CRON`, `RX_POWER_HIGH_THRESHOLD`, `RX_POWER_LOW_THRESHOLD`

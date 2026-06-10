@@ -8,8 +8,8 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	apperrors "github.com/Cepat-Kilat-Teknologi/go-snmp-olt-zte-c320/internal/errors"
-	"github.com/Cepat-Kilat-Teknologi/go-snmp-olt-zte-c320/internal/model"
+	apperrors "github.com/Cepat-Kilat-Teknologi/snmp-olt-zte/internal/errors"
+	"github.com/Cepat-Kilat-Teknologi/snmp-olt-zte/internal/model"
 )
 
 // newTestRequest creates a plain GET request for use as the `r` argument
@@ -137,6 +137,42 @@ func TestErrorNotFound(t *testing.T) {
 
 	if response.Code != http.StatusNotFound || response.Status != "Not Found" || response.Data != err.Error() {
 		t.Errorf("Respons JSON tidak sesuai: %+v", response)
+	}
+}
+
+func TestErrorUnauthorized(t *testing.T) {
+	rr := httptest.NewRecorder()
+	err := apperrors.NewUnauthorizedError("invalid or missing API key")
+	ErrorUnauthorized(rr, newTestRequest(), err)
+
+	if status := rr.Code; status != http.StatusUnauthorized {
+		t.Errorf("Status code tidak sesuai: got %v want %v", status, http.StatusUnauthorized)
+	}
+	var response ErrorResponse
+	if err := json.NewDecoder(rr.Body).Decode(&response); err != nil {
+		t.Errorf("Gagal mendecode respons JSON: %v", err)
+	}
+	if response.Code != http.StatusUnauthorized || response.Status != "Unauthorized" {
+		t.Errorf("Respons JSON tidak sesuai: %+v", response)
+	}
+	if response.ErrorCode != string(apperrors.ErrorTypeUnauthorized) {
+		t.Errorf("ErrorCode tidak sesuai: got %v want %v", response.ErrorCode, apperrors.ErrorTypeUnauthorized)
+	}
+}
+
+func TestHandleError_Unauthorized(t *testing.T) {
+	rr := httptest.NewRecorder()
+	HandleError(rr, newTestRequest(), apperrors.NewUnauthorizedError("nope"))
+
+	if status := rr.Code; status != http.StatusUnauthorized {
+		t.Errorf("Status code tidak sesuai: got %v want %v", status, http.StatusUnauthorized)
+	}
+	var response ErrorResponse
+	if err := json.NewDecoder(rr.Body).Decode(&response); err != nil {
+		t.Errorf("Gagal mendecode respons JSON: %v", err)
+	}
+	if response.ErrorCode != string(apperrors.ErrorTypeUnauthorized) {
+		t.Errorf("ErrorCode tidak sesuai: got %v want %v", response.ErrorCode, apperrors.ErrorTypeUnauthorized)
 	}
 }
 

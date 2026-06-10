@@ -2,20 +2,22 @@ package app
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"os"
 	"time"
 
-	"github.com/Cepat-Kilat-Teknologi/go-snmp-olt-zte-c320/config"
-	"github.com/Cepat-Kilat-Teknologi/go-snmp-olt-zte-c320/internal/handler"
-	"github.com/Cepat-Kilat-Teknologi/go-snmp-olt-zte-c320/internal/health"
-	"github.com/Cepat-Kilat-Teknologi/go-snmp-olt-zte-c320/internal/repository"
-	"github.com/Cepat-Kilat-Teknologi/go-snmp-olt-zte-c320/internal/trap"
-	"github.com/Cepat-Kilat-Teknologi/go-snmp-olt-zte-c320/internal/usecase"
-	"github.com/Cepat-Kilat-Teknologi/go-snmp-olt-zte-c320/pkg/graceful"
-	"github.com/Cepat-Kilat-Teknologi/go-snmp-olt-zte-c320/pkg/logger"
-	"github.com/Cepat-Kilat-Teknologi/go-snmp-olt-zte-c320/pkg/redis"
-	"github.com/Cepat-Kilat-Teknologi/go-snmp-olt-zte-c320/pkg/snmp"
+	"github.com/Cepat-Kilat-Teknologi/snmp-olt-zte/config"
+	"github.com/Cepat-Kilat-Teknologi/snmp-olt-zte/internal/handler"
+	"github.com/Cepat-Kilat-Teknologi/snmp-olt-zte/internal/health"
+	"github.com/Cepat-Kilat-Teknologi/snmp-olt-zte/internal/repository"
+	"github.com/Cepat-Kilat-Teknologi/snmp-olt-zte/internal/reqctx"
+	"github.com/Cepat-Kilat-Teknologi/snmp-olt-zte/internal/trap"
+	"github.com/Cepat-Kilat-Teknologi/snmp-olt-zte/internal/usecase"
+	"github.com/Cepat-Kilat-Teknologi/snmp-olt-zte/pkg/graceful"
+	"github.com/Cepat-Kilat-Teknologi/snmp-olt-zte/pkg/logger"
+	"github.com/Cepat-Kilat-Teknologi/snmp-olt-zte/pkg/redis"
+	"github.com/Cepat-Kilat-Teknologi/snmp-olt-zte/pkg/snmp"
 	rds "github.com/redis/go-redis/v9"
 	"go.uber.org/zap"
 )
@@ -61,30 +63,64 @@ func (a *App) Start(ctx context.Context) error {
 		}
 	}(redisClient)
 
-	// Initialize SNMP connection.
-	snmpConn, err := snmp.SetupSnmpConnection(cfg)
-	if err != nil {
-		logger.Error("failed to setup snmp connection", zap.Error(err))
-		return err
-	}
-	logger.Info("snmp server successfully connected")
-
-	// Initialize repository (creates connection pool from seed connection).
-	snmpRepo := repository.NewPonRepositoryWithConcurrency(snmpConn, cfg.SnmpCfg.MaxConcurrent)
-
-	// Close all pool connections on shutdown.
-	defer snmpRepo.Close()
 	redisRepo := repository.NewOnuRedisRepo(redisClient)
 
-	// Initialize usecase.
-	onuUsecase := usecase.NewOnuUsecase(snmpRepo, redisRepo, cfg)
+	// Build the multi-OLT registry: one SNMP pool + usecase + handler per OLT.
+	// All OLTs share Redis; each usecase namespaces its cache keys by OLT id
+	// (the default OLT keeps unprefixed keys for backward compatibility).
+	type oltStack struct {
+		olt  config.OLTRuntimeConfig
+		uc   usecase.OnuUseCaseInterface
+		repo repository.SnmpRepositoryInterface
+	}
+	var (
+		oltRoutes      []oltRoute
+		stacks         []oltStack
+		defaultUsecase usecase.OnuUseCaseInterface
+	)
 
-	// Initialize handler.
-	onuHandler := handler.NewOnuHandler(onuUsecase)
+	for _, olt := range cfg.OLTs {
+		snmpConn, connErr := snmp.SetupSnmpConnectionWith(olt.Host, olt.Port, olt.Community)
+		if connErr != nil {
+			logger.Error("failed to setup snmp connection for olt",
+				zap.String("olt_id", olt.ID), zap.String("host", olt.Host), zap.Error(connErr))
+			continue // skip this OLT; the others still serve
+		}
+		snmpRepo := repository.NewPonRepositoryWithConcurrency(snmpConn, olt.MaxConcurrent, olt.UseWalk)
+		defer snmpRepo.Close()
 
-	// Pre-warm cache in background.
+		cachePrefix := olt.ID
+		if olt.ID == cfg.DefaultOLT {
+			cachePrefix = "" // default OLT -> unprefixed keys (back-compat)
+		}
+		uc := usecase.NewOnuUsecaseForOLT(snmpRepo, redisRepo, cfg.ForOLT(olt), cachePrefix)
+		h := handler.NewOnuHandler(uc)
+
+		oltRoutes = append(oltRoutes, oltRoute{id: olt.ID, userID: olt.UserID, handler: h, boardPons: olt.BoardPons})
+		stacks = append(stacks, oltStack{olt: olt, uc: uc, repo: snmpRepo})
+		if olt.ID == cfg.DefaultOLT {
+			defaultUsecase = uc
+		}
+
+		logger.Info("olt_registered",
+			zap.String("olt_id", olt.ID),
+			zap.String("host", olt.Host),
+			zap.Ints("boards", olt.Boards),
+			zap.Bool("default", olt.ID == cfg.DefaultOLT))
+	}
+
+	if len(stacks) == 0 {
+		return fmt.Errorf("no OLT could be initialized")
+	}
+	if defaultUsecase == nil {
+		defaultUsecase = stacks[0].uc // default OLT failed to init; fall back to first
+	}
+
+	// Pre-warm cache for every OLT in the background.
 	if cfg.CacheCfg.PreWarm {
-		go onuUsecase.PreWarmCache(ctx)
+		for _, s := range stacks {
+			go s.uc.PreWarmCache(ctx)
+		}
 	}
 
 	// Start SNMP Trap listener if enabled.
@@ -96,26 +132,23 @@ func (a *App) Start(ctx context.Context) error {
 			cfg.TrapCfg.ActionLow,
 		)
 
-		var webhookClient *trap.WebhookClient
-		if cfg.TrapCfg.WebhookURL != "" {
-			formatter, finalURL := trap.NewFormatter(
-				cfg.TrapCfg.WebhookURL,
-				cfg.TrapCfg.WebhookType,
-				cfg.TrapCfg.WebhookChatID,
-			)
-			webhookClient = trap.NewWebhookClient(
-				finalURL,
-				cfg.TrapCfg.WebhookRetries,
-				cfg.TrapCfg.WebhookTimeout,
-				formatter,
-			)
-			logger.Info("webhook_client_initialized",
-				zap.String("platform", trap.DetectPlatform(cfg.TrapCfg.WebhookURL)),
-				zap.String("url", finalURL))
-		}
+		// Webhook is configured either from env (TRAP_WEBHOOK_*) or live from
+		// device-registry (REGISTRY_URL). initWebhook installs the active client
+		// and, when REGISTRY_URL is set, refreshes it without a restart.
+		initWebhook(trap.WebhookSettings{
+			URL:     cfg.TrapCfg.WebhookURL,
+			Type:    cfg.TrapCfg.WebhookType,
+			ChatID:  cfg.TrapCfg.WebhookChatID,
+			Enabled: cfg.TrapCfg.WebhookURL != "",
+			Retries: cfg.TrapCfg.WebhookRetries,
+			Timeout: cfg.TrapCfg.WebhookTimeout,
+		})
+		// The pipeline (batcher / power monitor) is created when a webhook is
+		// possible now or later — env URL set, or a registry that can enable it.
+		webhookPossible := cfg.TrapCfg.WebhookURL != "" || os.Getenv("REGISTRY_URL") != ""
 
 		var batcher *trap.Batcher
-		if webhookClient != nil {
+		if webhookPossible {
 			intervals := trap.BuildIntervals(
 				cfg.TrapCfg.CriticalInterval,
 				cfg.TrapCfg.HighInterval,
@@ -123,7 +156,7 @@ func (a *App) Start(ctx context.Context) error {
 				cfg.TrapCfg.LowInterval,
 			)
 			if len(intervals) > 0 {
-				batcher = trap.NewBatcher(webhookClient, onuUsecase, intervals)
+				batcher = trap.NewBatcher(trap.ActiveWebhook(), defaultUsecase, intervals)
 				batcher.HighThreshold = cfg.TrapCfg.RxPowerHighThreshold
 				batcher.LowThreshold = cfg.TrapCfg.RxPowerLowThreshold
 				batcher.RepeatIntervals = trap.BuildRepeatIntervals(
@@ -137,7 +170,7 @@ func (a *App) Start(ctx context.Context) error {
 			}
 		}
 
-		trapHandler := trap.NewHandler(webhookClient, batcher, onuUsecase)
+		trapHandler := trap.NewHandler(trap.ActiveWebhook(), batcher, defaultUsecase)
 		trapListener := trap.NewListener(trap.ListenerConfig{
 			Port:      cfg.TrapCfg.Port,
 			Community: cfg.TrapCfg.Community,
@@ -156,7 +189,7 @@ func (a *App) Start(ctx context.Context) error {
 		defer func() { _ = trapListener.Close() }()
 
 		// Start RX Power monitor if enabled.
-		if cfg.TrapCfg.PowerMonitor && webhookClient != nil {
+		if cfg.TrapCfg.PowerMonitor && webhookPossible {
 			powerMonitor := trap.NewPowerMonitor(trap.PowerMonitorConfig{
 				Interval:      time.Duration(cfg.TrapCfg.PowerMonitorInterval) * time.Second,
 				Cron:          cfg.TrapCfg.PowerMonitorCron,
@@ -164,7 +197,9 @@ func (a *App) Start(ctx context.Context) error {
 				HighThreshold: cfg.TrapCfg.RxPowerHighThreshold,
 				LowThreshold:  cfg.TrapCfg.RxPowerLowThreshold,
 				Source:        cfg.SnmpCfg.IP,
-			}, onuUsecase, webhookClient)
+				Boards:        cfg.Boards,
+				PonsPerBoard:  cfg.PonsPerBoard,
+			}, defaultUsecase, trap.ActiveWebhook())
 			if batcher != nil {
 				powerMonitor.SetBatcher(batcher)
 			}
@@ -180,22 +215,37 @@ func (a *App) Start(ctx context.Context) error {
 		}
 	}
 
-	// Register dependency probes for /readyz.
-	// Redis ping is cached for 5s; SNMP reachability is cached for 30s since
-	// it is a heavier check (goes over the wire to the OLT).
+	// Register dependency probes for /readyz. Redis is critical (5s cache).
+	// Each OLT gets its own SNMP probe (30s cache): the default OLT is critical
+	// (instance not-ready if it's down), secondary OLTs are non-critical so one
+	// unreachable device surfaces as degraded rather than taking the pod down.
 	checker := health.NewChecker(2 * time.Second)
 	checker.Register("redis", 5*time.Second, func(ctx context.Context) error {
 		return redisClient.Ping(ctx).Err()
 	})
-	checker.Register("snmp", 30*time.Second, func(_ context.Context) error {
-		// Lightweight reachability check: acquire and release a pooled
-		// connection. If the pool is exhausted or the seed connection is
-		// broken, this fails — the readyz response will surface that.
-		return snmpRepo.Ping()
-	})
+	for _, s := range stacks {
+		repo := s.repo // capture for the closure
+		probeName := "snmp_" + s.olt.ID
+		probe := func(_ context.Context) error { return repo.Ping() }
+		if s.olt.ID == cfg.DefaultOLT {
+			checker.Register(probeName, 30*time.Second, probe)
+		} else {
+			checker.RegisterOptional(probeName, 30*time.Second, probe)
+		}
+	}
 
-	// Initialize router with the health checker.
-	a.router = loadRoutes(onuHandler, checker)
+	// Build the api_key -> Principal registry for per-tenant auth (nil when
+	// API_USERS is unset; the legacy single API_KEY then applies).
+	var principals map[string]reqctx.Principal
+	if len(cfg.APIUsers) > 0 {
+		principals = make(map[string]reqctx.Principal, len(cfg.APIUsers))
+		for key, u := range cfg.APIUsers {
+			principals[key] = reqctx.Principal{UserID: u.UserID, Admin: u.IsAdmin()}
+		}
+	}
+
+	// Initialize router with the per-OLT handlers and health checker.
+	a.router = loadRoutesMulti(oltRoutes, cfg.DefaultOLT, checker, principals, cfg.APIKey)
 
 	// Start server.
 	addr := os.Getenv("SERVER_PORT")

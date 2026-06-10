@@ -1,205 +1,222 @@
 ###############################################
-# Go SNMP OLT ZTE C320 - API Test Collection
-# Base URL: http://localhost:8081
-# OpenAPI Spec: api/openapi.yaml
-# Version:      v3.0.0 (response format: status="success"/error_code/data/request_id)
+# Go SNMP OLT ZTE C320/C300 — live API test collection
+# Works with VS Code "REST Client" and JetBrains HTTP Client.
+# OpenAPI: api/openapi.yaml
+#
+# Response contract (v3.x):
+#   success: {"code":200,"status":"success","data":...,"meta":{...}}
+#   error  : {"code":400,"status":"...","error_code":"...","data":...,"request_id":"..."}
+#
+# Defaults match the multi-OLT + per-tenant dev setup used in testing:
+#   OLTS        : id "1" = C320 (boards 1,2, user_id 1); id "2" = C300 (slot 3, user_id 2)
+#   DEFAULT_OLT : 1  (also answers the bare /api/v1/board/... paths)
+#   API_USERS   : keyA -> user 1, keyB -> user 2, admintoken -> admin (sees all)
+# Override the variables below for your own instance.
 ###############################################
 
+@host = http://localhost:8081
+@olt1 = 1
+@olt2 = 2
+@keyA = keyA
+@keyB = keyB
+@admin = admintoken
+# Single-key / legacy deployments (OLTS + API_USERS unset): set this instead.
+@API_KEY = admintoken
+
 ###############################################
-# Health, Readiness, Version, Metrics (no auth)
+# Health, Readiness, Version, Metrics (no auth, never rate limited)
 ###############################################
 
-### Liveness probe (legacy alias)
-GET http://localhost:8081/health
+### Liveness probe (legacy alias) -> 200
+GET {{host}}/health
 Accept: application/json
 
-### Liveness probe (k8s style)
-GET http://localhost:8081/healthz
+### Liveness probe (k8s style) -> 200
+GET {{host}}/healthz
 Accept: application/json
 
-### Readiness probe with dependency checks (Redis + SNMP)
-# Returns 200 + {"status":"ready","dependencies":{"redis":{"state":"up"},"snmp":{"state":"up"}}}
-# or 503 + {"status":"not_ready", ...} when any probe is down.
-GET http://localhost:8081/readyz
+### Readiness probe -> 200 {"status":"ready","dependencies":{"redis":{...},"snmp_1":{...},"snmp_2":{...}}}
+# In multi-OLT mode each OLT has its own probe keyed snmp_<id>. Secondary OLTs
+# are non-critical: one unreachable -> degraded report but still 200.
+GET {{host}}/readyz
 Accept: application/json
 
-### Build metadata (version, commit, build_time, uptime)
-GET http://localhost:8081/version
+### Build metadata (version, commit, build_time, uptime) -> 200
+GET {{host}}/version
 Accept: application/json
 
-### Prometheus metrics (OpenMetrics format)
-GET http://localhost:8081/metrics
+### Prometheus metrics -> 200
+GET {{host}}/metrics
 Accept: text/plain
 
-### Root endpoint
-GET http://localhost:8081/
+### Root endpoint -> 200
+GET {{host}}/
 Accept: application/json
 
 ###############################################
-# ONU Information Endpoints
-# Requires X-API-Key header when API_KEY is set
+# Authentication (per-tenant API_USERS)
+# 401 envelope: {"code":401,"status":"Unauthorized","error_code":"UNAUTHORIZED","data":"...","request_id":"..."}
 ###############################################
 
-### Get All ONUs by Board and PON
-GET http://localhost:8081/api/v1/board/2/pon/7
+### No API key -> 401
+GET {{host}}/api/v1/olt/{{olt1}}/board/1/pon/1/
 Accept: application/json
-X-API-Key: {{API_KEY}}
 
-### Get All ONUs - Board 1 PON 8
-GET http://localhost:8081/api/v1/board/1/pon/8
+### Invalid API key -> 401
+GET {{host}}/api/v1/olt/{{olt1}}/board/1/pon/1/
 Accept: application/json
-X-API-Key: {{API_KEY}}
-
-### Get Specific ONU by Board, PON, and ONU ID
-GET http://localhost:8081/api/v1/board/1/pon/8/onu/11
-Accept: application/json
-X-API-Key: {{API_KEY}}
-
-### Get Specific ONU - Board 2 PON 7 ONU 4
-GET http://localhost:8081/api/v1/board/2/pon/7/onu/4
-Accept: application/json
-X-API-Key: {{API_KEY}}
+X-API-Key: not-a-real-key
 
 ###############################################
-# Empty ONU ID Endpoints
+# Tenant isolation (the core of per-user access control)
+# Cross-tenant requests return 404 (NOT 403) to prevent enumeration.
 ###############################################
 
-### Get Empty ONU IDs
-GET http://localhost:8081/api/v1/board/1/pon/8/onu_id/empty
+### user1 -> own OLT (C320) -> 200
+GET {{host}}/api/v1/olt/{{olt1}}/board/1/pon/1/
 Accept: application/json
-X-API-Key: {{API_KEY}}
+X-API-Key: {{keyA}}
 
-### Get Empty ONU IDs - Board 2 PON 5
-GET http://localhost:8081/api/v1/board/2/pon/5/onu_id/empty
+### user1 -> other tenant's OLT (C300) -> 404
+GET {{host}}/api/v1/olt/{{olt2}}/board/3/pon/1/
 Accept: application/json
-X-API-Key: {{API_KEY}}
+X-API-Key: {{keyA}}
 
-### Update Empty ONU ID Cache (POST)
-POST http://localhost:8081/api/v1/board/1/pon/8/onu_id/update
+### user2 -> own OLT (C300) -> 200
+GET {{host}}/api/v1/olt/{{olt2}}/board/3/pon/1/
 Accept: application/json
-X-API-Key: {{API_KEY}}
+X-API-Key: {{keyB}}
 
-### Update Empty ONU IDs - Board 2 PON 5 (POST)
-POST http://localhost:8081/api/v1/board/2/pon/5/onu_id/update
+### user2 -> other tenant's OLT (C320) -> 404
+GET {{host}}/api/v1/olt/{{olt1}}/board/1/pon/1/
 Accept: application/json
-X-API-Key: {{API_KEY}}
+X-API-Key: {{keyB}}
+
+### admin -> C320 -> 200
+GET {{host}}/api/v1/olt/{{olt1}}/board/1/pon/1/
+Accept: application/json
+X-API-Key: {{admin}}
+
+### admin -> C300 -> 200
+GET {{host}}/api/v1/olt/{{olt2}}/board/3/pon/1/
+Accept: application/json
+X-API-Key: {{admin}}
 
 ###############################################
-# ONU ID and Serial Number Endpoint
+# Bare /board paths -> DEFAULT_OLT (olt 1 / C320), scoped to its owner
 ###############################################
 
-### Get ONU IDs with Serial Numbers
-GET http://localhost:8081/api/v1/board/1/pon/8/onu_id_sn
+### user1 owns the default OLT -> 200
+GET {{host}}/api/v1/board/1/pon/1/
 Accept: application/json
-X-API-Key: {{API_KEY}}
+X-API-Key: {{keyA}}
 
-### Get ONU IDs with Serial Numbers - Board 2 PON 7
-GET http://localhost:8081/api/v1/board/2/pon/7/onu_id_sn
+### user2 does NOT own the default OLT -> 404
+GET {{host}}/api/v1/board/1/pon/1/
 Accept: application/json
-X-API-Key: {{API_KEY}}
+X-API-Key: {{keyB}}
 
 ###############################################
-# Pagination Endpoints
+# ONU read endpoints (multi-OLT path, full surface)
 ###############################################
 
-### Get ONUs with Pagination - Default (page 1, limit 10)
-GET http://localhost:8081/api/v1/paginate/board/1/pon/8
+### List all ONUs on a board/PON -> 200
+GET {{host}}/api/v1/olt/{{olt1}}/board/1/pon/1/
 Accept: application/json
-X-API-Key: {{API_KEY}}
+X-API-Key: {{admin}}
 
-### Get ONUs with Pagination - Page 2 with Limit 5
-GET http://localhost:8081/api/v1/paginate/board/1/pon/8?page=2&limit=5
+### Specific ONU detail -> 200 (404 if onu_id absent)
+GET {{host}}/api/v1/olt/{{olt1}}/board/1/pon/1/onu/1
 Accept: application/json
-X-API-Key: {{API_KEY}}
+X-API-Key: {{admin}}
 
-### Get ONUs with Pagination - Board 2 PON 8
-GET http://localhost:8081/api/v1/paginate/board/2/pon/8?limit=3&page=2
+### Empty / available ONU IDs -> 200
+GET {{host}}/api/v1/olt/{{olt1}}/board/1/pon/1/onu_id/empty
 Accept: application/json
-X-API-Key: {{API_KEY}}
+X-API-Key: {{admin}}
+
+### ONU IDs with serial numbers -> 200
+GET {{host}}/api/v1/olt/{{olt1}}/board/1/pon/1/onu_id_sn
+Accept: application/json
+X-API-Key: {{admin}}
+
+### Paginated ONU list -> 200
+GET {{host}}/api/v1/olt/{{olt1}}/paginate/board/1/pon/1?page=1&limit=10
+Accept: application/json
+X-API-Key: {{admin}}
+
+### C300 (olt 2) list via admin -> 200
+GET {{host}}/api/v1/olt/{{olt2}}/board/3/pon/1/
+Accept: application/json
+X-API-Key: {{admin}}
 
 ###############################################
-# Cache Management Endpoints
+# Write / cache endpoints (emit an audit log entry)
 ###############################################
 
-### Delete Cache for Board/PON
-DELETE http://localhost:8081/api/v1/board/1/pon/8/cache/clear
+### Force refresh empty ONU ID cache (POST) -> 200
+POST {{host}}/api/v1/olt/{{olt1}}/board/1/pon/1/onu_id/update
 Accept: application/json
-X-API-Key: {{API_KEY}}
+X-API-Key: {{admin}}
 
-### Delete Cache - Board 2 PON 7
-DELETE http://localhost:8081/api/v1/board/2/pon/7/cache/clear
+### Clear cache for a board/PON (DELETE) -> 200
+DELETE {{host}}/api/v1/olt/{{olt1}}/board/1/pon/1/cache/clear
 Accept: application/json
-X-API-Key: {{API_KEY}}
+X-API-Key: {{admin}}
 
 ###############################################
-# Request ID Tracing
-# Send X-Request-ID to correlate logs across services. The server echoes it
-# back in the response header AND in the request_id field of error bodies.
+# Validation & error contract
 ###############################################
 
-### Pass custom X-Request-ID (echoed in response header + error body)
-GET http://localhost:8081/api/v1/board/1/pon/8
+### Unknown OLT id -> 404
+GET {{host}}/api/v1/olt/does-not-exist/board/1/pon/1/
 Accept: application/json
-X-API-Key: {{API_KEY}}
+X-API-Key: {{admin}}
+
+### board_id out of range -> 400 VALIDATION_ERROR
+GET {{host}}/api/v1/olt/{{olt1}}/board/99/pon/1/
+Accept: application/json
+X-API-Key: {{admin}}
+
+### pon_id out of range for the card -> 400 VALIDATION_ERROR
+GET {{host}}/api/v1/olt/{{olt1}}/board/1/pon/99/
+Accept: application/json
+X-API-Key: {{admin}}
+
+### Slot not present on this OLT (C320 has no slot 3) -> 400
+GET {{host}}/api/v1/olt/{{olt1}}/board/3/pon/1/
+Accept: application/json
+X-API-Key: {{admin}}
+
+### Request ID echo: response echoes X-Request-ID (header + error body request_id)
+GET {{host}}/api/v1/olt/{{olt1}}/board/99/pon/1/
+Accept: application/json
+X-API-Key: {{admin}}
 X-Request-ID: my-custom-trace-id-123
 
 ###############################################
-# Error Testing - v3.0.0 Error Envelope
-# Expected response shape:
-#   {
-#     "code": 400,
-#     "status": "Bad Request",
-#     "error_code": "VALIDATION_ERROR",
-#     "data": { "message": "...", "details": {...} },
-#     "request_id": "<xid>"
-#   }
+# Single-OLT / legacy mode (OLTS + API_USERS unset; single API_KEY)
+# Uses the bare /api/v1/board/... paths with {{API_KEY}}.
 ###############################################
 
-### Invalid Board ID — expect 400 VALIDATION_ERROR
-GET http://localhost:8081/api/v1/board/99/pon/1
+### Legacy: list ONUs -> 200
+GET {{host}}/api/v1/board/1/pon/8
 Accept: application/json
 X-API-Key: {{API_KEY}}
 
-### Invalid PON ID — expect 400 VALIDATION_ERROR
-GET http://localhost:8081/api/v1/board/1/pon/99
-Accept: application/json
-X-API-Key: {{API_KEY}}
-
-### Invalid ONU ID — expect 400 VALIDATION_ERROR
-GET http://localhost:8081/api/v1/board/1/pon/1/onu/999
-Accept: application/json
-X-API-Key: {{API_KEY}}
-
-### Missing API Key — expect 401 (when API_KEY is configured)
-GET http://localhost:8081/api/v1/board/1/pon/1
-Accept: application/json
-
-### Not Found — request a board/pon combination that has no ONUs
-# Expected: 404 NOT_FOUND with data.message + data.details
-GET http://localhost:8081/api/v1/board/2/pon/16/onu/128
+### Legacy: paginate -> 200  (pagination lives under /paginate/, not query params on the list path)
+GET {{host}}/api/v1/paginate/board/1/pon/8?page=2&limit=5
 Accept: application/json
 X-API-Key: {{API_KEY}}
 
 ###############################################
-# Response Headers (added in v3.0.0)
-# Every response carries:
-#   X-Request-ID    correlation ID (echoed or auto-generated)
-#   X-API-Version   API contract version (e.g. v1)
-#   X-App-Version   binary semantic version (e.g. 3.0.0)
-#   X-Build-Commit  short git SHA of the build
-###############################################
-
-###############################################
-# Notes:
-# - Set {{API_KEY}} variable or leave empty if auth disabled
-# - Health, version, metrics endpoints don't require auth
-# - Default timeout: 90 seconds (allows cold-cache SNMP queries)
-# - Rate limit: 100 req/s, burst 200
-# - Cache TTL: 10 minutes
-# - Board IDs: 1 or 2
-# - PON IDs:   1-16
-# - ONU IDs:   1-128
-# - Success responses use status="success"
-# - Error responses use top-level error_code (was nested error.type in 2.x)
-# - Audit log: POST/PUT/PATCH/DELETE emit a separate "audit" log entry
+# Notes
+# - Response headers on every request: X-Request-ID, X-API-Version, X-App-Version, X-Build-Commit
+# - Health/readiness/metrics are unauthenticated AND exempt from the rate limiter
+#   (so k8s probes and Prometheus scrapes are never 429'd under API load).
+# - API rate limit: 100 req/s, burst 200 (global; infra endpoints exempt).
+# - board_id = physical GPON slot (C320: 1-2; C300: e.g. 3,5). pon_id validated
+#   per card (GTGO=8, GTGH=16). Valid slots/pons differ per OLT.
+# - Per-tenant: each OLT carries a user_id; a caller sees only its own OLTs
+#   (cross-tenant -> 404). role "admin" sees all. Unowned (user_id 0) = admin-only.
 ###############################################

@@ -2,6 +2,11 @@ import http from 'k6/http';
 import { check, group, sleep } from 'k6';
 import { Counter, Trend, Rate } from 'k6/metrics';
 
+// Treat 404 (a valid board/pon with no ONUs) and 429 (rate limited) as expected
+// responses so they do NOT inflate http_req_failed. Only 400/401/5xx are "failed".
+// contract_check deliberately produces 400s, but it has no http_req_failed threshold.
+http.setResponseCallback(http.expectedStatuses(200, 404, 429));
+
 // Custom metrics
 const errors = new Counter('custom_errors');
 const timeouts = new Counter('custom_timeouts');
@@ -12,8 +17,61 @@ const snmpDuration = new Trend('snmp_duration');
 const BASE_URL = __ENV.BASE_URL || 'http://localhost:8081';
 const API_KEY = __ENV.API_KEY || '';
 
-// Common request params
-function params(tags) {
+// Multi-OLT: pass the SAME OLTS JSON the server uses (-e OLTS='[...]') and the
+// load test targets the per-OLT paths /api/v1/olt/{id}/board/... with valid
+// board/pon ranges derived from each OLT's "boards" spec ("3:16,5:8"). When
+// OLTS is empty the test falls back to the single-OLT bare /api/v1/board/...
+// paths and the legacy random board {1,2} / pon 1-16 ranges.
+const OLT_TARGETS = parseOltTargets(__ENV.OLTS || '');
+
+// Per-tenant API keys for OLT-scoped requests, as a JSON object {oltId: apiKey}.
+// Optional: when the server runs with per-tenant API_USERS, set this so each
+// OLT request carries its owner's key. Falls back to the global API_KEY (e.g.
+// an admin key, which sees all OLTs) when an id is absent.
+const OLT_KEYS = parseOltKeys(__ENV.OLT_KEYS || '');
+
+function parseOltKeys(js) {
+  if (!js.trim()) return {};
+  try {
+    const obj = JSON.parse(js);
+    return obj && typeof obj === 'object' ? obj : {};
+  } catch (e) {
+    return {};
+  }
+}
+
+// parseBoardsSpec turns a "boards" value like "3:16,5:8" into
+// [{board:3, ponMax:16}, {board:5, ponMax:8}]. Bare slots ("1,2") use defPon.
+function parseBoardsSpec(spec, defPon) {
+  return String(spec || '1,2')
+    .split(',')
+    .map((s) => {
+      const [b, p] = s.split(':');
+      const board = parseInt(b, 10);
+      const ponMax = p ? parseInt(p, 10) : defPon;
+      return { board, ponMax };
+    })
+    .filter((t) => Number.isInteger(t.board) && t.board > 0 && t.ponMax > 0);
+}
+
+// parseOltTargets parses the OLTS JSON array into [{id, boards:[{board,ponMax}]}].
+// Returns [] on empty/invalid input (single-OLT fallback).
+function parseOltTargets(js) {
+  if (!js.trim()) return [];
+  try {
+    const arr = JSON.parse(js);
+    if (!Array.isArray(arr)) return [];
+    return arr
+      .filter((o) => o && o.id)
+      .map((o) => ({ id: o.id, boards: parseBoardsSpec(o.boards, o.ponsPerBoard || 16) }));
+  } catch (e) {
+    return [];
+  }
+}
+
+// Common request params. `key` overrides the X-API-Key for this request (used
+// for per-tenant OLT keys); falls back to the global API_KEY.
+function params(tags, key) {
   const p = {
     timeout: '120s',
     tags: tags || {},
@@ -21,8 +79,9 @@ function params(tags) {
       'Accept': 'application/json',
     },
   };
-  if (API_KEY) {
-    p.headers['X-API-Key'] = API_KEY;
+  const apiKey = key || API_KEY;
+  if (apiKey) {
+    p.headers['X-API-Key'] = apiKey;
   }
   return p;
 }
@@ -104,26 +163,15 @@ export const options = {
   },
 
   thresholds: {
-    // Per-scenario failure rates.
-    //
-    // We deliberately do NOT set a global `http_req_failed` threshold here:
-    // contract_check intentionally generates 400/404 responses to verify
-    // the v3.0.0 error envelope, and onu_list/onu_detail random board+pon
-    // combinations naturally produce some 404s (no ONUs on that PON).
-    // A global threshold would false-alarm on those expected failures.
-    //
-    // Scenario-scoped thresholds let us tune each workload independently:
-    //   - health_check: any failure is real (probes should never error)
-    //   - onu_list/onu_detail: allow some 404s (random board/pon hit empty PONs)
-    //   - pagination: same as onu_list
-    //   - contract_check: ALL responses are intentional 4xx — no threshold
+    // Per-scenario failure rates. 404 (empty PON) and 429 (rate limited) are
+    // excluded from http_req_failed via setResponseCallback above, so these
+    // thresholds now flag only GENUINE failures (400/401/5xx). contract_check
+    // deliberately emits 400s, so it is left without a failure threshold.
     'http_req_failed{scenario:health_check}': ['rate<0.01'],
-    'http_req_failed{scenario:onu_list}':     ['rate<0.30'],
-    'http_req_failed{scenario:onu_detail}':   ['rate<0.40'],
-    // pagination randomly picks page 1-5; pages 3-5 often empty for the
-    // small board/pon test data → up to 60% legitimate 404s.
-    'http_req_failed{scenario:pagination}':   ['rate<0.70'],
-    'http_req_failed{scenario:mixed_ops}':    ['rate<0.30'],
+    'http_req_failed{scenario:onu_list}':     ['rate<0.05'],
+    'http_req_failed{scenario:onu_detail}':   ['rate<0.05'],
+    'http_req_failed{scenario:pagination}':   ['rate<0.05'],
+    'http_req_failed{scenario:mixed_ops}':    ['rate<0.05'],
 
     // Per-scenario response times
     'http_req_duration{scenario:health_check}': ['p(95)<500'],
@@ -150,6 +198,31 @@ function randomPon() {
 
 function randomOnu() {
   return Math.floor(Math.random() * 10) + 1;
+}
+
+// pickTarget chooses an OLT + a VALID board/pon for it. In multi-OLT mode it
+// picks a random configured OLT and a board/pon within that OLT's cards (so we
+// never generate spurious 400s for slots a given OLT doesn't have). In
+// single-OLT mode it returns the empty prefix and the legacy random ranges.
+//   returns { prefix, board, pon, oltId }
+function pickTarget() {
+  if (OLT_TARGETS.length === 0) {
+    return { prefix: '', oltId: '', board: randomBoard(), pon: randomPon() };
+  }
+  const t = OLT_TARGETS[Math.floor(Math.random() * OLT_TARGETS.length)];
+  const card = t.boards[Math.floor(Math.random() * t.boards.length)];
+  return {
+    prefix: `/olt/${t.id}`,
+    oltId: t.id,
+    board: card.board,
+    pon: Math.floor(Math.random() * card.ponMax) + 1,
+    key: OLT_KEYS[t.id] || API_KEY, // per-tenant key, falls back to global
+  };
+}
+
+// apiBase returns the /api/v1 prefix, optionally scoped to an OLT.
+function apiBase(prefix) {
+  return `${BASE_URL}/api/v1${prefix || ''}`;
 }
 
 // validateErrorEnvelope asserts the v3.0.0 error response format. Used when
@@ -181,11 +254,14 @@ function validateErrorEnvelope(response, name) {
 }
 
 function checkResponse(response, name) {
+  // 404 (empty board/pon) and 429 (rate limited) are expected outcomes, not
+  // failures — only flag genuine problems (non-200/404/429, or malformed 200s).
+  const acceptable = response.status === 200 || response.status === 404 || response.status === 429;
   const ok = check(response, {
-    [`${name}: status 200`]: (r) => r.status === 200,
-    [`${name}: has body`]: (r) => r.body && r.body.length > 0,
-    [`${name}: valid json`]: (r) => {
-      try { JSON.parse(r.body); return true; } catch { return false; }
+    [`${name}: status ok (200/404/429)`]: () => acceptable,
+    [`${name}: 200 has valid json body`]: (r) => {
+      if (r.status !== 200) return true; // only validate the body shape on 200
+      try { return r.body && r.body.length > 0 && JSON.parse(r.body) !== null; } catch { return false; }
     },
   });
 
@@ -247,6 +323,20 @@ export function healthCheck() {
     },
   });
 
+  // Multi-OLT: every configured OLT must surface its own probe keyed snmp_<id>.
+  if (OLT_TARGETS.length > 0) {
+    check(readyz, {
+      'readyz: per-OLT snmp probes present': (r) => {
+        try {
+          const deps = JSON.parse(r.body).dependencies || {};
+          return OLT_TARGETS.every((t) => deps[`snmp_${t.id}`] !== undefined);
+        } catch {
+          return false;
+        }
+      },
+    });
+  }
+
   const version = http.get(`${BASE_URL}/version`, { tags: { name: 'version' } });
   check(version, {
     'version: status 200': (r) => r.status === 200,
@@ -284,11 +374,10 @@ export function healthCheck() {
 }
 
 export function onuList() {
-  const board = randomBoard();
-  const pon = randomPon();
-  const url = `${BASE_URL}/api/v1/board/${board}/pon/${pon}`;
+  const { prefix, oltId, board, pon, key } = pickTarget();
+  const url = `${apiBase(prefix)}/board/${board}/pon/${pon}`;
 
-  const response = http.get(url, params({ name: `onu_list_b${board}_p${pon}` }));
+  const response = http.get(url, params({ name: `onu_list${oltId ? '_' + oltId : ''}_b${board}_p${pon}` }, key));
   checkResponse(response, 'onu_list');
 
   // Validate the v3.0.0 success envelope: {code, status:"success", data:[...]}
@@ -307,12 +396,11 @@ export function onuList() {
 }
 
 export function onuDetail() {
-  const board = randomBoard();
-  const pon = randomPon();
+  const { prefix, oltId, board, pon, key } = pickTarget();
   const onu = randomOnu();
-  const url = `${BASE_URL}/api/v1/board/${board}/pon/${pon}/onu/${onu}`;
+  const url = `${apiBase(prefix)}/board/${board}/pon/${pon}/onu/${onu}`;
 
-  const response = http.get(url, params({ name: `onu_detail_b${board}_p${pon}_o${onu}` }));
+  const response = http.get(url, params({ name: `onu_detail${oltId ? '_' + oltId : ''}_b${board}_p${pon}_o${onu}` }, key));
   checkResponse(response, 'onu_detail');
 
   // Validate detailed response fields
@@ -336,13 +424,12 @@ export function onuDetail() {
 }
 
 export function paginatedList() {
-  const board = randomBoard();
-  const pon = randomPon();
+  const { prefix, oltId, board, pon, key } = pickTarget();
   const page = Math.floor(Math.random() * 5) + 1;
   const limit = [5, 10, 20, 50][Math.floor(Math.random() * 4)];
-  const url = `${BASE_URL}/api/v1/paginate/board/${board}/pon/${pon}?page=${page}&limit=${limit}`;
+  const url = `${apiBase(prefix)}/paginate/board/${board}/pon/${pon}?page=${page}&limit=${limit}`;
 
-  const response = http.get(url, params({ name: `paginate_b${board}_p${pon}` }));
+  const response = http.get(url, params({ name: `paginate${oltId ? '_' + oltId : ''}_b${board}_p${pon}` }, key));
 
   if (response.status === 200) {
     check(response, {
@@ -370,46 +457,46 @@ export function paginatedList() {
 }
 
 export function mixedOperations() {
-  const board = randomBoard();
-  const pon = randomPon();
+  const { prefix, board, pon, key } = pickTarget();
+  const base = apiBase(prefix);
 
   group('mixed_ops', () => {
     // 1. Get empty ONU IDs
     group('empty_onu_ids', () => {
-      const url = `${BASE_URL}/api/v1/board/${board}/pon/${pon}/onu_id/empty`;
-      const response = http.get(url, params({ name: 'empty_onu_ids' }));
+      const url = `${base}/board/${board}/pon/${pon}/onu_id/empty`;
+      const response = http.get(url, params({ name: 'empty_onu_ids' }, key));
       checkResponse(response, 'empty_onu_ids');
       sleep(0.5);
     });
 
     // 2. Get ONU IDs with serial numbers
     group('onu_id_sn', () => {
-      const url = `${BASE_URL}/api/v1/board/${board}/pon/${pon}/onu_id_sn`;
-      const response = http.get(url, params({ name: 'onu_id_sn' }));
+      const url = `${base}/board/${board}/pon/${pon}/onu_id_sn`;
+      const response = http.get(url, params({ name: 'onu_id_sn' }, key));
       checkResponse(response, 'onu_id_sn');
       sleep(0.5);
     });
 
     // 3. Update empty ONU ID cache (POST)
     group('update_empty_onu', () => {
-      const url = `${BASE_URL}/api/v1/board/${board}/pon/${pon}/onu_id/update`;
-      const response = http.post(url, null, params({ name: 'update_empty_onu' }));
+      const url = `${base}/board/${board}/pon/${pon}/onu_id/update`;
+      const response = http.post(url, null, params({ name: 'update_empty_onu' }, key));
       checkResponse(response, 'update_empty_onu');
       sleep(0.5);
     });
 
     // 4. Delete cache then re-fetch (cache miss → SNMP)
     group('cache_invalidation', () => {
-      const deleteUrl = `${BASE_URL}/api/v1/board/${board}/pon/${pon}/cache/clear`;
-      const deleteResp = http.del(deleteUrl, null, params({ name: 'delete_cache' }));
+      const deleteUrl = `${base}/board/${board}/pon/${pon}/cache/clear`;
+      const deleteResp = http.del(deleteUrl, null, params({ name: 'delete_cache' }, key));
       check(deleteResp, {
         'delete_cache: status 200': (r) => r.status === 200,
       });
       sleep(0.5);
 
       // Re-fetch to trigger SNMP (cache miss)
-      const fetchUrl = `${BASE_URL}/api/v1/board/${board}/pon/${pon}`;
-      const fetchResp = http.get(fetchUrl, params({ name: 'fetch_after_invalidation' }));
+      const fetchUrl = `${base}/board/${board}/pon/${pon}`;
+      const fetchResp = http.get(fetchUrl, params({ name: 'fetch_after_invalidation' }, key));
       checkResponse(fetchResp, 'fetch_after_invalidation');
       sleep(0.5);
     });
@@ -450,6 +537,17 @@ export function contractCheck() {
   });
   if (badOnu.status === 400) {
     validateErrorEnvelope(badOnu, 'bad_onu');
+  }
+
+  // Case 4 (multi-OLT only): an unknown OLT id → 404 NOT_FOUND.
+  if (OLT_TARGETS.length > 0) {
+    const badOlt = http.get(
+      `${BASE_URL}/api/v1/olt/__nope__/board/1/pon/1`,
+      params({ name: 'bad_olt' }),
+    );
+    check(badOlt, {
+      'bad_olt: status 404': (r) => r.status === 404,
+    });
   }
 
   // X-Request-ID should echo back on error responses — test that too.

@@ -1,10 +1,10 @@
 # Monitoring OLT ZTE C320 with SNMP
-[![ci](https://github.com/Cepat-Kilat-Teknologi/go-snmp-olt-zte-c320/actions/workflows/ci.yml/badge.svg)](https://github.com/Cepat-Kilat-Teknologi/go-snmp-olt-zte-c320/actions/workflows/ci.yml)
-[![Go Report Card](https://goreportcard.com/badge/github.com/Cepat-Kilat-Teknologi/go-snmp-olt-zte-c320)](https://goreportcard.com/report/github.com/Cepat-Kilat-Teknologi/go-snmp-olt-zte-c320)
-[![codecov](https://codecov.io/gh/Cepat-Kilat-Teknologi/go-snmp-olt-zte-c320/graph/badge.svg?token=NB3N7GMUX3)](https://codecov.io/gh/Cepat-Kilat-Teknologi/go-snmp-olt-zte-c320)
-[![Helm Chart](https://img.shields.io/badge/helm-v3.0.0-blue)](https://github.com/Cepat-Kilat-Teknologi/go-snmp-olt-zte-c320/releases/tag/v3.0.0)
+[![ci](https://github.com/Cepat-Kilat-Teknologi/snmp-olt-zte/actions/workflows/ci.yml/badge.svg)](https://github.com/Cepat-Kilat-Teknologi/snmp-olt-zte/actions/workflows/ci.yml)
+[![Go Report Card](https://goreportcard.com/badge/github.com/Cepat-Kilat-Teknologi/snmp-olt-zte)](https://goreportcard.com/report/github.com/Cepat-Kilat-Teknologi/snmp-olt-zte)
+[![codecov](https://codecov.io/gh/Cepat-Kilat-Teknologi/snmp-olt-zte/graph/badge.svg?token=NB3N7GMUX3)](https://codecov.io/gh/Cepat-Kilat-Teknologi/snmp-olt-zte)
+[![Helm Chart](https://img.shields.io/badge/helm-v3.0.0-blue)](https://github.com/Cepat-Kilat-Teknologi/snmp-olt-zte/releases/tag/v3.0.0)
 
-REST API service for monitoring ZTE C320 OLT devices via SNMP protocol, built with Go. Provides real-time ONU information including status, optical power levels, uptime, and serial numbers across all board/PON combinations.
+REST API service for monitoring ZTE **C320 and C300** OLT devices via SNMP protocol, built with Go. Provides real-time ONU information including status, optical power levels, uptime, and serial numbers across all board/PON combinations. C300 and C320 V2.1.0 share the same MIB tree and ifIndex encoding — a single image serves both; only the populated GPON slots differ (configured via `OLT_BOARDS`).
 
 ### Tech Stack
 * [Go 1.26](https://go.dev/) - Programming language
@@ -31,10 +31,15 @@ REST API service for monitoring ZTE C320 OLT devices via SNMP protocol, built wi
 - Consistent JSON response format with structured error details
 - SNMP Trap listener for real-time ONU offline detection with webhook notification
 - RX Power monitor with configurable high/low thresholds and cron scheduling
-- 98.6% test coverage
+- 99% test coverage
 
 ### API Documentation
-Full OpenAPI 3.1 specification: [`api/openapi.yaml`](api/openapi.yaml)
+- OpenAPI 3.1 spec: [`api/openapi.yaml`](api/openapi.yaml)
+- REST collection (VS Code REST Client / JetBrains HTTP Client):
+  [`test.http`](test.http) — health, per-tenant isolation (`API_USERS`), multi-OLT
+  paths, validation/error contract
+- k6 load test: [`k6-load-test.js`](k6-load-test.js) (+ stages variant in
+  [`scripts/k6-load-test.js`](scripts/k6-load-test.js))
 
 ## Getting Started
 
@@ -42,7 +47,7 @@ Full OpenAPI 3.1 specification: [`api/openapi.yaml`](api/openapi.yaml)
 - Go 1.26+
 - Docker & Docker Compose
 - Task runner (`go install github.com/go-task/task/v3/cmd/task@latest`)
-- Access to a ZTE C320 OLT device (SNMP v2c)
+- Access to a ZTE C320 or C300 OLT device (SNMP v2c)
 
 ### Quick Start
 ```shell
@@ -57,6 +62,80 @@ task dev
 curl http://localhost:8081/health
 curl http://localhost:8081/api/v1/board/1/pon/1 | jq
 ```
+
+### OLT model & slot configuration (C320 / C300)
+
+The OID encoding is identical for ZTE C320 and C300 V2.1.0 — only the physical
+slots that hold GPON line cards differ. `OLT_BOARDS` lists them, optionally with
+each card's PON-port count as `slot:pons` (a C300 has up to 14 service slots,
+each a **GTGO** with 8 PONs or a **GTGH** with 16, mixed freely):
+
+| Device | `OLT_BOARDS` | Notes |
+|--------|--------------|-------|
+| ZTE C320 | `1,2` (default) | Line cards in slots 1-2 (16 PON each) |
+| ZTE C300 | `3:16,5:8` | Slot 3 GTGH (16 PON), slot 5 GTGO (8 PON) |
+
+`board_id` in the API path is the **physical slot**, so a C300 with cards in
+slots 3 and 5 is queried as `/api/v1/board/3/pon/1` and `/api/v1/board/5/pon/1`.
+A slot not in `OLT_BOARDS`, or a `pon_id` beyond that card's count
+(e.g. `/board/5/pon/9` on an 8-port GTGO), returns `400`.
+
+> Tip: to find a C300's GPON slots, walk `ifName` and look for `gpon_<shelf>/<slot>/<port>`
+> entries — the `<slot>` values are your `OLT_BOARDS`.
+
+### Multiple OLTs in one instance (`OLTS`)
+
+Set `OLTS` to a JSON array to manage many OLTs — any mix of C320/C300 — from a
+single instance:
+
+```bash
+OLTS='[
+  {"id":"c320","host":"10.0.0.1","port":161,"community":"public","boards":"1,2"},
+  {"id":"c300a","host":"10.0.0.2","port":1161,"community":"public","boards":"3:16,5:8"}
+]'
+DEFAULT_OLT=c320
+```
+
+- Each OLT is reachable at `GET /api/v1/olt/{id}/board/{slot}/pon/{pon}/...`
+- The `DEFAULT_OLT` is **also** served on the bare `/api/v1/board/...` paths (back-compat)
+- Each OLT gets its own SNMP pool and a **namespaced Redis cache** (`olt_<id>_...`) — no collisions
+- `/readyz` reports `snmp_<id>` per OLT; one unreachable secondary OLT degrades (not 503)
+
+When `OLTS` is unset, the single-OLT `SNMP_*` / `OLT_BOARDS` settings above apply unchanged.
+
+For many OLTs (or to keep community strings out of env), put the same JSON array in
+a file and point `OLTS_FILE` at it — handy for mounting as a Kubernetes Secret:
+
+```bash
+OLTS_FILE=/etc/olt/olts.json
+```
+
+Inline `OLTS` wins over `OLTS_FILE`. Loading is **fail-fast**: a set-but-unreadable
+or empty `OLTS_FILE` aborts startup rather than silently falling back to `SNMP_*`.
+
+### Per-tenant access control (`API_USERS`)
+
+Give each OLT a `user_id` and map API keys to users so a caller only sees the
+OLTs they own. Requesting another tenant's OLT returns **404** (not 403 — so a
+tenant can't enumerate others' OLTs). A `role:"admin"` key sees every OLT.
+
+```bash
+OLTS='[{"id":"c320","user_id":1,"host":"10.0.0.1","community":"public","boards":"1,2"},
+       {"id":"c300a","user_id":2,"host":"10.0.0.2","port":1161,"community":"public","boards":"3:16"}]'
+API_USERS='[{"user_id":1,"api_key":"keyA"},
+            {"user_id":2,"api_key":"keyB"},
+            {"user_id":0,"api_key":"adminKey","role":"admin"}]'
+```
+
+| Caller (`X-API-Key`) | `GET /api/v1/olt/c320/...` | `GET /api/v1/olt/c300a/...` |
+|---|---|---|
+| `keyA` (user 1) | `200` | `404` |
+| `keyB` (user 2) | `404` | `200` |
+| `adminKey` (admin) | `200` | `200` |
+| missing / unknown key | `401` | `401` |
+
+An OLT with no `user_id` (0) is unowned → admin-only. When `API_USERS` is unset,
+the single `API_KEY` applies unchanged (no per-tenant scoping).
 
 ### Docker Compose (Development)
 ```shell
@@ -76,13 +155,13 @@ docker compose up -d
 docker network create local-dev && \
 docker run -d --name redis-container \
 --network local-dev -p 6379:6379 redis:7.2 && \
-docker run -d -p 8081:8081 --name go-snmp-olt-zte-c320 \
+docker run -d -p 8081:8081 --name snmp-olt-zte \
 --network local-dev -e REDIS_HOST=redis-container \
 -e REDIS_PORT=6379 -e REDIS_DB=0 \
 -e REDIS_MIN_IDLE_CONNECTIONS=10 -e REDIS_POOL_SIZE=100 \
 -e REDIS_POOL_TIMEOUT=30 -e SNMP_HOST=x.x.x.x \
 -e SNMP_PORT=161 -e SNMP_COMMUNITY=xxxx \
-cepatkilatteknologi/snmp-olt-zte-c320:3.0.0
+cepatkilatteknologi/snmp-olt-zte:3.0.0
 ```
 
 ## API Endpoints
@@ -92,7 +171,7 @@ cepatkilatteknologi/snmp-olt-zte-c320:3.0.0
 curl -sS localhost:8081/health | jq
 ```
 ```json
-{"status":"ok"}
+{"status":"healthy"}
 ```
 
 ### Get All ONUs by Board and PON
@@ -102,7 +181,7 @@ curl -sS localhost:8081/api/v1/board/2/pon/7 | jq
 ```json
 {
   "code": 200,
-  "status": "OK",
+  "status": "success",
   "data": [
     {
       "board": 2,
@@ -125,7 +204,7 @@ curl -sS localhost:8081/api/v1/board/2/pon/7/onu/4 | jq
 ```json
 {
   "code": 200,
-  "status": "OK",
+  "status": "success",
   "data": {
     "board": 2,
     "pon": 7,
@@ -156,7 +235,18 @@ curl -sS localhost:8081/api/v1/board/2/pon/5/onu_id/empty | jq
 ### Get ONU IDs with Serial Numbers
 ```shell
 curl -sS localhost:8081/api/v1/board/2/pon/7/onu_id_sn | jq
+
+# Force a fresh SNMP read, bypassing + refreshing the serial-list cache
+curl -sS 'localhost:8081/api/v1/board/2/pon/7/onu_id_sn?nocache=true' | jq
 ```
+
+By default this endpoint is served from the `board_<b>_pon_<p>_serial_list`
+Redis cache. Pass `?nocache=true` to skip the cache, read live from SNMP, and
+repopulate the cache with the fresh result. This exists for pre-write existence
+checks (e.g. write-olt-zte verifying an ONU right before a delete/replace), where
+a stale cached snapshot right after a provision would otherwise hide the OLT's
+real state. The flag is also accepted on the multi-OLT path
+`/api/v1/olt/{id}/board/{b}/pon/{p}/onu_id_sn`.
 
 ### Update Empty ONU ID Cache
 ```shell
@@ -170,7 +260,7 @@ curl -sS 'http://localhost:8081/api/v1/paginate/board/2/pon/8?limit=3&page=2' | 
 ```json
 {
   "code": 200,
-  "status": "OK",
+  "status": "success",
   "data": [
     {"board": 2, "pon": 8, "onu_id": 4, "name": "Customer-004", "onu_type": "F670LV7.1", "serial_number": "ZTEGC*******", "rx_power": "-19.17", "status": "Online"},
     {"board": 2, "pon": 8, "onu_id": 5, "name": "Customer-005", "onu_type": "F660V6.0", "serial_number": "ZTEGD*******", "rx_power": "-19.54", "status": "Online"}
@@ -202,18 +292,20 @@ Without a valid API key, the server returns `401 Unauthorized`. If `API_KEY` is 
 
 **Success:**
 ```json
-{"code": 200, "status": "OK", "data": [...]}
+{"code": 200, "status": "success", "data": [...]}
 ```
 
 **Success with pagination:**
 ```json
-{"code": 200, "status": "OK", "data": [...], "meta": {"page": 1, "limit": 10, "page_count": 7, "total_rows": 69}}
+{"code": 200, "status": "success", "data": [...], "meta": {"page": 1, "limit": 10, "page_count": 7, "total_rows": 69}}
 ```
 
-**Error:**
+**Error** (top-level `error_code` + `data` + `request_id`):
 ```json
-{"code": 400, "status": "Bad Request", "error": {"type": "VALIDATION_ERROR", "message": "board_id must be 1 or 2", "details": {"received": "99"}}}
+{"code": 400, "status": "Bad Request", "error_code": "VALIDATION_ERROR", "data": {"message": "board_id is not a configured GPON slot", "details": {"received": "99"}}, "request_id": "d7dhp4pciod1cuth4i80"}
 ```
+
+Error codes: `VALIDATION_ERROR`, `NOT_FOUND`, `UNAUTHORIZED`, `SNMP_ERROR`, `REDIS_ERROR`, `CONFIG_ERROR`, `INTERNAL_ERROR`.
 
 | Pagination Parameter | Default | Max |
 |---------------------|---------|-----|
@@ -284,14 +376,14 @@ Ready-to-use deployment configurations in [`examples/`](examples/):
 | Method | Directory | Install |
 |--------|-----------|---------|
 | Docker Compose | [`examples/docker/`](examples/docker/) | `docker compose up -d` |
-| Helm Chart | [`examples/helm/`](examples/helm/snmp-olt-zte-c320/) | `helm install olt-monitor snmp-olt/snmp-olt-zte-c320` |
+| Helm Chart | [`examples/helm/`](examples/helm/snmp-olt-zte/) | `helm install olt-monitor snmp-olt/snmp-olt-zte` |
 | Kustomize | [`examples/kustomize/`](examples/kustomize/) | `kubectl apply -k examples/kustomize/overlays/production/` |
 
 ### Helm Repository
 ```bash
-helm repo add snmp-olt https://cepat-kilat-teknologi.github.io/go-snmp-olt-zte-c320/
+helm repo add snmp-olt https://cepat-kilat-teknologi.github.io/snmp-olt-zte/
 helm repo update
-helm install olt-monitor snmp-olt/snmp-olt-zte-c320 \
+helm install olt-monitor snmp-olt/snmp-olt-zte \
   --set snmp.host=192.168.1.1 \
   --set snmp.community=your-community
 ```
@@ -333,12 +425,12 @@ Tested with k6 (100 VUs, 1m40s) against a real ZTE C320 OLT:
 | Median Response Time | 217µs |
 | Iterations (100 VUs) | 51,043 |
 | Real Error Rate | 0.07% |
-| Test Coverage | 98.6% |
+| Test Coverage | 99% |
 
 ### Caching Strategy
 - **ONU list**: 30 min TTL (configurable via `REDIS_ONU_INFO_TTL`), background refresh at 20% expiry
 - **ONU detail**: 15 min TTL (configurable via `REDIS_ONU_DETAIL_TTL`), fallback from cached list
-- **ONU serial numbers**: 30 min TTL, cached in Redis
+- **ONU serial numbers**: 30 min TTL, cached in Redis (`onu_id_sn`); bypass + refresh with `?nocache=true` for pre-write existence checks that need a live read
 - **Empty ONU IDs**: 5 min TTL (configurable via `REDIS_EMPTY_ONU_ID_TTL`)
 - **Cache pre-warming**: All 32 board/pon combos scanned at startup (`CACHE_PREWARM=true`)
 - **SNMP concurrency limit**: Max 5 concurrent operations (`SNMP_MAX_CONCURRENT=5`)
@@ -366,13 +458,37 @@ Run `task --list` or `task help` to see all available tasks.
 
 ### Load Testing
 
+`task load-test` runs the scenario-based `k6-load-test.js` (health, ONU list,
+ONU detail, pagination, mixed ops, contract conformance). A lighter
+stages-based variant lives at `scripts/k6-load-test.js`.
+
 ```shell
 # Run load test (wait for cache pre-warm before testing)
 task load-test
 
 # Run with custom base URL and API key
-k6 run -e BASE_URL=http://10.0.0.1:8081 -e API_KEY=your-key scripts/k6-load-test.js
+k6 run -e BASE_URL=http://10.0.0.1:8081 -e API_KEY=your-key k6-load-test.js
 ```
 
+**Multi-OLT load testing** — pass the *same* `OLTS` JSON the server uses and the
+test automatically targets the per-OLT paths `/api/v1/olt/{id}/board/...` with
+each OLT's valid board/pon ranges (derived from its `boards` spec), and asserts
+the per-OLT `snmp_<id>` readiness probes plus an unknown-OLT `404`:
+
+```shell
+k6 run -e BASE_URL=http://localhost:8081 \
+  -e OLTS='[{"id":"c320","host":"10.0.0.1","community":"public","boards":"1,2"},
+            {"id":"c300a","host":"10.0.0.2","port":1161,"community":"public","boards":"3:16,5:8"}]' \
+  k6-load-test.js
+```
+
+When `OLTS` is omitted the test falls back to the single-OLT bare
+`/api/v1/board/...` paths.
+
+When the server runs with per-tenant `API_USERS`, give the load test keys that
+can reach the OLTs: either an admin key via `-e API_KEY=<adminKey>` (sees all),
+or per-tenant keys via `-e OLT_KEYS='{"c320":"keyA","c300a":"keyB"}'` (each OLT
+request is sent with its owner's key).
+
 ## License
-[MIT License](https://github.com/Cepat-Kilat-Teknologi/go-snmp-olt-zte-c320/blob/main/LICENSE)
+[MIT License](https://github.com/Cepat-Kilat-Teknologi/snmp-olt-zte/blob/main/LICENSE)

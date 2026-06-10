@@ -39,13 +39,13 @@ By participating in this project, you agree to maintain a respectful and inclusi
 1. Fork the repository on GitHub
 2. Clone your fork:
 ```bash
-git clone https://github.com/YOUR_USERNAME/go-snmp-olt-zte-c320.git
-cd go-snmp-olt-zte-c320
+git clone https://github.com/YOUR_USERNAME/snmp-olt-zte.git
+cd snmp-olt-zte
 ```
 
 3. Add the upstream repository:
 ```bash
-git remote add upstream https://github.com/Cepat-Kilat-Teknologi/go-snmp-olt-zte-c320.git
+git remote add upstream https://github.com/Cepat-Kilat-Teknologi/snmp-olt-zte.git
 ```
 
 ### Environment Setup

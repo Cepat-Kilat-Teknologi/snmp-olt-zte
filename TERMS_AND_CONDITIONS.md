@@ -281,7 +281,7 @@ Use of the Software in such environments is at your own risk. The copyright hold
 
 For questions about these Terms and Conditions:
 
-- **GitHub**: [Create an Issue](https://github.com/Cepat-Kilat-Teknologi/go-snmp-olt-zte-c320/issues)
+- **GitHub**: [Create an Issue](https://github.com/Cepat-Kilat-Teknologi/snmp-olt-zte/issues)
 - **Email**: admin@ckt.co.id
 - **Security Issues**: See [SECURITY.md](SECURITY.md)
 

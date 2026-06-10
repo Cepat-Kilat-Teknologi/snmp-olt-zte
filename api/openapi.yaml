@@ -2,9 +2,16 @@ openapi: 3.1.0
 info:
   title: Go SNMP OLT ZTE C320 Monitoring API
   description: |
-    REST API for monitoring ZTE C320 OLT (Optical Line Terminal) via SNMP.
+    REST API for monitoring ZTE C320 and C300 OLT (Optical Line Terminal) via SNMP.
     Provides endpoints to query ONU status, optical power levels, serial numbers,
     and manage cache for board/PON combinations.
+
+    **Multi-OLT:** when the instance is configured with multiple OLTs (the `OLTS`
+    env var), every `/api/v1/board/...` path below is also available under
+    `/api/v1/olt/{olt_id}/board/...`, where `{olt_id}` selects the target OLT.
+    The configured default OLT continues to answer the bare `/api/v1/board/...`
+    paths shown here. `board_id` is the physical GPON slot and `pon_id` is
+    validated against that slot's card (GTGO=8 or GTGH=16 PON ports).
 
     **Breaking change in 3.0.0:** the JSON response format was aligned to
     the ISP adapter standard:
@@ -12,10 +19,10 @@ info:
       - error responses use top-level `error_code` (was nested `error.type`)
       - error body carries `data` (was nested `error.message`) and `request_id`
 
-    Version is `3.0.0`; API contract version is `v1` (endpoint prefix
-    `/api/v1`). Both are exposed via `X-App-Version` and `X-API-Version`
-    response headers on every request.
-  version: 3.0.0
+    API contract version is `v1` (endpoint prefix `/api/v1`). The binary
+    version and contract version are exposed via `X-App-Version` and
+    `X-API-Version` response headers on every request.
+  version: 3.2.0
   contact:
     name: API Support
   license:
@@ -84,6 +91,11 @@ paths:
         Returns 200 when all registered dependency probes (Redis, SNMP) are
         healthy, 503 otherwise. Probe results are cached per-dependency TTL
         (Redis 5s, SNMP 30s) so this endpoint is cheap to call.
+
+        In multi-OLT deployments each OLT gets its own probe keyed `snmp_<id>`
+        (e.g. `snmp_c320`, `snmp_c300a`). The default OLT is critical; secondary
+        OLTs are non-critical, so one unreachable secondary degrades the report
+        but does not flip readiness to 503.
       operationId: readinessProbe
       tags:
         - Health
@@ -112,7 +124,9 @@ paths:
                     example:
                       redis:
                         state: up
-                      snmp:
+                      snmp_c320:
+                        state: up
+                      snmp_c300a:
                         state: up
         "503":
           description: One or more dependencies are down
@@ -344,6 +358,7 @@ paths:
       parameters:
         - $ref: "#/components/parameters/BoardId"
         - $ref: "#/components/parameters/PonId"
+        - $ref: "#/components/parameters/NoCache"
       responses:
         "200":
           description: ONU IDs with serial numbers retrieved successfully
@@ -455,24 +470,328 @@ paths:
         "500":
           $ref: "#/components/responses/InternalError"
 
+  # ───────────────────────────────────────────────────────────────────────────
+  # Multi-OLT variants. Identical semantics to the bare /api/v1/board/... paths
+  # above, but {olt_id} selects which OLT in the OLTS/OLTS_FILE registry to
+  # target. The configured DEFAULT_OLT also answers the bare paths above.
+  # ───────────────────────────────────────────────────────────────────────────
+  /api/v1/olt/{olt_id}/board/{board_id}/pon/{pon_id}:
+    get:
+      summary: Get all ONUs for a board/PON (multi-OLT)
+      description: Same as the bare path but scoped to the OLT named by `olt_id`.
+      operationId: getOnusByBoardPonForOlt
+      tags:
+        - ONU
+      parameters:
+        - $ref: "#/components/parameters/OltId"
+        - $ref: "#/components/parameters/BoardId"
+        - $ref: "#/components/parameters/PonId"
+      responses:
+        "200":
+          description: List of ONUs retrieved successfully
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/WebResponse"
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items:
+                          $ref: "#/components/schemas/ONUInfoPerBoard"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /api/v1/olt/{olt_id}/board/{board_id}/pon/{pon_id}/cache/clear:
+    delete:
+      summary: Clear cache for a board/PON (multi-OLT)
+      description: Same as the bare path but scoped to the OLT named by `olt_id`.
+      operationId: clearCacheByBoardPonForOlt
+      tags:
+        - Cache
+      parameters:
+        - $ref: "#/components/parameters/OltId"
+        - $ref: "#/components/parameters/BoardId"
+        - $ref: "#/components/parameters/PonId"
+      responses:
+        "200":
+          description: Cache cleared successfully
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/WebResponse"
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          message:
+                            type: string
+                            example: Cache deleted successfully
+                          board_id:
+                            type: integer
+                            example: 1
+                          pon_id:
+                            type: integer
+                            example: 1
+                        required:
+                          - message
+                          - board_id
+                          - pon_id
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /api/v1/olt/{olt_id}/board/{board_id}/pon/{pon_id}/onu/{onu_id}:
+    get:
+      summary: Get specific ONU detail (multi-OLT)
+      description: Same as the bare path but scoped to the OLT named by `olt_id`.
+      operationId: getOnuDetailForOlt
+      tags:
+        - ONU
+      parameters:
+        - $ref: "#/components/parameters/OltId"
+        - $ref: "#/components/parameters/BoardId"
+        - $ref: "#/components/parameters/PonId"
+        - $ref: "#/components/parameters/OnuId"
+      responses:
+        "200":
+          description: ONU detail retrieved successfully
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/WebResponse"
+                  - type: object
+                    properties:
+                      data:
+                        $ref: "#/components/schemas/ONUCustomerInfo"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /api/v1/olt/{olt_id}/board/{board_id}/pon/{pon_id}/onu_id/empty:
+    get:
+      summary: Get available/empty ONU IDs (multi-OLT)
+      description: Same as the bare path but scoped to the OLT named by `olt_id`.
+      operationId: getEmptyOnuIdsForOlt
+      tags:
+        - ONU ID
+      parameters:
+        - $ref: "#/components/parameters/OltId"
+        - $ref: "#/components/parameters/BoardId"
+        - $ref: "#/components/parameters/PonId"
+      responses:
+        "200":
+          description: List of empty ONU IDs retrieved successfully
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/WebResponse"
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items:
+                          $ref: "#/components/schemas/OnuID"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /api/v1/olt/{olt_id}/board/{board_id}/pon/{pon_id}/onu_id_sn:
+    get:
+      summary: Get ONU IDs with serial numbers (multi-OLT)
+      description: Same as the bare path but scoped to the OLT named by `olt_id`.
+      operationId: getOnuIdSerialNumbersForOlt
+      tags:
+        - ONU ID
+      parameters:
+        - $ref: "#/components/parameters/OltId"
+        - $ref: "#/components/parameters/BoardId"
+        - $ref: "#/components/parameters/PonId"
+        - $ref: "#/components/parameters/NoCache"
+      responses:
+        "200":
+          description: ONU IDs with serial numbers retrieved successfully
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/WebResponse"
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items:
+                          $ref: "#/components/schemas/OnuSerialNumber"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /api/v1/olt/{olt_id}/board/{board_id}/pon/{pon_id}/onu_id/update:
+    post:
+      summary: Force refresh empty ONU ID cache (multi-OLT)
+      description: Same as the bare path but scoped to the OLT named by `olt_id`.
+      operationId: updateEmptyOnuIdCacheForOlt
+      tags:
+        - Cache
+      parameters:
+        - $ref: "#/components/parameters/OltId"
+        - $ref: "#/components/parameters/BoardId"
+        - $ref: "#/components/parameters/PonId"
+      responses:
+        "200":
+          description: Cache updated successfully
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/WebResponse"
+                  - type: object
+                    properties:
+                      data:
+                        type: string
+                        example: Success Update Empty ONU_ID
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /api/v1/olt/{olt_id}/paginate/board/{board_id}/pon/{pon_id}:
+    get:
+      summary: Get paginated ONU list (multi-OLT)
+      description: Same as the bare path but scoped to the OLT named by `olt_id`.
+      operationId: getOnusPaginatedForOlt
+      tags:
+        - ONU
+      parameters:
+        - $ref: "#/components/parameters/OltId"
+        - $ref: "#/components/parameters/BoardId"
+        - $ref: "#/components/parameters/PonId"
+        - name: page
+          in: query
+          description: Page number (1-indexed)
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            default: 1
+            example: 1
+        - name: limit
+          in: query
+          description: Number of items per page
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 10
+            example: 10
+      responses:
+        "200":
+          description: Paginated list of ONUs retrieved successfully
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/WebResponse"
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items:
+                          $ref: "#/components/schemas/ONUInfoPerBoard"
+                      meta:
+                        $ref: "#/components/schemas/Meta"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
 components:
   securitySchemes:
     ApiKeyAuth:
       type: apiKey
       in: header
       name: X-API-Key
-      description: Optional API key for authenticating requests to /api/v1 routes.
+      description: >-
+        API key for /api/v1 routes. With a single `API_KEY` the key only gates
+        access. With the per-tenant `API_USERS` registry, the key also identifies
+        the caller (user_id + role): a user sees only the OLTs whose `user_id`
+        matches theirs — requesting another tenant's OLT returns 404 (not 403, to
+        avoid enumeration) — while an `admin` role sees all OLTs. A missing or
+        unknown key returns 401 when authentication is enabled.
 
   parameters:
+    OltId:
+      name: olt_id
+      in: path
+      required: true
+      description: >-
+        Selects the target OLT in a multi-OLT deployment (the `OLTS` / `OLTS_FILE`
+        registry). Must match the `id` of one configured OLT. Present only on the
+        `/api/v1/olt/{olt_id}/...` paths; the configured default OLT additionally
+        answers the bare `/api/v1/board/...` paths. An unknown id returns 404.
+      schema:
+        type: string
+        pattern: "^[A-Za-z0-9_-]+$"
+        example: c320
     BoardId:
       name: board_id
       in: path
       required: true
-      description: Board identifier on the OLT
+      description: >-
+        Physical GPON slot on the OLT (board). Which slots are valid depends on
+        the deployment's OLT_BOARDS setting: a ZTE C320 typically uses slots 1-2,
+        while a C300 chassis holds its GPON cards in higher slots (e.g. 3 and 5).
+        Requests for a slot not configured via OLT_BOARDS return 400.
       schema:
         type: integer
         minimum: 1
-        maximum: 2
+        maximum: 30
         example: 1
     PonId:
       name: pon_id
@@ -494,6 +813,21 @@ components:
         minimum: 1
         maximum: 128
         example: 1
+    NoCache:
+      name: nocache
+      in: query
+      required: false
+      description: >-
+        When `true`, force a fresh SNMP read, bypassing the serial-list Redis
+        cache (`board_<b>_pon_<p>_serial_list`) and refreshing it with the result.
+        Used by write-olt-zte's pre-write existence checks so a delete/replace
+        issued right after a provision sees the OLT's real state instead of a
+        stale cached snapshot. Any value other than `true` keeps the default
+        cached behaviour.
+      schema:
+        type: boolean
+        default: false
+        example: true
 
   schemas:
     WebResponse:
@@ -537,6 +871,7 @@ components:
           enum:
             - VALIDATION_ERROR
             - NOT_FOUND
+            - UNAUTHORIZED
             - SNMP_ERROR
             - REDIS_ERROR
             - CONFIG_ERROR
@@ -549,12 +884,12 @@ components:
             available. Callers should handle both shapes.
           oneOf:
             - type: string
-              example: board_id must be 1 or 2
+              example: board_id is not a configured GPON slot
             - type: object
               properties:
                 message:
                   type: string
-                  example: board_id must be 1 or 2
+                  example: board_id is not a configured GPON slot
                 details:
                   type: object
                   additionalProperties: true
@@ -791,7 +1126,7 @@ components:
         source:
           type: string
           description: IP address of the OLT that sent the trap
-          example: "192.168.213.174"
+          example: "192.0.2.10"
         board:
           type: integer
           example: 1
@@ -844,7 +1179,7 @@ components:
             status: Bad Request
             error_code: VALIDATION_ERROR
             data:
-              message: board_id must be 1 or 2
+              message: board_id is not a configured GPON slot
               details:
                 received: "99"
             request_id: d7dhp4pciod1cuth4i80
@@ -857,8 +1192,8 @@ components:
           example:
             code: 401
             status: Unauthorized
-            error_code: INTERNAL_ERROR
-            data: Invalid or missing API key
+            error_code: UNAUTHORIZED
+            data: invalid or missing API key
             request_id: d7dhp4pciod1cuth4i80
     NotFound:
       description: Resource not found

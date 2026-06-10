@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Cepat-Kilat-Teknologi/go-snmp-olt-zte-c320/internal/model"
+	"github.com/Cepat-Kilat-Teknologi/snmp-olt-zte/internal/model"
 	"github.com/gosnmp/gosnmp"
 )
 
@@ -584,7 +584,7 @@ func TestHandleTrap_FullTrapWithSnmpTrapOID(t *testing.T) {
 		},
 	})
 
-	addr := &net.UDPAddr{IP: net.ParseIP("192.168.213.174"), Port: 162}
+	addr := &net.UDPAddr{IP: net.ParseIP("192.0.2.10"), Port: 162}
 	packet := &gosnmp.SnmpPacket{
 		Variables: []gosnmp.SnmpPDU{
 			{Name: ".1.3.6.1.2.1.1.3.0", Type: gosnmp.TimeTicks, Value: 12345},

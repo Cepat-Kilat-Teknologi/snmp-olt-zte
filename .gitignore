@@ -31,6 +31,9 @@ tmp/
 .task/
 gen/*
 
+# K3s dev overlay (contains real credentials)
+examples/kustomize/overlays/k3s-dev/
+
 # Sensitive files - NEVER commit these
 secret.md
 .omc/
@@ -67,7 +70,9 @@ bin/
 *.sqlite
 *.sqlite3
 
+# K6 load test results
+k6-results.json
+
 # Backup files
 *.bak
 *.backup
-*.oldk6-results.json

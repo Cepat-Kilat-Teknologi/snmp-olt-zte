@@ -9,9 +9,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Cepat-Kilat-Teknologi/go-snmp-olt-zte-c320/internal/handler"
-	"github.com/Cepat-Kilat-Teknologi/go-snmp-olt-zte-c320/internal/health"
-	"github.com/Cepat-Kilat-Teknologi/go-snmp-olt-zte-c320/internal/model"
+	"github.com/Cepat-Kilat-Teknologi/snmp-olt-zte/internal/handler"
+	"github.com/Cepat-Kilat-Teknologi/snmp-olt-zte/internal/health"
+	"github.com/Cepat-Kilat-Teknologi/snmp-olt-zte/internal/model"
 )
 
 // mockOnuUsecase for testing routes
@@ -47,6 +47,10 @@ func (m *mockOnuUsecase) DeleteCache(ctx context.Context, boardID, ponID int) er
 
 func (m *mockOnuUsecase) InvalidateONUCache(_ context.Context, _, _, _ int) error { return nil }
 func (m *mockOnuUsecase) PreWarmCache(ctx context.Context)                        {}
+
+func (m *mockOnuUsecase) GetUplinkTopology(ctx context.Context) (*model.UplinkTopology, error) {
+	return &model.UplinkTopology{}, nil
+}
 
 func TestRootHandler(t *testing.T) {
 	req := httptest.NewRequest("GET", "/", nil)
@@ -90,7 +94,7 @@ func TestLoadRoutes(t *testing.T) {
 	usecase := &mockOnuUsecase{}
 	onuHandler := handler.NewOnuHandler(usecase)
 
-	router := loadRoutes(onuHandler, nil)
+	router := loadRoutes(onuHandler, nil, nil, 0)
 
 	if router == nil {
 		t.Error("Expected non-nil router")
@@ -100,7 +104,7 @@ func TestLoadRoutes(t *testing.T) {
 func TestLoadRoutes_RootEndpoint(t *testing.T) {
 	usecase := &mockOnuUsecase{}
 	onuHandler := handler.NewOnuHandler(usecase)
-	router := loadRoutes(onuHandler, nil)
+	router := loadRoutes(onuHandler, nil, nil, 0)
 
 	req := httptest.NewRequest("GET", "/", nil)
 	rr := httptest.NewRecorder()
@@ -115,7 +119,7 @@ func TestLoadRoutes_RootEndpoint(t *testing.T) {
 func TestLoadRoutes_MiddlewareApplied(t *testing.T) {
 	usecase := &mockOnuUsecase{}
 	onuHandler := handler.NewOnuHandler(usecase)
-	router := loadRoutes(onuHandler, nil)
+	router := loadRoutes(onuHandler, nil, nil, 0)
 
 	req := httptest.NewRequest("GET", "/", nil)
 	rr := httptest.NewRecorder()
@@ -137,7 +141,7 @@ func TestLoadRoutes_MiddlewareApplied(t *testing.T) {
 func TestLoadRoutes_CORSHeaders(t *testing.T) {
 	usecase := &mockOnuUsecase{}
 	onuHandler := handler.NewOnuHandler(usecase)
-	router := loadRoutes(onuHandler, nil)
+	router := loadRoutes(onuHandler, nil, nil, 0)
 
 	req := httptest.NewRequest("OPTIONS", "/", nil)
 	req.Header.Set("Origin", "http://localhost:3000")
@@ -261,7 +265,7 @@ func TestReadyzHandler_OneProbeDown(t *testing.T) {
 func TestLoadRoutes_MetricsEndpoint(t *testing.T) {
 	usecase := &mockOnuUsecase{}
 	onuHandler := handler.NewOnuHandler(usecase)
-	router := loadRoutes(onuHandler, nil)
+	router := loadRoutes(onuHandler, nil, nil, 0)
 
 	// Issue a normal request first so the metrics middleware records
 	// at least one sample. Otherwise counter vectors without any label
@@ -283,7 +287,7 @@ func TestLoadRoutes_MetricsEndpoint(t *testing.T) {
 func TestLoadRoutes_HealthzEndpoint(t *testing.T) {
 	usecase := &mockOnuUsecase{}
 	onuHandler := handler.NewOnuHandler(usecase)
-	router := loadRoutes(onuHandler, nil)
+	router := loadRoutes(onuHandler, nil, nil, 0)
 
 	req := httptest.NewRequest("GET", "/healthz", nil)
 	rr := httptest.NewRecorder()
@@ -297,7 +301,7 @@ func TestLoadRoutes_HealthzEndpoint(t *testing.T) {
 func TestLoadRoutes_ReadyzEndpoint(t *testing.T) {
 	usecase := &mockOnuUsecase{}
 	onuHandler := handler.NewOnuHandler(usecase)
-	router := loadRoutes(onuHandler, nil)
+	router := loadRoutes(onuHandler, nil, nil, 0)
 
 	req := httptest.NewRequest("GET", "/readyz", nil)
 	rr := httptest.NewRecorder()
@@ -330,7 +334,7 @@ func TestVersionHandler(t *testing.T) {
 func TestLoadRoutes_VersionHeadersPresent(t *testing.T) {
 	usecase := &mockOnuUsecase{}
 	onuHandler := handler.NewOnuHandler(usecase)
-	router := loadRoutes(onuHandler, nil)
+	router := loadRoutes(onuHandler, nil, nil, 0)
 
 	req := httptest.NewRequest("GET", "/", nil)
 	rr := httptest.NewRecorder()

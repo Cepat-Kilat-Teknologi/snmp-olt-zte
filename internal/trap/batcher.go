@@ -7,8 +7,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/Cepat-Kilat-Teknologi/go-snmp-olt-zte-c320/internal/model"
-	"github.com/Cepat-Kilat-Teknologi/go-snmp-olt-zte-c320/pkg/logger"
+	"github.com/Cepat-Kilat-Teknologi/snmp-olt-zte/internal/model"
+	"github.com/Cepat-Kilat-Teknologi/snmp-olt-zte/pkg/logger"
 	"go.uber.org/zap"
 )
 
@@ -282,7 +282,11 @@ func (b *Batcher) flushSeverity(sev Severity) {
 		zap.String("severity", severityLabel(sev)),
 		zap.Int("count", len(list)))
 
-	payload, err := b.webhook.formatter.FormatBatch(sev, list)
+	wc := resolveWebhook(b.webhook)
+	if wc == nil {
+		return // webhook disabled / not configured
+	}
+	payload, err := wc.formatter.FormatBatch(sev, list)
 	if err != nil {
 		logger.Error("batcher_format_failed",
 			zap.Error(err),
@@ -290,5 +294,5 @@ func (b *Batcher) flushSeverity(sev Severity) {
 		return
 	}
 
-	b.webhook.sendPayload(payload)
+	wc.sendPayload(payload)
 }

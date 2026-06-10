@@ -5,9 +5,9 @@ import (
 	"encoding/json"
 	"time"
 
-	apperrors "github.com/Cepat-Kilat-Teknologi/go-snmp-olt-zte-c320/internal/errors"
-	"github.com/Cepat-Kilat-Teknologi/go-snmp-olt-zte-c320/internal/model"
-	"github.com/Cepat-Kilat-Teknologi/go-snmp-olt-zte-c320/pkg/logger"
+	apperrors "github.com/Cepat-Kilat-Teknologi/snmp-olt-zte/internal/errors"
+	"github.com/Cepat-Kilat-Teknologi/snmp-olt-zte/internal/model"
+	"github.com/Cepat-Kilat-Teknologi/snmp-olt-zte/pkg/logger"
 	"github.com/redis/go-redis/v9"
 	"go.uber.org/zap"
 )

@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/Cepat-Kilat-Teknologi/go-snmp-olt-zte-c320/config"
+	"github.com/Cepat-Kilat-Teknologi/snmp-olt-zte/config"
 	"github.com/gosnmp/gosnmp"
 )
 

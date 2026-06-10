@@ -9,12 +9,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Cepat-Kilat-Teknologi/go-snmp-olt-zte-c320/internal/model"
+	"github.com/Cepat-Kilat-Teknologi/snmp-olt-zte/internal/model"
 )
 
 var testEvent = model.TrapEvent{
 	Timestamp:    time.Date(2026, 4, 20, 10, 0, 0, 0, time.UTC),
-	Source:       "192.168.213.174",
+	Source:       "192.0.2.10",
 	Board:        1,
 	PON:          5,
 	OnuID:        23,
@@ -29,7 +29,7 @@ var testEvent = model.TrapEvent{
 
 var minimalEvent = model.TrapEvent{
 	Timestamp: time.Date(2026, 4, 20, 10, 0, 0, 0, time.UTC),
-	Source:    "192.168.213.174",
+	Source:    "192.0.2.10",
 	Board:     1,
 	PON:       1,
 	OnuID:     1,

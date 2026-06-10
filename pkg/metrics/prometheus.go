@@ -1,5 +1,5 @@
 // Package metrics provides Prometheus metrics collection and chi middleware
-// for the go-snmp-olt-zte-c320 adapter. It records HTTP request counts,
+// for the snmp-olt-zte adapter. It records HTTP request counts,
 // durations, in-flight requests, SNMP operation statistics, and cache hit/miss
 // counters — everything needed to render adapter dashboards in Grafana.
 package metrics

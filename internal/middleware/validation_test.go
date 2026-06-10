@@ -7,7 +7,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/Cepat-Kilat-Teknologi/go-snmp-olt-zte-c320/internal/utils"
+	"github.com/Cepat-Kilat-Teknologi/snmp-olt-zte/internal/utils"
 	"github.com/go-chi/chi/v5"
 )
 
@@ -245,12 +245,13 @@ func TestValidateBoardPonParams(t *testing.T) {
 				_, _ = w.Write([]byte("OK"))
 			})
 
-			// Wrap with validation middleware
-			handler := ValidateBoardPonParams(testHandler)
+			// Wrap with validation middleware (C320 default slots {1,2}, 16 PONs each)
+			validate := ValidateBoardPonParams(map[int]int{1: 16, 2: 16})
+			handler := validate(testHandler)
 
 			// Create a chi router to set URL params
 			r := chi.NewRouter()
-			r.With(ValidateBoardPonParams).Get("/board/{board_id}/pon/{pon_id}", testHandler)
+			r.With(validate).Get("/board/{board_id}/pon/{pon_id}", testHandler)
 
 			// Create request
 			req := httptest.NewRequest("GET", "/board/"+tt.boardID+"/pon/"+tt.ponID, nil)

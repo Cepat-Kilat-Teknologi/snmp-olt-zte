@@ -4,4 +4,4 @@ metadata:
   name: olt-monitoring
   labels:
     app.kubernetes.io/name: olt-monitoring
-    app.kubernetes.io/part-of: snmp-olt-zte-c320
+    app.kubernetes.io/part-of: snmp-olt-zte

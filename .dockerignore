@@ -5,3 +5,6 @@ Dockerfile
 *.toml
 !.air.toml
 /sumitroajiprabowo/
+examples/kustomize/overlays/k3s-dev/
+.env
+.env.*

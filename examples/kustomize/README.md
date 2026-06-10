@@ -84,10 +84,10 @@ kubectl apply -k examples/kustomize/base/
 kubectl get all -n olt-monitoring
 
 # Check pod logs
-kubectl logs -n olt-monitoring -l app.kubernetes.io/name=snmp-olt-zte-c320
+kubectl logs -n olt-monitoring -l app.kubernetes.io/name=snmp-olt-zte
 
 # Test health endpoint
-kubectl port-forward -n olt-monitoring svc/snmp-olt-zte-c320 8081:8081
+kubectl port-forward -n olt-monitoring svc/snmp-olt-zte 8081:8081
 curl http://localhost:8081/health
 ```
 

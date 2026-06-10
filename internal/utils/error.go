@@ -5,8 +5,8 @@ import (
 	"errors"
 	"net/http"
 
-	apperrors "github.com/Cepat-Kilat-Teknologi/go-snmp-olt-zte-c320/internal/errors"
-	"github.com/Cepat-Kilat-Teknologi/go-snmp-olt-zte-c320/pkg/logger"
+	apperrors "github.com/Cepat-Kilat-Teknologi/snmp-olt-zte/internal/errors"
+	"github.com/Cepat-Kilat-Teknologi/snmp-olt-zte/pkg/logger"
 	"go.uber.org/zap"
 )
 
@@ -88,6 +88,10 @@ func HandleError(w http.ResponseWriter, r *http.Request, err error) {
 			logger.Debug("resource_not_found", baseFields...)
 			writeError(w, http.StatusNotFound, "Not Found", requestID, appErr)
 
+		case apperrors.ErrorTypeUnauthorized: // -> 401 Unauthorized
+			logger.Warn("unauthorized", baseFields...)
+			writeError(w, http.StatusUnauthorized, "Unauthorized", requestID, appErr)
+
 		case apperrors.ErrorTypeSNMP, apperrors.ErrorTypeRedis, apperrors.ErrorTypeInternal: // -> 500
 			fields := append(baseFields, zap.Error(appErr.Err))
 			logger.Error("internal_error", fields...)
@@ -131,4 +135,9 @@ func ErrorInternalServerError(w http.ResponseWriter, r *http.Request, err error)
 // ErrorNotFound is a helper function to send a 404 Not Found response.
 func ErrorNotFound(w http.ResponseWriter, r *http.Request, err error) {
 	writeError(w, http.StatusNotFound, "Not Found", requestIDFromRequest(r), err)
+}
+
+// ErrorUnauthorized is a helper function to send a 401 Unauthorized response.
+func ErrorUnauthorized(w http.ResponseWriter, r *http.Request, err error) {
+	writeError(w, http.StatusUnauthorized, "Unauthorized", requestIDFromRequest(r), err)
 }

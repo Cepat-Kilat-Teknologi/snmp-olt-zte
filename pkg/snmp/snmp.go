@@ -3,14 +3,37 @@ package snmp
 import (
 	"fmt"
 	"os"
+	"strconv"
 	"time"
 
-	"github.com/Cepat-Kilat-Teknologi/go-snmp-olt-zte-c320/config"
-	"github.com/Cepat-Kilat-Teknologi/go-snmp-olt-zte-c320/internal/utils"
-	"github.com/Cepat-Kilat-Teknologi/go-snmp-olt-zte-c320/pkg/logger"
+	"github.com/Cepat-Kilat-Teknologi/snmp-olt-zte/config"
+	"github.com/Cepat-Kilat-Teknologi/snmp-olt-zte/internal/utils"
+	"github.com/Cepat-Kilat-Teknologi/snmp-olt-zte/pkg/logger"
 	"github.com/gosnmp/gosnmp"
 	"go.uber.org/zap"
 )
+
+// snmpTimeout / snmpRetries make the per-request SNMP timeout and retry count
+// tunable for slow links (e.g. an OLT reached over the public internet, where
+// the default 5s is too aggressive). Defaults preserve the previous behavior
+// (5s, 2 retries) when the env vars are unset.
+func snmpTimeout() time.Duration {
+	if v := os.Getenv("SNMP_TIMEOUT_SECONDS"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			return time.Duration(n) * time.Second
+		}
+	}
+	return 5 * time.Second
+}
+
+func snmpRetries() int {
+	if v := os.Getenv("SNMP_RETRIES"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n >= 0 {
+			return n
+		}
+	}
+	return 2
+}
 
 // SetupSnmpConnection is a function to set up snmp connection
 // It helps in initializing the SNMP parameters based on environment or configuration.
@@ -34,28 +57,38 @@ func SetupSnmpConnection(config *config.Config) (*gosnmp.GoSNMP, error) {
 		snmpCommunity = config.SnmpCfg.Community
 	}
 
+	// Delegate to the explicit-parameter builder.
+	return SetupSnmpConnectionWith(snmpHost, snmpPort, snmpCommunity)
+}
+
+// SetupSnmpConnectionWith builds and connects an SNMP v2c target from explicit
+// parameters, performing NO environment lookup. This is what the multi-OLT
+// registry uses: each OLT in the registry has its own host/port/community, so
+// the env-driven SetupSnmpConnection (which always reads the single global
+// SNMP_HOST) cannot be reused for more than one device.
+func SetupSnmpConnectionWith(host string, port uint16, community string) (*gosnmp.GoSNMP, error) {
 	// Check if SNMP configuration is valid (non-empty)
-	if snmpHost == "" || snmpPort == 0 || snmpCommunity == "" {
+	if host == "" || port == 0 || community == "" {
 		logger.Error("snmp_configuration_invalid")
 		return nil, fmt.Errorf("konfigurasi SNMP tidak valid")
 	}
 
 	logger.Info("setting_up_snmp_connection",
-		zap.String("host", snmpHost),
-		zap.Uint16("port", snmpPort),
+		zap.String("host", host),
+		zap.Uint16("port", port),
 	)
 
 	// Create a new SNMP target instance
 	// Note: SNMP library logging is disabled; we use zap via pkg/logger for application logging instead
 	target := &gosnmp.GoSNMP{
-		Target:    snmpHost,                       // Target IP
-		Port:      snmpPort,                       // Target Port
-		Community: snmpCommunity,                  // Community String
-		Version:   gosnmp.Version2c,               // SNMP Version 2c
-		Timeout:   time.Duration(5) * time.Second, // Timeout: 5 s (reduced from the 30s for better responsiveness)
-		Retries:   2,                              // Retry count: 2 (reduced from 3, max time = 5 s × 2 = 10s)
-		MaxOids:   60,                             // Maximum OIDs per request (batch size for better performance)
-		Logger:    gosnmp.Logger{},                // Disable SNMP library logging (empty struct)
+		Target:    host,             // Target IP
+		Port:      port,             // Target Port
+		Community: community,        // Community String
+		Version:   gosnmp.Version2c, // SNMP Version 2c
+		Timeout:   snmpTimeout(),    // default 5s; raise via SNMP_TIMEOUT_SECONDS for slow/public links
+		Retries:   snmpRetries(),    // default 2; tune via SNMP_RETRIES
+		MaxOids:   60,               // Maximum OIDs per request (batch size for better performance)
+		Logger:    gosnmp.Logger{},  // Disable SNMP library logging (empty struct)
 	}
 
 	// Connect to the SNMP target

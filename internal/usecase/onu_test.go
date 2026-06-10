@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Cepat-Kilat-Teknologi/go-snmp-olt-zte-c320/config"
-	"github.com/Cepat-Kilat-Teknologi/go-snmp-olt-zte-c320/internal/model"
+	"github.com/Cepat-Kilat-Teknologi/snmp-olt-zte/config"
+	"github.com/Cepat-Kilat-Teknologi/snmp-olt-zte/internal/model"
 	"github.com/gosnmp/gosnmp"
 )
 
@@ -1463,6 +1463,37 @@ func TestDeleteCache_UsesGenerateRedisKey(t *testing.T) {
 	}
 }
 
+// For a NAMED OLT the purge must delete the OLT-namespaced key the read path
+// writes (olt_<id>_board_X_pon_Y) — otherwise multi-OLT cache never clears and
+// the per-board/PON "Purge cache" action silently does nothing.
+func TestDeleteCache_NamespacesKeyForNamedOLT(t *testing.T) {
+	cfg := &config.Config{
+		OltCfg:      config.OltConfig{BaseOID1: "1.3.6.1.4.1"},
+		BoardPonMap: make(map[config.BoardPonKey]*config.BoardPonConfig),
+	}
+	cfg.BoardPonMap[config.BoardPonKey{BoardID: 1, PonID: 1}] = &config.BoardPonConfig{OnuIDNameOID: ".1.1.1"}
+
+	var capturedKeys []string
+	snmpRepo := &mockSnmpRepository{}
+	redisRepo := &mockRedisRepository{
+		DeleteFunc: func(ctx context.Context, key string) error {
+			capturedKeys = append(capturedKeys, key)
+			return nil
+		},
+	}
+
+	usecase := NewOnuUsecaseForOLT(snmpRepo, redisRepo, cfg, "c300")
+	if err := usecase.DeleteCache(context.Background(), 1, 1); err != nil {
+		t.Fatalf("Expected no error, got %v", err)
+	}
+
+	wantInfo := "olt_c300_" + GenerateRedisKey(RedisKeyTypeONUInfo, 1, 1)
+	wantSerial := "olt_c300_board_1_pon_1_serial_list"
+	if len(capturedKeys) != 2 || capturedKeys[0] != wantInfo || capturedKeys[1] != wantSerial {
+		t.Errorf("named-OLT purge deleted %v, want [%s %s]", capturedKeys, wantInfo, wantSerial)
+	}
+}
+
 // Tests for TimezoneOffsetWIB constant
 func TestConstants_TimezoneOffsetWIB(t *testing.T) {
 	// TimezoneOffsetWIB should be 7 hours (UTC+7 for WIB - Western Indonesian Time)
@@ -1485,24 +1516,24 @@ func TestGetUptimeDuration_UsesTimezoneOffsetWIB(t *testing.T) {
 
 	usecase := NewOnuUsecase(snmpRepo, redisRepo, cfg).(*onuUsecase)
 
-	// Test with a valid time that's 1 hour ago
-	now := time.Now()
-	oneHourAgo := now.Add(-1 * time.Hour)
-	lastOnline := oneHourAgo.Format(DateTimeFormat)
+	// last_online as the OLT reports it: WIB wall-clock, one hour ago. The OLT's
+	// clock is UTC+7, so "WIB now" is UTC now + the offset.
+	wibNow := time.Now().UTC().Add(TimezoneOffsetWIB)
+	lastOnline := wibNow.Add(-1 * time.Hour).Format(DateTimeFormat)
 
 	result, err := usecase.getUptimeDuration(lastOnline)
-
 	if err != nil {
 		t.Errorf("Expected no error, got %v", err)
 	}
 
-	// The result should not be empty
-	if result == "" {
-		t.Error("Expected non-empty duration string")
+	// The whole point of the fix: a WIB last_online must yield a POSITIVE uptime
+	// (~1 hour), never the ~7h-negative value the old UTC-vs-WIB subtraction gave.
+	if strings.Contains(result, "-") {
+		t.Errorf("uptime must not be negative, got %q", result)
 	}
-
-	// The duration should include the timezone offset (approximately 8 hours: 1 hour + 7 hours offset)
-	// We can't test exact values due to timing, but we verify the function works
+	if !strings.HasPrefix(result, "0 days 1 hours") {
+		t.Errorf("expected ~1 hour uptime, got %q", result)
+	}
 }
 
 func TestTimezoneOffsetWIB_IsCorrectDuration(t *testing.T) {
@@ -3070,7 +3101,7 @@ func TestGetByBoardIDAndPonID_CacheWithHighTTL_NoRefresh(t *testing.T) {
 	}
 }
 
-func TestGetByBoardIDPonIDAndOnuID_FromCache(t *testing.T) {
+func TestGetByBoardIDPonIDAndOnuID_IgnoresDetailCache(t *testing.T) {
 	cfg := &config.Config{
 		OltCfg: config.OltConfig{
 			BaseOID1: "1.3.6.1.4.1",
@@ -3082,11 +3113,14 @@ func TestGetByBoardIDPonIDAndOnuID_FromCache(t *testing.T) {
 		OnuIDNameOID: ".1.1.1",
 	}
 
+	// A cached detail exists, but the realtime path must IGNORE it and read live.
 	cachedDetail := &model.ONUCustomerInfo{
 		Board: 1, PON: 1, ID: 5, Name: "CachedDetail", SerialNumber: "ZTEGC99999999",
 	}
 
-	snmpRepo := &mockSnmpRepository{}
+	snmpRepo := &mockSnmpRepository{
+		BulkWalkFunc: func(oid string, walkFunc func(pdu gosnmp.SnmpPDU) error) error { return nil }, // live read yields nothing
+	}
 	redisRepo := &mockRedisRepository{
 		GetONUDetailFunc: func(ctx context.Context, key string) (*model.ONUCustomerInfo, error) {
 			return cachedDetail, nil
@@ -3099,11 +3133,9 @@ func TestGetByBoardIDPonIDAndOnuID_FromCache(t *testing.T) {
 	if err != nil {
 		t.Errorf("Expected no error, got %v", err)
 	}
-	if result.Name != "CachedDetail" {
-		t.Errorf("Expected CachedDetail, got %s", result.Name)
-	}
-	if result.SerialNumber != "ZTEGC99999999" {
-		t.Errorf("Expected serial ZTEGC99999999, got %s", result.SerialNumber)
+	// Detail is cache-free now: the cached value must NOT be served.
+	if result.Name == "CachedDetail" {
+		t.Error("detail must ignore the Redis cache and read live, but returned the cached value")
 	}
 }
 
@@ -3212,18 +3244,15 @@ func TestGetOnuIDAndSerialNumber_FromCache(t *testing.T) {
 	}
 }
 
-func TestGetByBoardIDPonIDAndOnuID_FallbackFromList(t *testing.T) {
+func TestGetByBoardIDPonIDAndOnuID_DoesNotDeriveFromList(t *testing.T) {
 	cfg := createTestConfig()
-	snmpRepo := &mockSnmpRepository{}
+	snmpRepo := &mockSnmpRepository{
+		BulkWalkFunc: func(oid string, walkFunc func(pdu gosnmp.SnmpPDU) error) error { return nil }, // live read yields nothing
+	}
 	redisRepo := &mockRedisRepository{
-		// ONU detail cache miss
-		GetONUDetailFunc: func(ctx context.Context, key string) (*model.ONUCustomerInfo, error) {
-			return nil, errors.New("not found")
-		},
-		// ONU info list cache hit — contains the ONU we're looking for
+		// ONU info list cache hit — but detail must NOT derive partial data from it.
 		GetONUInfoListFunc: func(ctx context.Context, key string) ([]model.ONUInfoPerBoard, error) {
 			return []model.ONUInfoPerBoard{
-				{Board: 1, PON: 1, ID: 1, Name: "ONU-1", OnuType: "F670L", SerialNumber: "ZTEGC1234", RXPower: "-20.5", Status: "Online"},
 				{Board: 1, PON: 1, ID: 5, Name: "ONU-5", OnuType: "F660V8", SerialNumber: "ZTEGC5678", RXPower: "-18.3", Status: "Online"},
 			}, nil
 		},
@@ -3233,15 +3262,13 @@ func TestGetByBoardIDPonIDAndOnuID_FallbackFromList(t *testing.T) {
 	if err != nil {
 		t.Errorf("Expected no error, got %v", err)
 	}
-	if result.Name != "ONU-5" {
-		t.Errorf("Expected ONU-5, got %s", result.Name)
-	}
-	if result.SerialNumber != "ZTEGC5678" {
-		t.Errorf("Expected ZTEGC5678, got %s", result.SerialNumber)
+	// Detail no longer derives from the cached list — a live SNMP read is authoritative.
+	if result.Name == "ONU-5" {
+		t.Error("detail must not derive partial data from the cached list; expected a live SNMP read")
 	}
 }
 
-func TestGetByBoardIDPonIDAndOnuID_NotFoundInList_SkipsSNMP(t *testing.T) {
+func TestGetByBoardIDPonIDAndOnuID_AlwaysQueriesSNMP(t *testing.T) {
 	cfg := createTestConfig()
 	snmpCalled := false
 	snmpRepo := &mockSnmpRepository{
@@ -3251,10 +3278,7 @@ func TestGetByBoardIDPonIDAndOnuID_NotFoundInList_SkipsSNMP(t *testing.T) {
 		},
 	}
 	redisRepo := &mockRedisRepository{
-		GetONUDetailFunc: func(ctx context.Context, key string) (*model.ONUCustomerInfo, error) {
-			return nil, errors.New("not found")
-		},
-		// Cached list has ONU 1 and 5, but NOT ONU 99
+		// Cached list has ONU 1 and 5, but NOT ONU 99 — the old code skipped SNMP here.
 		GetONUInfoListFunc: func(ctx context.Context, key string) ([]model.ONUInfoPerBoard, error) {
 			return []model.ONUInfoPerBoard{
 				{Board: 1, PON: 1, ID: 1, Name: "ONU-1"},
@@ -3267,12 +3291,12 @@ func TestGetByBoardIDPonIDAndOnuID_NotFoundInList_SkipsSNMP(t *testing.T) {
 	if err != nil {
 		t.Errorf("Expected no error, got %v", err)
 	}
-	// Should return empty (zero-value) without calling SNMP
+	// A non-existent ONU now returns empty via a live read (not a cache-list skip).
 	if result.ID != 0 {
 		t.Errorf("Expected empty result for non-existent ONU, got ID=%d", result.ID)
 	}
-	if snmpCalled {
-		t.Error("Expected SNMP to NOT be called when ONU not in cached list")
+	if !snmpCalled {
+		t.Error("detail must always query SNMP live, even when the ONU is absent from the cached list")
 	}
 }
 
@@ -3318,8 +3342,18 @@ func TestInvalidateONUCache(t *testing.T) {
 	if err != nil {
 		t.Errorf("Expected no error, got %v", err)
 	}
-	if len(deletedKeys) != 2 {
-		t.Errorf("Expected 2 delete calls, got %d", len(deletedKeys))
+	// detail + board/PON ONU-info + serial-list (onu_id_sn) caches.
+	if len(deletedKeys) != 3 {
+		t.Errorf("Expected 3 delete calls, got %d", len(deletedKeys))
+	}
+	var sawSerial bool
+	for _, k := range deletedKeys {
+		if strings.Contains(k, "serial_list") {
+			sawSerial = true
+		}
+	}
+	if !sawSerial {
+		t.Errorf("Expected the serial_list cache key to be invalidated, got %v", deletedKeys)
 	}
 }
 

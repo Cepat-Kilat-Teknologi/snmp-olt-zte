@@ -30,6 +30,20 @@ func TestErrorType_Constants(t *testing.T) {
 	if ErrorTypeInternal != "INTERNAL_ERROR" {
 		t.Errorf("Expected ErrorTypeInternal to be 'INTERNAL_ERROR', got '%s'", ErrorTypeInternal)
 	}
+
+	if ErrorTypeUnauthorized != "UNAUTHORIZED" {
+		t.Errorf("Expected ErrorTypeUnauthorized to be 'UNAUTHORIZED', got '%s'", ErrorTypeUnauthorized)
+	}
+}
+
+func TestNewUnauthorizedError(t *testing.T) {
+	err := NewUnauthorizedError("invalid or missing API key")
+	if err.Type != ErrorTypeUnauthorized {
+		t.Errorf("Type = %s, want UNAUTHORIZED", err.Type)
+	}
+	if err.Message != "invalid or missing API key" {
+		t.Errorf("Message = %q", err.Message)
+	}
 }
 
 func TestAppError_Error_WithUnderlyingError(t *testing.T) {

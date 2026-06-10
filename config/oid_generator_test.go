@@ -122,8 +122,30 @@ func TestGenerateBoardPonOID(t *testing.T) {
 			wantErr: true,
 		},
 		{
-			name:    "Invalid board ID (3)",
+			// C300 layout: GPON card in physical slot 3. Verified live against
+			// TEST-ONU on a real C300 V2.1.0 (idIndex 285278977, typeIndex 268632320).
+			name:    "C300 Board 3 PON 1",
 			boardID: 3,
+			ponID:   1,
+			want: &BoardPonConfig{
+				OnuIDNameOID:              ".500.10.2.3.3.1.2.285278977",
+				OnuTypeOID:                ".3.50.11.2.1.17.268632320",
+				OnuSerialNumberOID:        ".500.10.2.3.3.1.18.285278977",
+				OnuRxPowerOID:             ".500.20.2.2.2.1.10.285278977",
+				OnuTxPowerOID:             ".3.50.12.1.1.14.268632320",
+				OnuStatusOID:              ".500.10.2.3.8.1.4.285278977",
+				OnuIPAddressOID:           ".3.50.16.1.1.10.268632320",
+				OnuDescriptionOID:         ".500.10.2.3.3.1.3.285278977",
+				OnuLastOnlineOID:          ".500.10.2.3.8.1.5.285278977",
+				OnuLastOfflineOID:         ".500.10.2.3.8.1.6.285278977",
+				OnuLastOfflineReasonOID:   ".500.10.2.3.8.1.7.285278977",
+				OnuGponOpticalDistanceOID: ".500.10.2.3.10.1.2.285278977",
+			},
+			wantErr: false,
+		},
+		{
+			name:    "Invalid board ID (31, above MaxBoardID)",
+			boardID: 31,
 			ponID:   1,
 			want:    nil,
 			wantErr: true,
@@ -173,9 +195,10 @@ func TestGenerateBoardPonOID(t *testing.T) {
 	}
 }
 
-// TestInitializeBoardPonMap verifies that all 32 Board-PON combinations are generated
+// TestInitializeBoardPonMap verifies that the default C320 layout (nil boards ->
+// DefaultBoards {1,2}, 0 pons -> MaxPonID 16) still yields all 32 combinations.
 func TestInitializeBoardPonMap(t *testing.T) {
-	boardPonMap, err := InitializeBoardPonMap()
+	boardPonMap, err := InitializeBoardPonMap(nil, 0)
 	if err != nil {
 		t.Fatalf("InitializeBoardPonMap() error = %v", err)
 	}
@@ -208,6 +231,42 @@ func TestInitializeBoardPonMap(t *testing.T) {
 	}
 }
 
+// TestInitializeBoardPonMap_C300 verifies a C300 layout (GPON cards in slots 3
+// and 5, 16 PONs each) generates the correct slot-parametric OIDs.
+func TestInitializeBoardPonMap_C300(t *testing.T) {
+	boardPonMap, err := InitializeBoardPonMap([]int{3, 5}, 16)
+	if err != nil {
+		t.Fatalf("InitializeBoardPonMap() error = %v", err)
+	}
+
+	if len(boardPonMap) != 32 { // 2 slots * 16 PONs
+		t.Errorf("got %d entries, want 32", len(boardPonMap))
+	}
+
+	// Slot 3 PON 1 must match the live-verified C300 values.
+	slot3pon1 := boardPonMap[BoardPonKey{BoardID: 3, PonID: 1}]
+	if slot3pon1 == nil {
+		t.Fatal("missing config for slot 3 pon 1")
+	}
+	if slot3pon1.OnuIDNameOID != ".500.10.2.3.3.1.2.285278977" {
+		t.Errorf("slot3pon1 OnuIDNameOID = %v, want .500.10.2.3.3.1.2.285278977", slot3pon1.OnuIDNameOID)
+	}
+	if slot3pon1.OnuTypeOID != ".3.50.11.2.1.17.268632320" {
+		t.Errorf("slot3pon1 OnuTypeOID = %v, want .3.50.11.2.1.17.268632320", slot3pon1.OnuTypeOID)
+	}
+
+	// Slots 1,2 must NOT be present when only {3,5} are configured.
+	if _, ok := boardPonMap[BoardPonKey{BoardID: 1, PonID: 1}]; ok {
+		t.Error("slot 1 should not be present for C300 boards {3,5}")
+	}
+
+	// Slot 5 PON 1: onuIDSuffix = 285278208 + 5*256 + 1 = 285279489.
+	slot5pon1 := boardPonMap[BoardPonKey{BoardID: 5, PonID: 1}]
+	if slot5pon1 == nil || slot5pon1.OnuIDNameOID != ".500.10.2.3.3.1.2.285279489" {
+		t.Errorf("slot5pon1 OnuIDNameOID = %v, want .500.10.2.3.3.1.2.285279489", slot5pon1)
+	}
+}
+
 // BenchmarkGenerateBoardPonOID measures the performance of OID generation
 func BenchmarkGenerateBoardPonOID(b *testing.B) {
 	for i := 0; i < b.N; i++ {
@@ -218,6 +277,6 @@ func BenchmarkGenerateBoardPonOID(b *testing.B) {
 // BenchmarkInitializeBoardPonMap measures the performance of generating all 32 configs
 func BenchmarkInitializeBoardPonMap(b *testing.B) {
 	for i := 0; i < b.N; i++ {
-		_, _ = InitializeBoardPonMap()
+		_, _ = InitializeBoardPonMap(nil, 0)
 	}
 }

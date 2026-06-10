@@ -14,7 +14,7 @@
 services:
   app:
     restart: always
-    container_name: go-snmp-olt-zte-c320-dev
+    container_name: snmp-olt-zte-dev
     build:
       context: .
       target: dev

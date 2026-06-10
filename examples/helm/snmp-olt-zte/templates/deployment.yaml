@@ -1,21 +1,21 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: {{ include "snmp-olt-zte-c320.fullname" . }}
+  name: {{ include "snmp-olt-zte.fullname" . }}
   labels:
-    {{- include "snmp-olt-zte-c320.labels" . | nindent 4 }}
+    {{- include "snmp-olt-zte.labels" . | nindent 4 }}
 spec:
   replicas: {{ .Values.replicaCount }}
   selector:
     matchLabels:
-      {{- include "snmp-olt-zte-c320.selectorLabels" . | nindent 6 }}
+      {{- include "snmp-olt-zte.selectorLabels" . | nindent 6 }}
   template:
     metadata:
       annotations:
         checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
         checksum/secret: {{ include (print $.Template.BasePath "/secret.yaml") . | sha256sum }}
       labels:
-        {{- include "snmp-olt-zte-c320.selectorLabels" . | nindent 8 }}
+        {{- include "snmp-olt-zte.selectorLabels" . | nindent 8 }}
     spec:
       {{- with .Values.imagePullSecrets }}
       imagePullSecrets:
@@ -46,29 +46,56 @@ spec:
             {{- end }}
           envFrom:
             - configMapRef:
-                name: {{ include "snmp-olt-zte-c320.fullname" . }}
+                name: {{ include "snmp-olt-zte.fullname" . }}
           env:
             - name: SNMP_COMMUNITY
               valueFrom:
                 secretKeyRef:
-                  name: {{ include "snmp-olt-zte-c320.fullname" . }}
+                  name: {{ include "snmp-olt-zte.fullname" . }}
                   key: SNMP_COMMUNITY
             - name: REDIS_PASSWORD
               valueFrom:
                 secretKeyRef:
-                  name: {{ include "snmp-olt-zte-c320.fullname" . }}
+                  name: {{ include "snmp-olt-zte.fullname" . }}
                   key: REDIS_PASSWORD
             - name: API_KEY
               valueFrom:
                 secretKeyRef:
-                  name: {{ include "snmp-olt-zte-c320.fullname" . }}
+                  name: {{ include "snmp-olt-zte.fullname" . }}
                   key: API_KEY
+            - name: API_USERS
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "snmp-olt-zte.fullname" . }}
+                  key: API_USERS
+            {{- if .Values.trap.enabled }}
+            - name: TRAP_WEBHOOK_URL
+              valueFrom:
+                secretKeyRef:
+                  name: {{ default (include "snmp-olt-zte.fullname" .) .Values.trap.existingSecret }}
+                  key: {{ default "TRAP_WEBHOOK_URL" .Values.trap.existingSecretKey }}
+            {{- end }}
           livenessProbe:
             {{- toYaml .Values.livenessProbe | nindent 12 }}
           readinessProbe:
             {{- toYaml .Values.readinessProbe | nindent 12 }}
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
+          {{- if and (not .Values.olt.olts) .Values.olt.oltsFile }}
+          volumeMounts:
+            - name: olts-file
+              mountPath: /etc/olt
+              readOnly: true
+          {{- end }}
+      {{- if and (not .Values.olt.olts) .Values.olt.oltsFile }}
+      volumes:
+        - name: olts-file
+          secret:
+            secretName: {{ include "snmp-olt-zte.fullname" . }}
+            items:
+              - key: olts.json
+                path: olts.json
+      {{- end }}
       {{- with .Values.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}

@@ -4,8 +4,8 @@ import (
 	"os"
 	"time"
 
-	"github.com/Cepat-Kilat-Teknologi/go-snmp-olt-zte-c320/config"
-	"github.com/Cepat-Kilat-Teknologi/go-snmp-olt-zte-c320/internal/utils"
+	"github.com/Cepat-Kilat-Teknologi/snmp-olt-zte/config"
+	"github.com/Cepat-Kilat-Teknologi/snmp-olt-zte/internal/utils"
 	"github.com/redis/go-redis/v9"
 )
 

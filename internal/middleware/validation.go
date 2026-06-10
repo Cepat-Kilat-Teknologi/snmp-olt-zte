@@ -2,11 +2,13 @@ package middleware
 
 import (
 	"context"
+	"fmt"
 	"net/http"
+	"sort"
 	"strconv"
 
-	apperrors "github.com/Cepat-Kilat-Teknologi/go-snmp-olt-zte-c320/internal/errors"
-	"github.com/Cepat-Kilat-Teknologi/go-snmp-olt-zte-c320/internal/utils"
+	apperrors "github.com/Cepat-Kilat-Teknologi/snmp-olt-zte/internal/errors"
+	"github.com/Cepat-Kilat-Teknologi/snmp-olt-zte/internal/utils"
 	"github.com/go-chi/chi/v5"
 )
 
@@ -52,44 +54,61 @@ func GetOnuID(ctx context.Context) (int, bool) {
 	return onuID, ok
 }
 
-// ValidateBoardPonParams validates board_id and pon_id URL parameters,
-// ensuring they are valid integers within the expected range.
-func ValidateBoardPonParams(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		boardID := chi.URLParam(r, "board_id") // Get board_id from URL
-		ponID := chi.URLParam(r, "pon_id")     // Get pon_id from URL
+// ValidateBoardPonParams returns middleware that validates the board_id and
+// pon_id URL parameters against a PER-SLOT PON topology. boardPons maps each
+// configured physical GPON slot to its card's PON-port count (GTGO=8, GTGH=16),
+// so pon_id is validated against THAT slot's card — /board/5/pon/16 is rejected
+// when slot 5 is an 8-port GTGO. A board_id not in boardPons, or a pon_id
+// outside [1, that slot's count], yields a 400. An empty map falls back to the
+// legacy C320 defaults ({1:16, 2:16}).
+func ValidateBoardPonParams(boardPons map[int]int) func(http.Handler) http.Handler {
+	if len(boardPons) == 0 {
+		boardPons = map[int]int{1: 16, 2: 16}
+	}
 
-		// Validate board_id conversion to integer
-		boardIDInt, err := strconv.Atoi(boardID)
-		// Check if conversion failed or if board_id not 1 or 2
-		if err != nil || (boardIDInt != 1 && boardIDInt != 2) {
-			appErr := apperrors.NewValidationError(
-				"board_id must be 1 or 2",
-				map[string]interface{}{"received": boardID},
-			) // Create validation error
-			utils.HandleError(w, r, appErr) // Return error response
-			return
-		}
+	// Pre-render the allowed-slots list for error payloads (sorted for stability).
+	allowed := make([]int, 0, len(boardPons))
+	for b := range boardPons {
+		allowed = append(allowed, b)
+	}
+	sort.Ints(allowed)
 
-		// Validate pon_id conversion to integer
-		ponIDInt, err := strconv.Atoi(ponID)
-		// Check if conversion failed or if pon_id is out of range (1-16)
-		if err != nil || ponIDInt < 1 || ponIDInt > 16 {
-			appErr := apperrors.NewValidationError(
-				"pon_id must be between 1 and 16",
-				map[string]interface{}{"received": ponID},
-			) // Create validation error
-			utils.HandleError(w, r, appErr) // Return error response
-			return
-		}
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			boardID := chi.URLParam(r, "board_id") // Get board_id from URL
+			ponID := chi.URLParam(r, "pon_id")     // Get pon_id from URL
 
-		// Store validated values into request context for easier access in handlers
-		ctx := r.Context()
-		ctx = context.WithValue(ctx, BoardIDKey, boardIDInt)
-		ctx = context.WithValue(ctx, PonIDKey, ponIDInt)
+			// Validate board_id: must be an integer and a configured GPON slot.
+			boardIDInt, err := strconv.Atoi(boardID)
+			maxPon, ok := boardPons[boardIDInt]
+			if err != nil || !ok {
+				appErr := apperrors.NewValidationError(
+					"board_id is not a configured GPON slot",
+					map[string]interface{}{"received": boardID, "allowed": allowed},
+				)
+				utils.HandleError(w, r, appErr)
+				return
+			}
 
-		next.ServeHTTP(w, r.WithContext(ctx)) // Proceed with the updated context
-	})
+			// Validate pon_id: must be within [1, this slot's PON count].
+			ponIDInt, err := strconv.Atoi(ponID)
+			if err != nil || ponIDInt < 1 || ponIDInt > maxPon {
+				appErr := apperrors.NewValidationError(
+					fmt.Sprintf("pon_id must be between 1 and %d for board %d", maxPon, boardIDInt),
+					map[string]interface{}{"received": ponID},
+				)
+				utils.HandleError(w, r, appErr)
+				return
+			}
+
+			// Store validated values into request context for easier access in handlers
+			ctx := r.Context()
+			ctx = context.WithValue(ctx, BoardIDKey, boardIDInt)
+			ctx = context.WithValue(ctx, PonIDKey, ponIDInt)
+
+			next.ServeHTTP(w, r.WithContext(ctx)) // Proceed with the updated context
+		})
+	}
 }
 
 // ValidateOnuIDParam validates onu_id URL parameter,

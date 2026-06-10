@@ -7,7 +7,7 @@ Example deployment configurations for the SNMP OLT ZTE C320 monitoring service.
 | Method | Best For | Directory |
 |--------|----------|-----------|
 | [Docker Compose](docker/) | Single server, quick setup | `examples/docker/` |
-| [Helm Chart](helm/snmp-olt-zte-c320/) | Kubernetes with package management | `examples/helm/` |
+| [Helm Chart](helm/snmp-olt-zte/) | Kubernetes with package management | `examples/helm/` |
 | [Kustomize](kustomize/) | Kubernetes with overlay-based config | `examples/kustomize/` |
 
 ## Quick Start
@@ -22,16 +22,16 @@ docker compose up -d
 
 ### Helm (from Repository)
 ```bash
-helm repo add snmp-olt https://cepat-kilat-teknologi.github.io/go-snmp-olt-zte-c320/
+helm repo add snmp-olt https://cepat-kilat-teknologi.github.io/snmp-olt-zte/
 helm repo update
-helm install olt-monitor snmp-olt/snmp-olt-zte-c320 \
+helm install olt-monitor snmp-olt/snmp-olt-zte \
   --set snmp.host=192.168.1.1 \
   --set snmp.community=your-community
 ```
 
 ### Helm (from Source)
 ```bash
-helm install olt-monitor examples/helm/snmp-olt-zte-c320 \
+helm install olt-monitor examples/helm/snmp-olt-zte \
   --set snmp.host=192.168.1.1 \
   --set snmp.community=your-community
 ```
@@ -49,8 +49,17 @@ kubectl apply -k examples/kustomize/overlays/production/
 kubectl apply -k examples/kustomize/overlays/development/
 ```
 
+## Multi-OLT & per-tenant access
+
+The examples below show the single-OLT setup (`snmp.host` / `SNMP_HOST`). To run
+many OLTs from one instance and scope each to a tenant, use the `OLTS` /
+`OLTS_FILE` registry (each OLT carries a `user_id`) plus `API_USERS` — see the
+root `README.md` and `examples/helm/snmp-olt-zte/README.md`.
+
 ## Image
 
-All examples use `cepatkilatteknologi/snmp-olt-zte-c320:3.0.0` by default.
+All examples default to the latest released image; pin a version tag for
+reproducible deploys.
 
-Available tags: `latest`, `3.0.0`, `3.0`, `3`, and earlier v2 lineage (`2.1.1`, `2.1`, `2`)
+Available tags: `latest`, semver releases (e.g. `3.1.0`, `3.0.0`), and the
+`3` / `3.0` rolling channels.

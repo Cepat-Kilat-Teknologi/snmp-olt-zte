@@ -9,12 +9,13 @@ import (
 type ErrorType string
 
 const (
-	ErrorTypeValidation ErrorType = "VALIDATION_ERROR" // Error type for validation failures
-	ErrorTypeNotFound   ErrorType = "NOT_FOUND"        // Error type for resource not found
-	ErrorTypeSNMP       ErrorType = "SNMP_ERROR"       // Error type for SNMP operations
-	ErrorTypeRedis      ErrorType = "REDIS_ERROR"      // Error type for Redis operations
-	ErrorTypeConfig     ErrorType = "CONFIG_ERROR"     // Error type for configuration issues
-	ErrorTypeInternal   ErrorType = "INTERNAL_ERROR"   // Error type for internal server errors
+	ErrorTypeValidation   ErrorType = "VALIDATION_ERROR" // Error type for validation failures
+	ErrorTypeNotFound     ErrorType = "NOT_FOUND"        // Error type for resource not found
+	ErrorTypeUnauthorized ErrorType = "UNAUTHORIZED"     // Error type for authentication failures (401)
+	ErrorTypeSNMP         ErrorType = "SNMP_ERROR"       // Error type for SNMP operations
+	ErrorTypeRedis        ErrorType = "REDIS_ERROR"      // Error type for Redis operations
+	ErrorTypeConfig       ErrorType = "CONFIG_ERROR"     // Error type for configuration issues
+	ErrorTypeInternal     ErrorType = "INTERNAL_ERROR"   // Error type for internal server errors
 )
 
 // AppError represents a structured application error
@@ -57,6 +58,15 @@ func NewNotFoundError(resource string, identifier any) *AppError {
 		Type:    ErrorTypeNotFound,
 		Message: fmt.Sprintf("%s not found", resource),
 		Details: map[string]any{"identifier": identifier},
+	}
+}
+
+// NewUnauthorizedError creates a new authentication error (HTTP 401).
+// Used when the X-API-Key is missing or not recognized.
+func NewUnauthorizedError(message string) *AppError {
+	return &AppError{
+		Type:    ErrorTypeUnauthorized,
+		Message: message,
 	}
 }
 

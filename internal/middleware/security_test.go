@@ -157,6 +157,42 @@ func TestRateLimiter(t *testing.T) {
 			t.Errorf("Expected at least 2 requests to succeed, got %d", successCount)
 		}
 	})
+
+	// Infra endpoints (probes/metrics) must bypass the limiter entirely so that
+	// a flood of API traffic can never 429 a Kubernetes probe or Prometheus scrape.
+	t.Run("Infra endpoints bypass the limiter", func(t *testing.T) {
+		testHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusOK)
+		})
+		// Tightest possible bucket: 1 rps, burst 1 — a second /test would be 429.
+		handler := RateLimiter(1, 1)(testHandler)
+
+		for _, path := range []string{"/health", "/healthz", "/ready", "/readyz", "/metrics"} {
+			// Hammer each infra path well beyond the burst; all must return 200.
+			for i := 0; i < 20; i++ {
+				req := httptest.NewRequest("GET", path, nil)
+				rr := httptest.NewRecorder()
+				handler.ServeHTTP(rr, req)
+				if rr.Code != http.StatusOK {
+					t.Fatalf("%s request %d: got %d, want 200 (infra must bypass rate limit)", path, i+1, rr.Code)
+				}
+			}
+		}
+
+		// Sanity: a normal API path with the same tight bucket DOES get limited.
+		blocked := false
+		for i := 0; i < 10; i++ {
+			req := httptest.NewRequest("GET", "/api/v1/board/1/pon/1", nil)
+			rr := httptest.NewRecorder()
+			handler.ServeHTTP(rr, req)
+			if rr.Code == http.StatusTooManyRequests {
+				blocked = true
+			}
+		}
+		if !blocked {
+			t.Error("expected a non-infra path to be rate limited with a 1/1 bucket")
+		}
+	})
 }
 
 func TestMaxBodySize(t *testing.T) {

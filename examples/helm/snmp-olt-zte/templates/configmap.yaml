@@ -1,16 +1,26 @@
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: {{ include "snmp-olt-zte-c320.fullname" . }}
+  name: {{ include "snmp-olt-zte.fullname" . }}
   labels:
-    {{- include "snmp-olt-zte-c320.labels" . | nindent 4 }}
+    {{- include "snmp-olt-zte.labels" . | nindent 4 }}
 data:
   APP_ENV: "production"
   SERVER_PORT: {{ .Values.service.port | quote }}
   SNMP_HOST: {{ .Values.snmp.host | quote }}
   SNMP_PORT: {{ .Values.snmp.port | quote }}
   SNMP_MAX_CONCURRENT: {{ .Values.snmp.maxConcurrent | quote }}
-  REDIS_HOST: {{ include "snmp-olt-zte-c320.redisHost" . | quote }}
+  OLT_BOARDS: {{ .Values.olt.boards | quote }}
+  OLT_PONS_PER_BOARD: {{ .Values.olt.ponsPerBoard | quote }}
+  {{- if .Values.olt.olts }}
+  OLTS: {{ .Values.olt.olts | quote }}
+  {{- else if .Values.olt.oltsFile }}
+  OLTS_FILE: "/etc/olt/olts.json"
+  {{- end }}
+  {{- if and (or .Values.olt.olts .Values.olt.oltsFile) .Values.olt.defaultOlt }}
+  DEFAULT_OLT: {{ .Values.olt.defaultOlt | quote }}
+  {{- end }}
+  REDIS_HOST: {{ include "snmp-olt-zte.redisHost" . | quote }}
   REDIS_PORT: {{ .Values.redis.port | quote }}
   REDIS_DB: {{ .Values.redis.db | quote }}
   REDIS_POOL_SIZE: {{ .Values.redis.poolSize | quote }}
@@ -31,9 +41,15 @@ data:
   TRAP_ENABLED: {{ .Values.trap.enabled | quote }}
   TRAP_PORT: {{ .Values.trap.port | quote }}
   TRAP_COMMUNITY: {{ default .Values.snmp.community .Values.trap.community | quote }}
-  TRAP_WEBHOOK_URL: {{ .Values.trap.webhookURL | quote }}
+  TRAP_WEBHOOK_TYPE: {{ .Values.trap.webhookType | quote }}
+  TRAP_WEBHOOK_CHAT_ID: {{ .Values.trap.webhookChatID | quote }}
   TRAP_WEBHOOK_RETRIES: {{ .Values.trap.webhookRetries | quote }}
   TRAP_WEBHOOK_TIMEOUT: {{ .Values.trap.webhookTimeout | quote }}
+  {{- range $sev, $cfg := .Values.trap.severity }}
+  TRAP_{{ upper $sev }}_INTERVAL: {{ $cfg.interval | quote }}
+  TRAP_{{ upper $sev }}_REPEAT: {{ $cfg.repeat | quote }}
+  TRAP_ACTION_{{ upper $sev }}: {{ $cfg.action | quote }}
+  {{- end }}
   POWER_MONITOR_ENABLED: {{ .Values.powerMonitor.enabled | quote }}
   POWER_MONITOR_INTERVAL: {{ .Values.powerMonitor.interval | quote }}
   POWER_MONITOR_CRON: {{ .Values.powerMonitor.cron | quote }}

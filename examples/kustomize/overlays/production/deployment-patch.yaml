@@ -1,14 +1,14 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: snmp-olt-zte-c320
+  name: snmp-olt-zte
   namespace: olt-monitoring
 spec:
   replicas: 3
   template:
     spec:
       containers:
-        - name: snmp-olt-zte-c320
+        - name: snmp-olt-zte
           resources:
             requests:
               memory: "512Mi"

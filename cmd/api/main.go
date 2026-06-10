@@ -3,10 +3,11 @@ package main
 import (
 	"context"
 	"os"
+	_ "time/tzdata" // embed the IANA tz database so time.LoadLocation works in the distroless image (no OS tzdata)
 
-	"github.com/Cepat-Kilat-Teknologi/go-snmp-olt-zte-c320/app"
-	"github.com/Cepat-Kilat-Teknologi/go-snmp-olt-zte-c320/internal/buildinfo"
-	"github.com/Cepat-Kilat-Teknologi/go-snmp-olt-zte-c320/pkg/logger"
+	"github.com/Cepat-Kilat-Teknologi/snmp-olt-zte/app"
+	"github.com/Cepat-Kilat-Teknologi/snmp-olt-zte/internal/buildinfo"
+	"github.com/Cepat-Kilat-Teknologi/snmp-olt-zte/pkg/logger"
 	"github.com/joho/godotenv"
 	"go.uber.org/zap"
 )
@@ -22,6 +23,10 @@ var (
 	buildTime = "unknown"
 )
 
+// fatal indirects logger.Fatal so the server-start failure path is testable
+// without terminating the test process. Defaults to the real (os.Exit) behavior.
+var fatal = logger.Fatal
+
 func main() {
 	// Propagate ldflags values to buildinfo so the rest of the app can read
 	// them without importing main.
@@ -34,7 +39,7 @@ func main() {
 	if env == "" {
 		env = "production"
 	}
-	logger.Init(env, "go-snmp-olt-zte-c320", version)
+	logger.Init(env, "snmp-olt-zte", version)
 	defer func() { _ = logger.Sync() }()
 
 	// Load .env file if present (ignored in production when file doesn't exist).
@@ -56,6 +61,6 @@ func main() {
 	defer cancel()
 
 	if err := server.Start(ctx); err != nil {
-		logger.Fatal("failed to start server", zap.Error(err))
+		fatal("failed to start server", zap.Error(err))
 	}
 }

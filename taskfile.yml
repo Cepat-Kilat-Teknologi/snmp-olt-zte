@@ -1,7 +1,7 @@
 version: '3'
 
 vars:
-  EXE: cepatkilatteknologi/snmp-olt-zte-c320{{exeExt}}
+  EXE: cepatkilatteknologi/snmp-olt-zte{{exeExt}}
 
 tasks:
   default:

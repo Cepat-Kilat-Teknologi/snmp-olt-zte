@@ -1,7 +1,7 @@
 {{/*
 Expand the name of the chart.
 */}}
-{{- define "snmp-olt-zte-c320.name" -}}
+{{- define "snmp-olt-zte.name" -}}
 {{- default .Chart.Name .Values.nameOverride | trunc 63 | trimSuffix "-" }}
 {{- end }}
 
@@ -10,7 +10,7 @@ Create a default fully qualified app name.
 We truncate at 63 chars because some Kubernetes name fields are limited to this (by the DNS naming spec).
 If release name contains chart name it will be used as a full name.
 */}}
-{{- define "snmp-olt-zte-c320.fullname" -}}
+{{- define "snmp-olt-zte.fullname" -}}
 {{- if .Values.fullnameOverride }}
 {{- .Values.fullnameOverride | trunc 63 | trimSuffix "-" }}
 {{- else }}
@@ -26,16 +26,16 @@ If release name contains chart name it will be used as a full name.
 {{/*
 Create chart name and version as used by the chart label.
 */}}
-{{- define "snmp-olt-zte-c320.chart" -}}
+{{- define "snmp-olt-zte.chart" -}}
 {{- printf "%s-%s" .Chart.Name .Chart.Version | replace "+" "_" | trunc 63 | trimSuffix "-" }}
 {{- end }}
 
 {{/*
 Common labels
 */}}
-{{- define "snmp-olt-zte-c320.labels" -}}
-helm.sh/chart: {{ include "snmp-olt-zte-c320.chart" . }}
-{{ include "snmp-olt-zte-c320.selectorLabels" . }}
+{{- define "snmp-olt-zte.labels" -}}
+helm.sh/chart: {{ include "snmp-olt-zte.chart" . }}
+{{ include "snmp-olt-zte.selectorLabels" . }}
 {{- if .Chart.AppVersion }}
 app.kubernetes.io/version: {{ .Chart.AppVersion | quote }}
 {{- end }}
@@ -45,15 +45,15 @@ app.kubernetes.io/managed-by: {{ .Release.Service }}
 {{/*
 Selector labels
 */}}
-{{- define "snmp-olt-zte-c320.selectorLabels" -}}
-app.kubernetes.io/name: {{ include "snmp-olt-zte-c320.name" . }}
+{{- define "snmp-olt-zte.selectorLabels" -}}
+app.kubernetes.io/name: {{ include "snmp-olt-zte.name" . }}
 app.kubernetes.io/instance: {{ .Release.Name }}
 {{- end }}
 
 {{/*
 Redis host - uses subchart service name when enabled, otherwise uses user-provided host.
 */}}
-{{- define "snmp-olt-zte-c320.redisHost" -}}
+{{- define "snmp-olt-zte.redisHost" -}}
 {{- if (index .Values "redis" "enabled") }}
 {{- printf "%s-redis-master" .Release.Name }}
 {{- else }}
@@ -64,6 +64,6 @@ Redis host - uses subchart service name when enabled, otherwise uses user-provid
 {{/*
 Redis password - uses auth.password which is shared between subchart and app.
 */}}
-{{- define "snmp-olt-zte-c320.redisPassword" -}}
+{{- define "snmp-olt-zte.redisPassword" -}}
 {{- .Values.redis.auth.password }}
 {{- end }}

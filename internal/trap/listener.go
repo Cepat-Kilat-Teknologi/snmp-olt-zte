@@ -7,8 +7,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Cepat-Kilat-Teknologi/go-snmp-olt-zte-c320/internal/model"
-	"github.com/Cepat-Kilat-Teknologi/go-snmp-olt-zte-c320/pkg/logger"
+	"github.com/Cepat-Kilat-Teknologi/snmp-olt-zte/config"
+	"github.com/Cepat-Kilat-Teknologi/snmp-olt-zte/internal/model"
+	"github.com/Cepat-Kilat-Teknologi/snmp-olt-zte/pkg/logger"
 	"github.com/gosnmp/gosnmp"
 	"go.uber.org/zap"
 )
@@ -205,25 +206,25 @@ func parseOnuIndex(fullOID, prefix string) (board, pon, onuID int) {
 		return 0, 0, 0
 	}
 
-	const board1Base = 285278464
-	const board2Base = 285278720
-
-	switch {
-	case encoded > board2Base && encoded <= board2Base+16:
-		board = 2
-		pon = encoded - board2Base
-	case encoded > board1Base && encoded <= board1Base+16:
-		board = 1
-		pon = encoded - board1Base
-	default:
-		if id, err := strconv.Atoi(parts[len(parts)-1]); err == nil {
+	// Decode the ONU-ID-space ifIndex: encoded = 0x11 | shelf<<16 | slot<<8 | pon
+	// (shelf 1). Relative to the shelf-1 base, slot = n / stride and pon = n % stride.
+	// This is slot-parametric, so it decodes traps from any GPON slot on C320 and
+	// C300 (replacing the old hardcoded board-1/board-2 bases).
+	n := encoded - config.OnuIDIfIndexBase
+	slot := n / config.OnuIDSlotStride
+	ponVal := n % config.OnuIDSlotStride
+	if n < 1 || slot < 1 || slot > config.MaxBoardID || ponVal < 1 || ponVal > config.MaxPonID {
+		// Not a decodable GPON ONU index; best-effort ONU ID from the last part.
+		if id, e := strconv.Atoi(parts[len(parts)-1]); e == nil {
 			onuID = id
 		}
-		return
+		return 0, 0, onuID
 	}
 
+	board = slot
+	pon = ponVal
 	if len(parts) >= 2 {
-		if id, err := strconv.Atoi(parts[1]); err == nil {
+		if id, e := strconv.Atoi(parts[1]); e == nil {
 			onuID = id
 		}
 	}

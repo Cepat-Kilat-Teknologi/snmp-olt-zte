@@ -4,7 +4,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/Cepat-Kilat-Teknologi/go-snmp-olt-zte-c320/pkg/logger"
+	"github.com/Cepat-Kilat-Teknologi/snmp-olt-zte/pkg/logger"
 	"go.uber.org/zap"
 )
 
@@ -16,36 +16,37 @@ func (u *onuUsecase) PreWarmCache(ctx context.Context) {
 	total := 0
 	errors := 0
 
-	for boardID := 1; boardID <= 2; boardID++ {
-		for ponID := 1; ponID <= 16; ponID++ {
-			select {
-			case <-ctx.Done():
-				logger.Warn("cache_prewarm_canceled")
-				return
-			default:
-			}
+	// Iterate over the configured (slot, pon) set rather than a hardcoded 2x16
+	// grid, so C300 layouts (e.g. slots 3,5) are pre-warmed correctly. The
+	// BoardPonMap is the single source of truth for which slots/PONs exist.
+	for key := range u.cfg.BoardPonMap {
+		select {
+		case <-ctx.Done():
+			logger.Warn("cache_prewarm_canceled")
+			return
+		default:
+		}
 
-			_, err := u.GetByBoardIDAndPonID(ctx, boardID, ponID)
-			if err != nil {
-				errors++
-				logger.Debug("cache_prewarm_fetch_onu_failed",
-					zap.Error(err),
-					zap.Int("board", boardID),
-					zap.Int("pon", ponID),
-				)
-			} else {
-				total++
-			}
+		_, err := u.GetByBoardIDAndPonID(ctx, key.BoardID, key.PonID)
+		if err != nil {
+			errors++
+			logger.Debug("cache_prewarm_fetch_onu_failed",
+				zap.Error(err),
+				zap.Int("board", key.BoardID),
+				zap.Int("pon", key.PonID),
+			)
+		} else {
+			total++
+		}
 
-			// Also pre-warm serial number list cache.
-			_, err = u.GetOnuIDAndSerialNumber(ctx, boardID, ponID)
-			if err != nil {
-				logger.Debug("cache_prewarm_fetch_sn_failed",
-					zap.Error(err),
-					zap.Int("board", boardID),
-					zap.Int("pon", ponID),
-				)
-			}
+		// Also pre-warm serial number list cache.
+		_, err = u.GetOnuIDAndSerialNumber(ctx, key.BoardID, key.PonID)
+		if err != nil {
+			logger.Debug("cache_prewarm_fetch_sn_failed",
+				zap.Error(err),
+				zap.Int("board", key.BoardID),
+				zap.Int("pon", key.PonID),
+			)
 		}
 	}
 

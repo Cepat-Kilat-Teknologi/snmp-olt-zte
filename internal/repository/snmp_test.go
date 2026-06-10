@@ -511,7 +511,7 @@ func TestSnmpRepository_BulkWalk_Connected(t *testing.T) {
 
 func TestNewPonRepositoryWithConcurrency_ZeroMaxConcurrent(t *testing.T) {
 	conn := newTestConn("192.168.1.1", "public", 161)
-	repo := NewPonRepositoryWithConcurrency(conn, 0)
+	repo := NewPonRepositoryWithConcurrency(conn, 0, false)
 	if repo == nil {
 		t.Error("Expected non-nil repository with zero maxConcurrent")
 	}
@@ -519,7 +519,7 @@ func TestNewPonRepositoryWithConcurrency_ZeroMaxConcurrent(t *testing.T) {
 
 func TestNewPonRepositoryWithConcurrency_NegativeMaxConcurrent(t *testing.T) {
 	conn := newTestConn("192.168.1.1", "public", 161)
-	repo := NewPonRepositoryWithConcurrency(conn, -1)
+	repo := NewPonRepositoryWithConcurrency(conn, -1, false)
 	if repo == nil {
 		t.Error("Expected non-nil repository with negative maxConcurrent")
 	}

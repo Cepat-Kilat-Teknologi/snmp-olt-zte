@@ -9,7 +9,7 @@
 //
 // This package is the project-wide replacement for zerolog. Import it as:
 //
-//	import "github.com/Cepat-Kilat-Teknologi/go-snmp-olt-zte-c320/pkg/logger"
+//	import "github.com/Cepat-Kilat-Teknologi/snmp-olt-zte/pkg/logger"
 //
 // Then call logger.Info / logger.Error / logger.WithRequestID etc.
 package logger
@@ -19,7 +19,7 @@ import (
 	stdlog "log"
 	"sync"
 
-	"github.com/Cepat-Kilat-Teknologi/go-snmp-olt-zte-c320/internal/reqctx"
+	"github.com/Cepat-Kilat-Teknologi/snmp-olt-zte/internal/reqctx"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 )
@@ -33,7 +33,7 @@ var (
 // service metadata. Safe to call multiple times — only the first call takes effect.
 //
 // env:     "production" / "staging" / "development" / "dev"
-// service: service identifier (e.g. "go-snmp-olt-zte-c320")
+// service: service identifier (e.g. "snmp-olt-zte")
 // version: build version string (usually from ldflags)
 func Init(env, service, version string) {
 	once.Do(func() {
@@ -71,7 +71,7 @@ func Init(env, service, version string) {
 // initializes with safe production defaults so that library code never panics.
 func L() *zap.Logger {
 	if appLogger == nil {
-		Init("production", "go-snmp-olt-zte-c320", "unknown")
+		Init("production", "snmp-olt-zte", "unknown")
 	}
 	return appLogger
 }

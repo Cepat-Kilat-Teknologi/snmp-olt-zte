@@ -3,7 +3,7 @@ package utils
 import (
 	"context"
 
-	"github.com/Cepat-Kilat-Teknologi/go-snmp-olt-zte-c320/internal/reqctx"
+	"github.com/Cepat-Kilat-Teknologi/snmp-olt-zte/internal/reqctx"
 )
 
 // RequestIDKey is re-exported from the reqctx package for callers that have

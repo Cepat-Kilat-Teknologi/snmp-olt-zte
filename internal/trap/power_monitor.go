@@ -7,8 +7,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/Cepat-Kilat-Teknologi/go-snmp-olt-zte-c320/internal/model"
-	"github.com/Cepat-Kilat-Teknologi/go-snmp-olt-zte-c320/pkg/logger"
+	"github.com/Cepat-Kilat-Teknologi/snmp-olt-zte/internal/model"
+	"github.com/Cepat-Kilat-Teknologi/snmp-olt-zte/pkg/logger"
 	"github.com/robfig/cron/v3"
 	"go.uber.org/zap"
 )
@@ -26,6 +26,8 @@ type PowerMonitorConfig struct {
 	HighThreshold float64 // dBm, above this = overload alert
 	LowThreshold  float64 // dBm, below this = weak signal alert
 	Source        string  // OLT IP for event source field
+	Boards        []int   // physical GPON slots to scan (C320 -> {1,2}, C300 -> e.g. {3,5}); empty = {1,2}
+	PonsPerBoard  int     // PON ports per card to scan; <1 = 16
 }
 
 // PowerMonitor periodically checks ONU RX power levels and sends alerts
@@ -158,9 +160,20 @@ func (pm *PowerMonitor) scan() {
 
 	logger.Debug("power_monitor_scanning_all_pons")
 
+	// Scan the configured GPON slots/PONs. Falls back to the legacy C320 grid
+	// ({1,2} x 16) when not configured, so existing setups are unaffected.
+	boards := pm.config.Boards
+	if len(boards) == 0 {
+		boards = []int{1, 2}
+	}
+	ponsPerBoard := pm.config.PonsPerBoard
+	if ponsPerBoard < 1 {
+		ponsPerBoard = 16
+	}
+
 	alertCount := 0
-	for boardID := 1; boardID <= 2; boardID++ {
-		for ponID := 1; ponID <= 16; ponID++ {
+	for _, boardID := range boards {
+		for ponID := 1; ponID <= ponsPerBoard; ponID++ {
 			onus, err := pm.fetcher.GetByBoardIDAndPonID(ctx, boardID, ponID)
 			if err != nil {
 				continue // skip PONs that fail (may not have ONUs)
@@ -258,7 +271,7 @@ func (pm *PowerMonitor) sendAlert(onu model.ONUInfoPerBoard, eventType, descript
 
 	if pm.batcher != nil {
 		pm.batcher.Add(event)
-	} else if pm.webhook != nil {
-		go pm.webhook.Send(event)
+	} else if wc := resolveWebhook(pm.webhook); wc != nil {
+		go wc.Send(event)
 	}
 }

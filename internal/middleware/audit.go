@@ -5,8 +5,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Cepat-Kilat-Teknologi/go-snmp-olt-zte-c320/internal/reqctx"
-	"github.com/Cepat-Kilat-Teknologi/go-snmp-olt-zte-c320/pkg/logger"
+	"github.com/Cepat-Kilat-Teknologi/snmp-olt-zte/internal/reqctx"
+	"github.com/Cepat-Kilat-Teknologi/snmp-olt-zte/pkg/logger"
 	chimw "github.com/go-chi/chi/v5/middleware"
 	"go.uber.org/zap"
 )
@@ -18,7 +18,7 @@ import (
 // The audit entry is written via the named sub-logger "audit" so log
 // aggregators can route it to compliance storage separately from the
 // normal request log stream. Fields intentionally match the schema shared
-// across all ISP adapters (see architecture-isp-app/docs/LOGGING.md §7).
+// across all ISP adapters (see architecture-isp-app/docs/LOGGING.md section 7).
 func AuditLog() func(next http.Handler) http.Handler {
 	auditLogger := logger.L().Named("audit")
 

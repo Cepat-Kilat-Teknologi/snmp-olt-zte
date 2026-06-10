@@ -33,9 +33,10 @@ type snmpConfig struct {
 
 // snmpRepository uses a connection pool for concurrent SNMP access
 type snmpRepository struct {
-	pool chan *gosnmp.GoSNMP
-	cfg  snmpConfig
-	sem  chan struct{} // limits concurrent SNMP operations to prevent OLT saturation
+	pool    chan *gosnmp.GoSNMP
+	cfg     snmpConfig
+	sem     chan struct{} // limits concurrent SNMP operations to prevent OLT saturation
+	useWalk bool          // use GetNext walk instead of GetBulk (robust over slow/public links)
 }
 
 // DefaultPoolSize is the default number of SNMP connections in the pool
@@ -47,11 +48,13 @@ const DefaultMaxConcurrent = 5
 // NewPonRepository creates a repository with a connection pool and default concurrency limit.
 // The seed connection is used to extract config, then poolSize connections are created.
 func NewPonRepository(seed *gosnmp.GoSNMP) SnmpRepositoryInterface {
-	return NewPonRepositoryWithConcurrency(seed, DefaultMaxConcurrent)
+	return NewPonRepositoryWithConcurrency(seed, DefaultMaxConcurrent, false)
 }
 
-// NewPonRepositoryWithConcurrency creates a repository with a connection pool and custom concurrency limit.
-func NewPonRepositoryWithConcurrency(seed *gosnmp.GoSNMP, maxConcurrent int) SnmpRepositoryInterface {
+// NewPonRepositoryWithConcurrency creates a repository with a connection pool and
+// custom concurrency limit. useWalk forces GetNext instead of GetBulk for OLTs on
+// lossy/high-latency links (set per-OLT in the registry).
+func NewPonRepositoryWithConcurrency(seed *gosnmp.GoSNMP, maxConcurrent int, useWalk bool) SnmpRepositoryInterface {
 	cfg := snmpConfig{
 		target:    seed.Target,
 		port:      seed.Port,
@@ -82,9 +85,10 @@ func NewPonRepositoryWithConcurrency(seed *gosnmp.GoSNMP, maxConcurrent int) Snm
 	}
 
 	return &snmpRepository{
-		pool: pool,
-		cfg:  cfg,
-		sem:  make(chan struct{}, maxConcurrent),
+		pool:    pool,
+		cfg:     cfg,
+		sem:     make(chan struct{}, maxConcurrent),
+		useWalk: useWalk,
 	}
 }
 
@@ -171,9 +175,18 @@ func (r *snmpRepository) BulkWalk(oid string, walkFunc func(pdu gosnmp.SnmpPDU) 
 	conn := r.acquire()
 	defer r.release(conn)
 
-	err := conn.BulkWalk(oid, walkFunc)
+	// Some OLTs / high-latency public links don't handle GetBulk reliably — large
+	// GetBulk responses get dropped/fragmented (timeout) while small GETs work.
+	// Per-OLT `useWalk` (registry "walk" flag) forces the slower-but-robust
+	// GetNext walk (small per-step packets) so reads complete over such links.
+	var err error
+	if r.useWalk {
+		err = conn.Walk(oid, walkFunc)
+	} else {
+		err = conn.BulkWalk(oid, walkFunc)
+	}
 	if err != nil {
-		return fmt.Errorf("SNMP BulkWalk failed: %w", err)
+		return fmt.Errorf("SNMP walk failed: %w", err)
 	}
 	return nil
 }

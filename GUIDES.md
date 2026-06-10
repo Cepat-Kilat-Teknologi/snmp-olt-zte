@@ -97,7 +97,28 @@ CORS_MAX_AGE=3600
 # API Key Authentication (Optional)
 # Set to enable API key validation on /api/v1 routes
 API_KEY=your-secret-api-key
+
+# GPON slot topology (single OLT). C320 -> "1,2"; a C300 mixes cards per slot,
+# e.g. "3:16,5:8" (GTGH=16 PON in slot 3, GTGO=8 PON in slot 5).
+OLT_BOARDS=1,2
+OLT_PONS_PER_BOARD=16
+
+# Multi-OLT in ONE instance (optional): a JSON array of OLTs, each with its own
+# SNMP pool + namespaced cache, served at /api/v1/olt/{id}/... . Overrides
+# SNMP_*/OLT_BOARDS. OLTS_FILE can point at a file holding the same JSON (mount
+# it as a Secret). DEFAULT_OLT also answers the bare /api/v1/board/... paths.
+# OLTS=[{"id":"c320","user_id":1,"host":"10.0.0.1","community":"public","boards":"1,2"},{"id":"c300a","user_id":2,"host":"10.0.0.2","port":1161,"community":"public","boards":"3:16,5:8"}]
+# OLTS_FILE=/etc/olt/olts.json
+# DEFAULT_OLT=c320
+
+# Per-tenant access control (optional): maps each X-API-Key to a user_id + role.
+# Combined with each OLT's user_id, a caller only sees its own OLTs (cross-tenant
+# -> 404); role "admin" sees all. Overrides the single API_KEY above.
+# API_USERS=[{"user_id":1,"api_key":"keyA"},{"user_id":2,"api_key":"keyB"},{"user_id":0,"api_key":"adminKey","role":"admin"}]
 ```
+
+> The full, annotated variable reference lives in `.env.example` (includes the
+> `TRAP_*`, `POWER_MONITOR_*`, and `RX_POWER_*` knobs).
 
 ### Security Hardening
 
@@ -154,8 +175,8 @@ The trap listener classifies events into 4 severity tiers, batches them per seve
 
 1. **Clone the repository:**
 ```bash
-git clone https://github.com/Cepat-Kilat-Teknologi/go-snmp-olt-zte-c320.git
-cd go-snmp-olt-zte-c320
+git clone https://github.com/Cepat-Kilat-Teknologi/snmp-olt-zte.git
+cd snmp-olt-zte
 ```
 
 2. **Create production environment file:**
@@ -192,7 +213,7 @@ version: '3.8'
 
 services:
   app:
-    image: cepatkilatteknologi/snmp-olt-zte-c320:2.1.1
+    image: cepatkilatteknologi/snmp-olt-zte:latest
     environment:
       - REDIS_HOST=external.redis.host  # External Redis
       - REDIS_PORT=6379
@@ -220,7 +241,7 @@ docker run -d \
 
 # Start Go SNMP OLT
 docker run -d \
-  --name go-snmp-olt \
+  --name snmp-olt-zte \
   --network olt-network \
   --restart unless-stopped \
   -p 8081:8081 \
@@ -235,17 +256,17 @@ docker run -d \
   -e REDIS_MIN_IDLE_CONNECTIONS=10 \
   -e REDIS_POOL_SIZE=100 \
   -e REDIS_POOL_TIMEOUT=30 \
-  cepatkilatteknologi/snmp-olt-zte-c320:2.1.1
+  cepatkilatteknologi/snmp-olt-zte:latest
 
 # Verify
-docker logs -f go-snmp-olt
+docker logs -f snmp-olt-zte
 ```
 
 #### With External Redis
 
 ```bash
 docker run -d \
-  --name go-snmp-olt \
+  --name snmp-olt-zte \
   --restart unless-stopped \
   -p 8081:8081 \
   -e APP_ENV=production \
@@ -255,7 +276,7 @@ docker run -d \
   -e REDIS_HOST=external.redis.host \
   -e REDIS_PORT=6379 \
   -e REDIS_PASSWORD=YOUR_REDIS_PASSWORD \
-  cepatkilatteknologi/snmp-olt-zte-c320:2.1.1
+  cepatkilatteknologi/snmp-olt-zte:latest
 ```
 
 #### With HTTPS/TLS
@@ -263,7 +284,7 @@ docker run -d \
 ```bash
 # Mount TLS certificates
 docker run -d \
-  --name go-snmp-olt \
+  --name snmp-olt-zte \
   --restart unless-stopped \
   -p 443:8081 \
   -v /path/to/certs:/certs:ro \
@@ -275,7 +296,7 @@ docker run -d \
   -e SNMP_COMMUNITY=your_snmp_community \
   -e REDIS_HOST=redis-olt \
   -e REDIS_PORT=6379 \
-  cepatkilatteknologi/snmp-olt-zte-c320:2.1.1
+  cepatkilatteknologi/snmp-olt-zte:latest
 ```
 
 ### Kubernetes
@@ -365,21 +386,21 @@ spec:
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: go-snmp-olt
+  name: snmp-olt-zte
   namespace: olt-monitoring
 spec:
   replicas: 3
   selector:
     matchLabels:
-      app: go-snmp-olt
+      app: snmp-olt-zte
   template:
     metadata:
       labels:
-        app: go-snmp-olt
+        app: snmp-olt-zte
     spec:
       containers:
-      - name: go-snmp-olt
-        image: cepatkilatteknologi/snmp-olt-zte-c320:2.1.1
+      - name: snmp-olt-zte
+        image: cepatkilatteknologi/snmp-olt-zte:latest
         ports:
         - containerPort: 8081
         env:
@@ -434,11 +455,11 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: go-snmp-olt
+  name: snmp-olt-zte
   namespace: olt-monitoring
 spec:
   selector:
-    app: go-snmp-olt
+    app: snmp-olt-zte
   ports:
   - port: 80
     targetPort: 8081
@@ -454,7 +475,7 @@ kubectl apply -f app-deployment.yaml
 
 # Check status
 kubectl get pods -n olt-monitoring
-kubectl logs -f deployment/go-snmp-olt -n olt-monitoring
+kubectl logs -f deployment/snmp-olt-zte -n olt-monitoring
 ```
 
 ### Systemd Service
@@ -474,16 +495,16 @@ sudo useradd -r -s /bin/false olt-service
 
 **3. Install binary:**
 ```bash
-sudo mkdir -p /opt/go-snmp-olt
-sudo cp ./bin/api /opt/go-snmp-olt/
-sudo cp .env.production /opt/go-snmp-olt/.env
-sudo chown -R olt-service:olt-service /opt/go-snmp-olt
-sudo chmod 755 /opt/go-snmp-olt/api
+sudo mkdir -p /opt/snmp-olt-zte
+sudo cp ./bin/api /opt/snmp-olt-zte/
+sudo cp .env.production /opt/snmp-olt-zte/.env
+sudo chown -R olt-service:olt-service /opt/snmp-olt-zte
+sudo chmod 755 /opt/snmp-olt-zte/api
 ```
 
 **4. Create systemd service:**
 ```bash
-sudo nano /etc/systemd/system/go-snmp-olt.service
+sudo nano /etc/systemd/system/snmp-olt-zte.service
 ```
 
 ```ini
@@ -495,21 +516,21 @@ After=network.target redis.service
 Type=simple
 User=olt-service
 Group=olt-service
-WorkingDirectory=/opt/go-snmp-olt
-EnvironmentFile=/opt/go-snmp-olt/.env
-ExecStart=/opt/go-snmp-olt/api
+WorkingDirectory=/opt/snmp-olt-zte
+EnvironmentFile=/opt/snmp-olt-zte/.env
+ExecStart=/opt/snmp-olt-zte/api
 Restart=on-failure
 RestartSec=5s
 StandardOutput=journal
 StandardError=journal
-SyslogIdentifier=go-snmp-olt
+SyslogIdentifier=snmp-olt-zte
 
 # Security hardening
 NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict
 ProtectHome=true
-ReadWritePaths=/opt/go-snmp-olt
+ReadWritePaths=/opt/snmp-olt-zte
 
 [Install]
 WantedBy=multi-user.target
@@ -518,14 +539,14 @@ WantedBy=multi-user.target
 **5. Enable and start:**
 ```bash
 sudo systemctl daemon-reload
-sudo systemctl enable go-snmp-olt
-sudo systemctl start go-snmp-olt
+sudo systemctl enable snmp-olt-zte
+sudo systemctl start snmp-olt-zte
 
 # Check status
-sudo systemctl status go-snmp-olt
+sudo systemctl status snmp-olt-zte
 
 # View logs
-sudo journalctl -u go-snmp-olt -f
+sudo journalctl -u snmp-olt-zte -f
 ```
 
 ### Binary Deployment
@@ -535,8 +556,8 @@ For manual deployment without containers:
 **1. Build:**
 ```bash
 # Clone and build
-git clone https://github.com/Cepat-Kilat-Teknologi/go-snmp-olt-zte-c320.git
-cd go-snmp-olt-zte-c320
+git clone https://github.com/Cepat-Kilat-Teknologi/snmp-olt-zte.git
+cd snmp-olt-zte
 task app-build
 ```
 
@@ -571,13 +592,13 @@ docker compose up -d
 ### Helm Chart
 ```bash
 # From Helm repository (recommended)
-helm repo add snmp-olt https://cepat-kilat-teknologi.github.io/go-snmp-olt-zte-c320/
-helm install olt-monitor snmp-olt/snmp-olt-zte-c320 \
+helm repo add snmp-olt https://cepat-kilat-teknologi.github.io/snmp-olt-zte/
+helm install olt-monitor snmp-olt/snmp-olt-zte \
   --set snmp.host=192.168.1.1 \
   --set snmp.community=your-community
 
 # From source
-helm install olt-monitor examples/helm/snmp-olt-zte-c320 \
+helm install olt-monitor examples/helm/snmp-olt-zte \
   --set snmp.host=192.168.1.1 \
   --set snmp.community=your-community
 ```
@@ -641,14 +662,14 @@ curl http://localhost:8081/api/v1/board/1/pon/1
 
 **Docker:**
 ```bash
-docker logs -f go-snmp-olt
-docker logs --tail 100 go-snmp-olt
+docker logs -f snmp-olt-zte
+docker logs --tail 100 snmp-olt-zte
 ```
 
 **Systemd:**
 ```bash
-sudo journalctl -u go-snmp-olt -f
-sudo journalctl -u go-snmp-olt --since "1 hour ago"
+sudo journalctl -u snmp-olt-zte -f
+sudo journalctl -u snmp-olt-zte --since "1 hour ago"
 ```
 
 ### Metrics to Monitor
@@ -674,7 +695,7 @@ docker-compose up -d --scale app=3
 
 **Kubernetes:**
 ```bash
-kubectl scale deployment go-snmp-olt --replicas=5 -n olt-monitoring
+kubectl scale deployment snmp-olt-zte --replicas=5 -n olt-monitoring
 ```
 
 ### Load Balancing
@@ -756,4 +777,4 @@ export LOG_LEVEL=debug
 For additional help, please refer to:
 - [CONTRIBUTING.md](CONTRIBUTING.md) - Development guide
 - [SECURITY.md](SECURITY.md) - Security policy
-- [GitHub Issues](https://github.com/Cepat-Kilat-Teknologi/go-snmp-olt-zte-c320/issues)
+- [GitHub Issues](https://github.com/Cepat-Kilat-Teknologi/snmp-olt-zte/issues)

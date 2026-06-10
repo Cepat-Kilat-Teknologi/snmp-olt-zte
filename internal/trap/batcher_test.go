@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Cepat-Kilat-Teknologi/go-snmp-olt-zte-c320/internal/model"
+	"github.com/Cepat-Kilat-Teknologi/snmp-olt-zte/internal/model"
 )
 
 func TestNewBatcher(t *testing.T) {

@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Cepat-Kilat-Teknologi/go-snmp-olt-zte-c320/internal/model"
+	"github.com/Cepat-Kilat-Teknologi/snmp-olt-zte/internal/model"
 )
 
 func TestNewWebhookClient(t *testing.T) {
@@ -51,7 +51,7 @@ func TestWebhookSend_Success(t *testing.T) {
 
 	event := model.TrapEvent{
 		Timestamp: time.Now(),
-		Source:    "192.168.213.174",
+		Source:    "192.0.2.10",
 		Board:     1,
 		PON:       5,
 		OnuID:     23,
@@ -87,7 +87,7 @@ func TestWebhookSend_RetryOnFailure(t *testing.T) {
 
 	event := model.TrapEvent{
 		Timestamp: time.Now(),
-		Source:    "192.168.213.174",
+		Source:    "192.0.2.10",
 		Board:     1,
 		PON:       5,
 		OnuID:     23,
@@ -115,7 +115,7 @@ func TestWebhookSend_AllRetriesExhausted(t *testing.T) {
 
 	event := model.TrapEvent{
 		Timestamp: time.Now(),
-		Source:    "192.168.213.174",
+		Source:    "192.0.2.10",
 		Board:     1,
 		PON:       5,
 		OnuID:     23,
@@ -143,7 +143,7 @@ func TestWebhookSend_ConnectionError(t *testing.T) {
 
 	event := model.TrapEvent{
 		Timestamp: time.Now(),
-		Source:    "192.168.213.174",
+		Source:    "192.0.2.10",
 		Board:     1,
 		PON:       1,
 		OnuID:     1,
@@ -168,7 +168,7 @@ func TestWebhookSend_Status201Accepted(t *testing.T) {
 
 	event := model.TrapEvent{
 		Timestamp: time.Now(),
-		Source:    "192.168.213.174",
+		Source:    "192.0.2.10",
 		Board:     1,
 		PON:       1,
 		OnuID:     1,

@@ -6,8 +6,8 @@
 
 services:
   app:
-    image: cepatkilatteknologi/snmp-olt-zte-c320:2.1.1
-    container_name: snmp-olt-zte-c320
+    image: cepatkilatteknologi/snmp-olt-zte:2.1.1
+    container_name: snmp-olt-zte
     restart: unless-stopped
 
     environment:

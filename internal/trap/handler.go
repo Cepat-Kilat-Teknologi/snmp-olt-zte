@@ -5,8 +5,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Cepat-Kilat-Teknologi/go-snmp-olt-zte-c320/internal/model"
-	"github.com/Cepat-Kilat-Teknologi/go-snmp-olt-zte-c320/pkg/logger"
+	"github.com/Cepat-Kilat-Teknologi/snmp-olt-zte/internal/model"
+	"github.com/Cepat-Kilat-Teknologi/snmp-olt-zte/pkg/logger"
 	"go.uber.org/zap"
 )
 
@@ -122,8 +122,8 @@ func (h *Handler) HandleEvent(event model.TrapEvent) {
 
 	if h.batcher != nil {
 		h.batcher.Add(event)
-	} else if h.webhook != nil {
-		go h.webhook.Send(event)
+	} else if wc := resolveWebhook(h.webhook); wc != nil {
+		go wc.Send(event)
 	}
 }
 

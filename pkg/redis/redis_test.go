@@ -3,7 +3,7 @@ package redis
 import (
 	"testing"
 
-	"github.com/Cepat-Kilat-Teknologi/go-snmp-olt-zte-c320/config"
+	"github.com/Cepat-Kilat-Teknologi/snmp-olt-zte/config"
 )
 
 func TestNewRedisClient_FromConfig(t *testing.T) {

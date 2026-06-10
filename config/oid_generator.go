@@ -2,8 +2,26 @@ package config
 
 import "fmt"
 
-// OID Constants for ZTE C320 OLT Device
-// These are hardware-specific OIDs that follow a mathematical pattern
+// OID Constants for ZTE C320 / C300 OLT devices.
+//
+// C300 V2.1.0 and C320 V2.1.0 share the SAME enterprise MIB tree and the SAME
+// ifIndex encoding (verified live against real hardware). They differ only in
+// which physical slots hold GPON line cards — C320 ships cards in slots 1-2,
+// while a C300 chassis can hold them in higher slots (e.g. 3 and 5). The
+// board_id in the API maps directly to the physical slot number.
+//
+// Two index spaces, both clean physical-slot formulas (shelf assumed 1):
+//
+//	ONU-ID space (BaseOID1 .3902.1082; name/serial/status/desc/rxpower/lastonline/.../distance):
+//	    onuIDSuffix   = OnuIDIfIndexBase   + slot*OnuIDSlotStride   + pon*OnuIDIncrement
+//	                  = 0x11010000         + slot*0x100             + pon
+//	TYPE space   (BaseOID2 .3902.1012; onu type / tx power / ip address):
+//	    onuTypeSuffix = OnuTypeIfIndexBase + slot*OnuTypeSlotStride + pon*OnuTypeIncrement
+//	                  = 0x10000000         + slot*0x10000           + pon*0x100
+//
+// These reproduce the original hardcoded C320 board-1/board-2 constants exactly
+// (slot 1 -> 285278465 / 268501248, slot 2 -> 285278721 / 268566784) and extend
+// to any slot (C300 slot 3 -> 285278977 / 268632320, verified against TEST-ONU).
 const (
 	BaseOID1 = ".1.3.6.1.4.1.3902.1082"
 	BaseOID2 = ".1.3.6.1.4.1.3902.1012"
@@ -22,56 +40,61 @@ const (
 	OnuLastOfflineReasonPrefix   = ".500.10.2.3.8.1.7"
 	OnuGponOpticalDistancePrefix = ".500.10.2.3.10.1.2"
 
-	// Board1OnuIDBase Board-PON ID Constants
-	Board1OnuIDBase   = 285278464 // Actual PON 1 = 285278465 (base + 1)
-	Board1OnuTypeBase = 268500992 // Actual PON 1 = 268501248 (base + 256)
+	// ifIndex encoding bases and per-slot strides (see package doc above).
+	// These replace the old per-board Board1*/Board2* constants with a single
+	// slot-parametric formula that works for any GPON slot on C320 and C300.
+	OnuIDIfIndexBase   = 285278208 // 0x11010000 — ONU-ID space (prefix 0x11, shelf 1)
+	OnuIDSlotStride    = 256       // 0x100      — per-slot stride (ONU-ID space)
+	OnuTypeIfIndexBase = 268435456 // 0x10000000 — TYPE space (prefix 0x10)
+	OnuTypeSlotStride  = 65536     // 0x10000    — per-slot stride (TYPE space)
 
-	// Board2OnuIDBase Board-PON ID Constants
-	Board2OnuIDBase   = 285278720 // Actual PON 1 = 285278721 (base + 1)
-	Board2OnuTypeBase = 268566528 // Actual PON 1 = 268566784 (base + 256)
+	// Per-PON increments within a slot.
+	OnuIDIncrement   = 1   // ONU-ID space: each PON increments by 1
+	OnuTypeIncrement = 256 // TYPE space: each PON increments by 256
 
-	// OnuIDIncrement and OnuTypeIncrement are used to calculate the actual OID suffixes
-	OnuIDIncrement   = 1   // Each PON increments by 1
-	OnuTypeIncrement = 256 // Each PON increments by 256
+	// MaxBoardID / MaxPonID bound the valid physical slot and PON-port range.
+	// A GPON line card carries at most 16 PON ports; 30 slots comfortably covers
+	// any C300/C320 chassis layout.
+	MaxBoardID = 30
+	MaxPonID   = 16
+
+	// Standard-MIB OIDs for uplink/card auto-detection (IF-MIB + ENTITY-MIB).
+	// Unlike the enterprise OIDs above, these are NOT board/pon-scoped — they are
+	// walked whole and keyed by a trailing integer index (ifIndex for IF-MIB,
+	// entity index for ENTITY-MIB). Verified live against a C300 V2.1.0; identical
+	// on C320 V2.1.0. Used by GetUplinkTopology to discover cards + uplink ports
+	// regardless of the physical layout (C320 SMXA xgei_1/3/x vs C300 HUVQ
+	// xgei_1/19/x).
+	OidIfName           = "1.3.6.1.2.1.31.1.1.1.1"   // ifName (OctetString) e.g. "xgei_1/19/1"
+	OidIfAdminStatus    = "1.3.6.1.2.1.2.2.1.7"      // ifAdminStatus (INTEGER 1=up,2=down)
+	OidIfOperStatus     = "1.3.6.1.2.1.2.2.1.8"      // ifOperStatus (INTEGER 1=up,2=down)
+	OidIfHighSpeed      = "1.3.6.1.2.1.31.1.1.1.15"  // ifHighSpeed (Gauge32, Mbps)
+	OidEntPhysicalDescr = "1.3.6.1.2.1.47.1.1.1.1.2" // entPhysicalDescr (OctetString)
+	OidEntPhysicalClass = "1.3.6.1.2.1.47.1.1.1.1.5" // entPhysicalClass (INTEGER; 3=module/card)
 )
 
-// GenerateBoardPonOID generates all OID configurations for a specific Board-PON combination
-// using mathematical formulas instead of hardcoded config file entries.
-//
-// Formula:
-//   - onuIDSuffix = baseOnuID + ponID
-//   - onuTypeSuffix = baseOnuType + (ponID * 256)
-//
-// Example:
-//
-//	Board 1, PON 1: 285278465, 268501248
-//	Board 1, PON 2: 285278466, 268501504 (+1, +256)
-//	Board 2, PON 1: 285278721, 268566784
+// DefaultBoards is the slot set assumed when OLT_BOARDS is unset — the original
+// C320 layout (line cards in slots 1 and 2). This keeps existing single-OLT
+// C320 deployments behaving exactly as before.
+var DefaultBoards = []int{1, 2}
+
+// GenerateBoardPonOID generates all OID suffixes for a specific physical slot
+// (boardID) and PON port (ponID) using the slot-parametric ifIndex formulas
+// documented above. boardID is the physical slot number (1-2 on C320, higher on
+// a C300 chassis).
 func GenerateBoardPonOID(boardID, ponID int) (*BoardPonConfig, error) {
-	// Validate inputs
-	if boardID < 1 || boardID > 2 {
-		return nil, fmt.Errorf("invalid boardID: %d (must be 1 or 2)", boardID)
+	if boardID < 1 || boardID > MaxBoardID {
+		return nil, fmt.Errorf("invalid boardID: %d (must be 1-%d)", boardID, MaxBoardID)
 	}
-	if ponID < 1 || ponID > 16 {
-		return nil, fmt.Errorf("invalid ponID: %d (must be 1-16)", ponID)
-	}
-
-	// Determine base values based on board
-	// Note: boardID is already validated to be 1 or 2 above
-	var baseOnuID, baseOnuType int
-	if boardID == 1 {
-		baseOnuID = Board1OnuIDBase
-		baseOnuType = Board1OnuTypeBase
-	} else {
-		baseOnuID = Board2OnuIDBase
-		baseOnuType = Board2OnuTypeBase
+	if ponID < 1 || ponID > MaxPonID {
+		return nil, fmt.Errorf("invalid ponID: %d (must be 1-%d)", ponID, MaxPonID)
 	}
 
-	// Calculate suffixes using formula
-	onuIDSuffix := baseOnuID + (ponID * OnuIDIncrement)
-	onuTypeSuffix := baseOnuType + (ponID * OnuTypeIncrement)
+	// ONU-ID space suffix: name/serial/status/description/rxpower/lastonline/offline/reason/distance.
+	onuIDSuffix := OnuIDIfIndexBase + boardID*OnuIDSlotStride + ponID*OnuIDIncrement
+	// TYPE space suffix: onu type / tx power / ip address.
+	onuTypeSuffix := OnuTypeIfIndexBase + boardID*OnuTypeSlotStride + ponID*OnuTypeIncrement
 
-	// Generate full OIDs by concatenating prefix + suffix
 	return &BoardPonConfig{
 		OnuIDNameOID:              fmt.Sprintf("%s.%d", OnuIDNamePrefix, onuIDSuffix),
 		OnuTypeOID:                fmt.Sprintf("%s.%d", OnuTypePrefix, onuTypeSuffix),
@@ -88,19 +111,48 @@ func GenerateBoardPonOID(boardID, ponID int) (*BoardPonConfig, error) {
 	}, nil
 }
 
-// InitializeBoardPonMap generates all 32 Board-PON configurations dynamically.
-// This replaces the need for a 20KB config file with 384 lines of OID mappings.
-// Note: This function cannot fail since it always uses valid boardID (1-2) and ponID (1-16).
-func InitializeBoardPonMap() (map[BoardPonKey]*BoardPonConfig, error) {
-	boardPonMap := make(map[BoardPonKey]*BoardPonConfig, 32) // Pre-allocate for 32 entries (2 boards * 16 PONs)
+// InitializeBoardPonMap generates BoardPonConfig entries for every (slot, pon)
+// across the supplied boards with a UNIFORM ponsPerBoard. Kept for callers that
+// have a single PON count; it delegates to InitializeBoardPonMapFromSpecs.
+//
+// When boards is empty it falls back to DefaultBoards (C320 slots 1-2); when
+// ponsPerBoard is out of range it falls back to MaxPonID.
+func InitializeBoardPonMap(boards []int, ponsPerBoard int) (map[BoardPonKey]*BoardPonConfig, error) {
+	if len(boards) == 0 {
+		boards = DefaultBoards
+	}
+	if ponsPerBoard < 1 || ponsPerBoard > MaxPonID {
+		ponsPerBoard = MaxPonID
+	}
+	specs := make(map[int]int, len(boards))
+	for _, slot := range boards {
+		specs[slot] = ponsPerBoard
+	}
+	return InitializeBoardPonMapFromSpecs(specs)
+}
 
-	for boardID := 1; boardID <= 2; boardID++ {
-		for ponID := 1; ponID <= 16; ponID++ {
-			// GenerateBoardPonOID only fails for invalid boardID/ponID, which can't happen here
-			cfg, _ := GenerateBoardPonOID(boardID, ponID)
-			boardPonMap[BoardPonKey{BoardID: boardID, PonID: ponID}] = cfg
-		}
+// InitializeBoardPonMapFromSpecs generates BoardPonConfig entries for a PER-SLOT
+// PON topology: boardPons maps each physical GPON slot to its card's PON-port
+// count. This models a real ZTE C300 (up to 14 service slots) where slots can
+// hold different cards — GTGO (8 PON) or GTGH (16 PON) — even within one OLT.
+// An empty map falls back to the C320 default ({1,2} x 16).
+func InitializeBoardPonMapFromSpecs(boardPons map[int]int) (map[BoardPonKey]*BoardPonConfig, error) {
+	if len(boardPons) == 0 {
+		boardPons = map[int]int{1: MaxPonID, 2: MaxPonID}
 	}
 
+	boardPonMap := make(map[BoardPonKey]*BoardPonConfig)
+	for slot, pons := range boardPons {
+		if pons < 1 || pons > MaxPonID {
+			pons = MaxPonID
+		}
+		for pon := 1; pon <= pons; pon++ {
+			cfg, err := GenerateBoardPonOID(slot, pon)
+			if err != nil {
+				return nil, fmt.Errorf("board %d pon %d: %w", slot, pon, err)
+			}
+			boardPonMap[BoardPonKey{BoardID: slot, PonID: pon}] = cfg
+		}
+	}
 	return boardPonMap, nil
 }
