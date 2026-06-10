@@ -1,8 +1,8 @@
 apiVersion: v2
 name: snmp-olt-zte
-description: Monitoring OLT ZTE C320 via SNMP - REST API with Redis caching
+description: Monitoring ZTE C320 & C300 OLTs via SNMP — multi-OLT REST API with Redis caching
 type: application
-version: 3.2.0
+version: 3.2.1
 appVersion: "3.2.0"
 
 dependencies:
