@@ -16,6 +16,36 @@ First release as the **relocated standalone module**: repository renamed
 auto-redirect; update Go imports). Consolidates the multi-OLT / C300 work
 developed inside the `olt-provisioning` monorepo since v3.1.0.
 
+### Fixed — readiness probe storm with a down OLT
+- **`/readyz` no longer stalls when an OLT is unreachable.** Two compounding
+  bugs made a single down OLT pin every readyz call for the full SNMP
+  retry window (~12s measured with two unreachable OLTs):
+  1. the SNMP probe ignored the health checker's 2s context — `repo.Ping()`
+     is a synchronous gosnmp call with its own longer timeout+retry budget.
+     The probe now runs Ping in a goroutine and returns on `ctx.Done()`.
+  2. only *successful* probe results were TTL-cached; a failure was re-probed
+     on EVERY readyz call (each caller paying the probe timeout while holding
+     the dependency mutex). Failures now cache for at most 5s (`failureTTL`),
+     so recovery is still detected within a typical k8s probe interval without
+     the re-probe storm.
+  Net effect: worst case one bounded ~2s probe per failure-TTL window instead
+  of 12s+ on every call (verified: 12.2s → 4s first call, then sub-ms cached).
+
+### Docs / spec / tooling (relocation release)
+- **OpenAPI**: added the missing `/api/v1/uplinks` + `/api/v1/olt/{olt_id}/uplinks`
+  path items with `UplinkTopology` / `UplinkCard` / `UplinkPort` schemas and an
+  `Uplink` tag; spec title now covers C320/C300 under the new service name.
+- **k6**: both load-test scripts now exercise the 3.2.0 surface — uplink
+  auto-detect (with cards/ports body shape check) and `?nocache=true`
+  forced-fresh serial-list reads.
+- **test.http**: added uplinks (default + per-OLT) and cached-vs-nocache
+  serial-list requests.
+- **README / SECURITY / TERMS / examples / helm**: refreshed for the rename
+  (C320/C300 naming, image tags + chart 3.2.0, relocation note); `CLAUDE.md`
+  sanitized for the public repo.
+- **Tests**: `config/coverage_extra_test.go` split by subject into
+  `config_test.go` / `oid_generator_test.go` / `registry_test.go`.
+
 ### Added — OLT uplink auto-detect
 - **`GET /api/v1/olt/{id}/uplinks`** (and the bare `/api/v1/uplinks`) — SNMP auto-detect of OLT **cards** (ENTITY-MIB `entPhysicalDescr` / `entPhysicalClass` → role: `gpon` / `control` / `uplink` / `power`) and **uplink ethernet ports** (IF-MIB `ifName` / admin / oper / speed → `xgei` = 10G, `gei` = 1G with slot/port). Field-agnostic across ZTE C320 / C300 regardless of card layout or port numbering.
 
