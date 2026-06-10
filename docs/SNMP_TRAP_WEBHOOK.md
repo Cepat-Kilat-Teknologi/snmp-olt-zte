@@ -10,7 +10,7 @@ via SNMP before sending to eliminate false alarms.
 ## Architecture
 
 ```
-                    ZTE C320 OLT
+                    ZTE C320/C300 OLT
                          |
                    SNMP Trap (UDP 1620)
                          |
