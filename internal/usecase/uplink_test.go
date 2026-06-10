@@ -2,6 +2,7 @@ package usecase
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"github.com/Cepat-Kilat-Teknologi/snmp-olt-zte/config"
@@ -136,5 +137,79 @@ func TestGetUplinkTopology(t *testing.T) {
 	c1 := topo.Cards[1]
 	if c1.EntIndex != 200 || c1.Slot != 19 || c1.Role != "gpon" {
 		t.Errorf("card[1] wrong: %+v", c1)
+	}
+}
+
+var errSNMPTimeout = errors.New("snmp timeout")
+
+func TestToInt_AllIntegerKinds(t *testing.T) {
+	cases := []struct {
+		in   interface{}
+		want int
+	}{
+		{int8(5), 5},
+		{int16(6), 6},
+		{uint8(7), 7},
+		{uint16(8), 8},
+	}
+	for _, c := range cases {
+		if got := toInt(c.in); got != c.want {
+			t.Errorf("toInt(%T %v) = %d, want %d", c.in, c.in, got, c.want)
+		}
+	}
+}
+
+func TestPduString(t *testing.T) {
+	if got := pduString([]byte("xgei_1/19/1")); got != "xgei_1/19/1" {
+		t.Errorf("pduString([]byte) = %q", got)
+	}
+	if got := pduString("gei_1/2/3"); got != "gei_1/2/3" {
+		t.Errorf("pduString(string) = %q", got)
+	}
+	if got := pduString(42); got != "" {
+		t.Errorf("pduString(non-string) = %q, want empty", got)
+	}
+}
+
+func TestStatusString(t *testing.T) {
+	if got := statusString(1); got != "up" {
+		t.Errorf("statusString(1) = %q", got)
+	}
+	if got := statusString(2); got != "down" {
+		t.Errorf("statusString(2) = %q", got)
+	}
+	if got := statusString(7); got != "7" {
+		t.Errorf("statusString(7) = %q", got)
+	}
+}
+
+// Each IF-MIB / ENTITY-MIB walk has its own error return; fail each subtree in
+// turn and assert GetUplinkTopology surfaces an SNMP error.
+func TestGetUplinkTopology_WalkErrors(t *testing.T) {
+	failOIDs := []string{
+		config.OidIfName,
+		config.OidIfAdminStatus,
+		config.OidIfOperStatus,
+		config.OidIfHighSpeed,
+		config.OidEntPhysicalClass,
+		config.OidEntPhysicalDescr,
+	}
+	for _, failOID := range failOIDs {
+		snmpRepo := &mockSnmpRepository{
+			BulkWalkFunc: func(oid string, walkFunc func(pdu gosnmp.SnmpPDU) error) error {
+				if oid == failOID {
+					return errSNMPTimeout
+				}
+				// Seed one uplink port so the later walks are reached.
+				if oid == config.OidIfName {
+					_ = walkFunc(gosnmp.SnmpPDU{Name: oid + ".100", Type: gosnmp.OctetString, Value: []byte("xgei_1/19/1")})
+				}
+				return nil
+			},
+		}
+		uc := NewOnuUsecase(snmpRepo, &mockRedisRepository{}, &config.Config{}).(*onuUsecase)
+		if _, err := uc.GetUplinkTopology(context.Background()); err == nil {
+			t.Errorf("failOID %s: expected error, got nil", failOID)
+		}
 	}
 }
