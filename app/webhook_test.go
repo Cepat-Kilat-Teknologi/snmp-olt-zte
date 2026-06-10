@@ -245,3 +245,39 @@ func jsonInt(i int) string {
 	b, _ := json.Marshal(i)
 	return string(b)
 }
+
+func TestWebhookRefresher_HotReloadAndSteadyState(t *testing.T) {
+	// No REGISTRY_URL -> currentWebhookSettings serves the env settings, which
+	// this test flips to drive both loop branches: the steady-state `continue`
+	// (key unchanged) and the hot-swap reload (key changed).
+	t.Setenv("REGISTRY_URL", "")
+
+	orig := getWebhookRefreshInterval()
+	setWebhookRefreshInterval(5 * time.Millisecond)
+	defer setWebhookRefreshInterval(orig)
+
+	origEnv := getWhEnv()
+	defer setWhEnv(origEnv)
+
+	setWhEnv(trap.WebhookSettings{URL: "http://hook-a", Enabled: true, Retries: 1, Timeout: 1})
+	before := trap.ActiveWebhook()
+
+	go webhookRefresher()
+
+	// A few unchanged ticks first (steady-state branch)...
+	time.Sleep(25 * time.Millisecond)
+	// ...then flip the settings so the reload branch installs a new client.
+	setWhEnv(trap.WebhookSettings{URL: "http://hook-b", Enabled: true, Retries: 2, Timeout: 2})
+
+	deadline := time.After(2 * time.Second)
+	for {
+		if c := trap.ActiveWebhook(); c != nil && c != before {
+			return // hot-swap observed
+		}
+		select {
+		case <-deadline:
+			t.Fatal("refresher never hot-swapped the webhook client")
+		case <-time.After(5 * time.Millisecond):
+		}
+	}
+}
