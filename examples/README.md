@@ -1,6 +1,6 @@
 # Deployment Examples
 
-Example deployment configurations for the SNMP OLT ZTE C320 monitoring service.
+Example deployment configurations for the SNMP OLT ZTE C320/C300 monitoring service.
 
 ## Options
 
