@@ -1,8 +1,18 @@
-# Monitoring OLT ZTE C320 with SNMP
+# Monitoring OLT ZTE C320 & C300 with SNMP
 [![ci](https://github.com/Cepat-Kilat-Teknologi/snmp-olt-zte/actions/workflows/ci.yml/badge.svg)](https://github.com/Cepat-Kilat-Teknologi/snmp-olt-zte/actions/workflows/ci.yml)
 [![Go Report Card](https://goreportcard.com/badge/github.com/Cepat-Kilat-Teknologi/snmp-olt-zte)](https://goreportcard.com/report/github.com/Cepat-Kilat-Teknologi/snmp-olt-zte)
 [![codecov](https://codecov.io/gh/Cepat-Kilat-Teknologi/snmp-olt-zte/graph/badge.svg?token=NB3N7GMUX3)](https://codecov.io/gh/Cepat-Kilat-Teknologi/snmp-olt-zte)
 [![Helm Chart](https://img.shields.io/badge/helm-v3.0.0-blue)](https://github.com/Cepat-Kilat-Teknologi/snmp-olt-zte/releases/tag/v3.0.0)
+
+> **Repository moved (v3.2.0).** This module was previously published as
+> `github.com/Cepat-Kilat-Teknologi/go-snmp-olt-zte-c320` (C320-only). It is now
+> the canonical multi-OLT, C320 **and** C300 SNMP adapter at
+> `github.com/Cepat-Kilat-Teknologi/snmp-olt-zte` — the old URL auto-redirects
+> on GitHub, but update Go imports to the new module path:
+>
+> ```bash
+> go get github.com/Cepat-Kilat-Teknologi/snmp-olt-zte@v3.2.0
+> ```
 
 REST API service for monitoring ZTE **C320 and C300** OLT devices via SNMP protocol, built with Go. Provides real-time ONU information including status, optical power levels, uptime, and serial numbers across all board/PON combinations. C300 and C320 V2.1.0 share the same MIB tree and ifIndex encoding — a single image serves both; only the populated GPON slots differ (configured via `OLT_BOARDS`).
 
