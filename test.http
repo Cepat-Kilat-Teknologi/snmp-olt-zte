@@ -210,6 +210,35 @@ Accept: application/json
 X-API-Key: {{API_KEY}}
 
 ###############################################
+# Uplink / card auto-detect (ENTITY-MIB + IF-MIB; detection-only, no writes)
+###############################################
+
+### Default OLT uplink topology -> 200 {cards[], ports[]}
+GET {{host}}/api/v1/uplinks
+Accept: application/json
+X-API-Key: {{API_KEY}}
+
+### Per-OLT uplink topology -> 200
+GET {{host}}/api/v1/olt/{{olt1}}/uplinks
+Accept: application/json
+X-API-Key: {{admin}}
+
+###############################################
+# Forced-fresh serial-list read (?nocache=true bypasses + refreshes the
+# serial-list Redis cache — used by write-olt-zte pre-write checks)
+###############################################
+
+### Cached serial list (default) -> 200
+GET {{host}}/api/v1/olt/{{olt1}}/board/1/pon/1/onu_id_sn
+Accept: application/json
+X-API-Key: {{admin}}
+
+### Forced-fresh serial list -> 200 (live SNMP read, cache repopulated)
+GET {{host}}/api/v1/olt/{{olt1}}/board/1/pon/1/onu_id_sn?nocache=true
+Accept: application/json
+X-API-Key: {{admin}}
+
+###############################################
 # Notes
 # - Response headers on every request: X-Request-ID, X-API-Version, X-App-Version, X-Build-Commit
 # - Health/readiness/metrics are unauthenticated AND exempt from the rate limiter
