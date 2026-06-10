@@ -26,7 +26,7 @@ spec:
         fsGroup: 1000
       containers:
         - name: snmp-olt-zte
-          image: cepatkilatteknologi/snmp-olt-zte:2.1.1
+          image: cepatkilatteknologi/snmp-olt-zte:3.2.0
           ports:
             - name: http
               containerPort: 8081
