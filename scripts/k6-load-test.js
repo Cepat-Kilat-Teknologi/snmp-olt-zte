@@ -202,6 +202,35 @@ export default function () {
     trackResponse(res);
   });
 
+  group('Get ONU Serial Numbers (nocache)', function () {
+    // ?nocache=true bypasses + refreshes the serial-list cache — the
+    // write-olt-zte pre-write check path; always a live SNMP read.
+    const { prefix, board, pon, key } = pickTarget();
+    const res = http.get(`${apiBase(prefix)}/board/${board}/pon/${pon}/onu_id_sn?nocache=true`, { headers: getHeaders(key), timeout: '60s' });
+    check(res, {
+      'onu-sn-nocache: success': (r) => isSuccess(r.status),
+      'onu-sn-nocache: response < 30s': (r) => r.timings.duration < 30000,
+    });
+    trackResponse(res);
+  });
+
+  group('Uplink Auto-Detect', function () {
+    // ENTITY-MIB + IF-MIB topology discovery; detection-only, no writes.
+    const { prefix, key } = pickTarget();
+    const res = http.get(`${apiBase(prefix)}/uplinks`, { headers: getHeaders(key), timeout: '60s' });
+    check(res, {
+      'uplinks: success': (r) => isSuccess(r.status),
+      'uplinks: 200 has cards+ports': (r) => {
+        if (r.status !== 200) return true;
+        try {
+          const d = JSON.parse(r.body).data;
+          return d && Array.isArray(d.cards) && Array.isArray(d.ports);
+        } catch { return false; }
+      },
+    });
+    trackResponse(res);
+  });
+
   group('Validation - Invalid Params', function () {
     const res1 = http.get(`${BASE_URL}/api/v1/board/0/pon/1/`, params);
     check(res1, {
