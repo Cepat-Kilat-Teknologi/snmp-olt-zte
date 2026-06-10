@@ -1,10 +1,10 @@
 # Terms and Conditions
 
-**Last Updated**: December 15, 2025
+**Last Updated**: June 10, 2026
 
 ## 1. Acceptance of Terms
 
-By accessing, downloading, installing, or using the Go SNMP OLT ZTE C320 software ("Software"), you ("User", "you", or "your") agree to be bound by these Terms and Conditions ("Terms"). If you do not agree to these Terms, do not use the Software.
+By accessing, downloading, installing, or using the snmp-olt-zte software (ZTE C320/C300 SNMP monitoring adapter) ("Software"), you ("User", "you", or "your") agree to be bound by these Terms and Conditions ("Terms"). If you do not agree to these Terms, do not use the Software.
 
 ## 2. License Grant
 
@@ -59,7 +59,7 @@ The Software is protected by copyright and other intellectual property laws. The
 
 ### 4.2 Trademarks
 
-"Go SNMP OLT ZTE C320", "CKT Dev", and any associated logos or branding are trademarks of their respective owners. Use of these trademarks requires prior written permission except as necessary for reasonable and customary use in describing the origin of the Software.
+"snmp-olt-zte", "CKT Dev", and any associated logos or branding are trademarks of their respective owners. Use of these trademarks requires prior written permission except as necessary for reasonable and customary use in describing the origin of the Software.
 
 ### 4.3 Third-Party Components
 
