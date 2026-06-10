@@ -6,7 +6,7 @@
 
 services:
   app:
-    image: cepatkilatteknologi/snmp-olt-zte:2.1.1
+    image: cepatkilatteknologi/snmp-olt-zte:3.2.0
     container_name: snmp-olt-zte
     restart: unless-stopped
 
