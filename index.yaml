@@ -3,6 +3,22 @@ entries:
   snmp-olt-zte:
   - apiVersion: v2
     appVersion: 3.2.0
+    created: "2026-06-10T15:24:16.898087372Z"
+    dependencies:
+    - condition: redis.enabled
+      name: redis
+      repository: https://charts.bitnami.com/bitnami
+      version: ~18.x
+    description: Monitoring ZTE C320 & C300 OLTs via SNMP — multi-OLT REST API with
+      Redis caching
+    digest: 38d88c9af47a5894f62db33679a040433e6d2919463d7133bd94533d63e4a653
+    name: snmp-olt-zte
+    type: application
+    urls:
+    - https://github.com/Cepat-Kilat-Teknologi/snmp-olt-zte/releases/download/snmp-olt-zte-3.2.1/snmp-olt-zte-3.2.1.tgz
+    version: 3.2.1
+  - apiVersion: v2
+    appVersion: 3.2.0
     created: "2026-06-10T13:20:35.695542489Z"
     dependencies:
     - condition: redis.enabled
@@ -62,4 +78,4 @@ entries:
     urls:
     - https://github.com/Cepat-Kilat-Teknologi/go-snmp-olt-zte-c320/releases/download/snmp-olt-zte-c320-2.1.0/snmp-olt-zte-c320-2.1.0.tgz
     version: 2.1.0
-generated: "2026-06-10T13:20:35.695557121Z"
+generated: "2026-06-10T15:24:16.898106267Z"
