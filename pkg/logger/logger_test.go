@@ -186,3 +186,22 @@ func TestSyncWithLogger(t *testing.T) {
 	// Sync on an observer-backed zap.Logger returns nil.
 	require.NoError(t, Sync())
 }
+
+func TestFatal_ViaPanicHook(t *testing.T) {
+	// zap's default Fatal calls os.Exit; swap in a logger whose Fatal panics
+	// instead so the wrapper is exercisable in-process.
+	core, logs := observer.New(zapcore.FatalLevel)
+	panicking := zap.New(core, zap.WithFatalHook(zapcore.WriteThenPanic))
+	restore := SetForTest(panicking)
+	defer restore()
+
+	defer func() {
+		if r := recover(); r == nil {
+			t.Fatal("expected Fatal to panic via WriteThenPanic hook")
+		}
+		if logs.Len() != 1 || logs.All()[0].Message != "boom" {
+			t.Errorf("fatal entry not captured: %+v", logs.All())
+		}
+	}()
+	Fatal("boom")
+}
