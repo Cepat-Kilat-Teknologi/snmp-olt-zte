@@ -92,7 +92,28 @@ func HandleError(w http.ResponseWriter, r *http.Request, err error) {
 			logger.Warn("unauthorized", baseFields...)
 			writeError(w, http.StatusUnauthorized, "Unauthorized", requestID, appErr)
 
-		case apperrors.ErrorTypeSNMP, apperrors.ErrorTypeRedis, apperrors.ErrorTypeInternal: // -> 500
+		case apperrors.ErrorTypeSNMP: // -> 503 if the OLT is unreachable, else 500
+			fields := append(baseFields, zap.Error(appErr.Err))
+			if apperrors.IsDeviceUnreachable(appErr.Err) {
+				// Dependency-unreachable: the OLT cannot be reached over SNMP
+				// (connection refused, timeout, no response, socket error).
+				// Per the ISP Adapter Standard this is 503, not 500.
+				logger.Warn("snmp_device_unreachable", fields...)
+				writeErrorWithCode(w, http.StatusServiceUnavailable, "Service Unavailable",
+					string(apperrors.ErrorTypeServiceUnavailable), requestID, appErr)
+			} else {
+				// The OLT responded, but the SNMP exchange failed for an
+				// internal/protocol reason — this is our own fault: 500.
+				logger.Error("internal_error", fields...)
+				writeError(w, http.StatusInternalServerError, "Internal Server Error", requestID, appErr)
+			}
+
+		case apperrors.ErrorTypeServiceUnavailable: // -> 503 Service Unavailable
+			fields := append(baseFields, zap.Error(appErr.Err))
+			logger.Warn("service_unavailable", fields...)
+			writeError(w, http.StatusServiceUnavailable, "Service Unavailable", requestID, appErr)
+
+		case apperrors.ErrorTypeRedis, apperrors.ErrorTypeInternal: // -> 500
 			fields := append(baseFields, zap.Error(appErr.Err))
 			logger.Error("internal_error", fields...)
 			writeError(w, http.StatusInternalServerError, "Internal Server Error", requestID, appErr)
@@ -119,6 +140,17 @@ func HandleError(w http.ResponseWriter, r *http.Request, err error) {
 
 func writeError(w http.ResponseWriter, code int, status, requestID string, err error) {
 	resp := buildErrorResponse(code, status, requestID, err)
+	SendJSONResponse(w, code, resp)
+}
+
+// writeErrorWithCode is like writeError but overrides the response error_code,
+// used when the HTTP-status decision reclassifies an error (e.g. an SNMP
+// transport failure surfaced as SERVICE_UNAVAILABLE rather than SNMP_ERROR).
+func writeErrorWithCode(w http.ResponseWriter, code int, status, errorCode, requestID string, err error) {
+	resp := buildErrorResponse(code, status, requestID, err)
+	if errorCode != "" {
+		resp.ErrorCode = errorCode
+	}
 	SendJSONResponse(w, code, resp)
 }
 

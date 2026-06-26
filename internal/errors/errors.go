@@ -1,7 +1,12 @@
 package errors
 
 import (
+	"errors"
 	"fmt"
+	"net"
+	"os"
+	"strings"
+	"syscall"
 )
 
 // ErrorType represents the category of error
@@ -16,6 +21,10 @@ const (
 	ErrorTypeRedis        ErrorType = "REDIS_ERROR"      // Error type for Redis operations
 	ErrorTypeConfig       ErrorType = "CONFIG_ERROR"     // Error type for configuration issues
 	ErrorTypeInternal     ErrorType = "INTERNAL_ERROR"   // Error type for internal server errors
+	// ErrorTypeServiceUnavailable marks a dependency-unreachable condition (the OLT
+	// cannot be reached over SNMP). Per the ISP Adapter Standard this maps to HTTP
+	// 503, distinct from the service's OWN internal faults which map to HTTP 500.
+	ErrorTypeServiceUnavailable ErrorType = "SERVICE_UNAVAILABLE"
 )
 
 // AppError represents a structured application error
@@ -78,6 +87,68 @@ func NewSNMPError(operation string, err error) *AppError {
 		Message: fmt.Sprintf("SNMP %s failed", operation),
 		Err:     err,
 	}
+}
+
+// deviceUnreachableSubstrings are lowercased markers found in SNMP transport
+// errors that indicate the OLT could not be reached over the network — as
+// opposed to an internal/programming fault inside this service. gosnmp surfaces
+// most transport failures as plain wrapped strings, so a substring scan is the
+// reliable fallback when typed checks (net.Error/syscall) do not match.
+var deviceUnreachableSubstrings = []string{
+	"connection refused",
+	"connection reset",
+	"connection timed out",
+	"i/o timeout",
+	"request timeout", // gosnmp: "request timeout (after N retries)"
+	"timeout",
+	"no response",
+	"read udp",
+	"write udp",
+	"recvfrom",
+	"sendto",
+	"reading from socket",
+	"writing to socket",
+	"network is unreachable",
+	"host is unreachable",
+	"no route to host",
+	"broken pipe",
+}
+
+// IsDeviceUnreachable reports whether err represents a condition where the OLT
+// could not be reached over SNMP (connection refused, i/o timeout, no SNMP
+// response, or a socket read/write failure). Such dependency-unreachable
+// conditions must surface as HTTP 503 (SERVICE_UNAVAILABLE), distinct from the
+// service's own internal faults which remain HTTP 500.
+func IsDeviceUnreachable(err error) bool {
+	if err == nil {
+		return false
+	}
+
+	// Typed checks first — robust against message/locale changes.
+	var netErr net.Error
+	if errors.As(err, &netErr) && netErr.Timeout() {
+		return true
+	}
+	if errors.Is(err, os.ErrDeadlineExceeded) {
+		return true
+	}
+	if errors.Is(err, syscall.ECONNREFUSED) ||
+		errors.Is(err, syscall.ECONNRESET) ||
+		errors.Is(err, syscall.EHOSTUNREACH) ||
+		errors.Is(err, syscall.ENETUNREACH) ||
+		errors.Is(err, syscall.ETIMEDOUT) ||
+		errors.Is(err, syscall.EPIPE) {
+		return true
+	}
+
+	// String fallback — gosnmp wraps many transport errors as plain strings.
+	msg := strings.ToLower(err.Error())
+	for _, s := range deviceUnreachableSubstrings {
+		if strings.Contains(msg, s) {
+			return true
+		}
+	}
+	return false
 }
 
 // NewRedisError creates a new Redis error

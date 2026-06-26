@@ -4,8 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"net"
 	"net/http"
 	"net/http/httptest"
+	"syscall"
 	"testing"
 
 	apperrors "github.com/Cepat-Kilat-Teknologi/snmp-olt-zte/internal/errors"
@@ -17,6 +19,14 @@ import (
 func newTestRequest() *http.Request {
 	return httptest.NewRequest(http.MethodGet, "/test", nil)
 }
+
+// timeoutErr is a minimal net.Error whose Timeout() reports true, used to
+// exercise the typed (non-string) device-unreachable detection path.
+type timeoutErr struct{}
+
+func (timeoutErr) Error() string   { return "i/o timeout" }
+func (timeoutErr) Timeout() bool   { return true }
+func (timeoutErr) Temporary() bool { return true }
 
 func TestSendJSONResponse(t *testing.T) {
 	// Initiate ResponseWriter dan Request
@@ -229,9 +239,12 @@ func TestHandleError_NotFoundError(t *testing.T) {
 	}
 }
 
+// TestHandleError_SNMPError covers a genuine internal SNMP fault: the OLT was
+// reachable but returned an unusable response. This is the service's own
+// problem and must stay HTTP 500 with error_code SNMP_ERROR.
 func TestHandleError_SNMPError(t *testing.T) {
 	rr := httptest.NewRecorder()
-	appErr := apperrors.NewSNMPError("Get", errors.New("timeout"))
+	appErr := apperrors.NewSNMPError("Get", errors.New("no variables in response"))
 
 	HandleError(rr, newTestRequest(), appErr)
 
@@ -249,6 +262,79 @@ func TestHandleError_SNMPError(t *testing.T) {
 	}
 	if response.ErrorCode != string(apperrors.ErrorTypeSNMP) {
 		t.Errorf("ErrorCode tidak sesuai: got %v want %v", response.ErrorCode, apperrors.ErrorTypeSNMP)
+	}
+}
+
+// TestHandleError_SNMPError_DeviceUnreachable is the core regression for the
+// 500->503 fix: when the OLT cannot be reached over SNMP, the adapter must
+// return HTTP 503 with a SERVICE_UNAVAILABLE-class error_code (a
+// dependency-unreachable condition, not the service's own internal fault).
+// The cases mirror what gosnmp surfaces when the OLT is down/unreachable.
+func TestHandleError_SNMPError_DeviceUnreachable(t *testing.T) {
+	cases := []struct {
+		name string
+		err  error
+	}{
+		{"connection refused", errors.New("error reading from socket: read udp 10.0.0.2:50000->10.0.0.1:161: recvfrom: connection refused")},
+		{"i/o timeout", errors.New("error reading from socket: read udp 10.0.0.2:50000->10.0.0.1:161: i/o timeout")},
+		{"request timeout", errors.New("request timeout (after 3 retries)")},
+		{"no route to host", errors.New("dial udp 10.0.0.1:161: connect: no route to host")},
+		{"typed net timeout", &net.OpError{Op: "read", Net: "udp", Err: timeoutErr{}}},
+		{"typed ECONNREFUSED", &net.OpError{Op: "read", Net: "udp", Err: syscall.ECONNREFUSED}},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			rr := httptest.NewRecorder()
+			// Mirror the production call site: usecase wraps the SNMP client
+			// transport error via NewSNMPError("walk", err).
+			appErr := apperrors.NewSNMPError("walk", tc.err)
+
+			HandleError(rr, newTestRequest(), appErr)
+
+			if rr.Code != http.StatusServiceUnavailable {
+				t.Fatalf("Status code: got %d want %d (%s)", rr.Code, http.StatusServiceUnavailable, rr.Body.String())
+			}
+
+			var response ErrorResponse
+			if err := json.NewDecoder(rr.Body).Decode(&response); err != nil {
+				t.Fatalf("decode: %v", err)
+			}
+			// Both the envelope `code` field and the real HTTP status are 503.
+			if response.Code != http.StatusServiceUnavailable {
+				t.Errorf("envelope code: got %d want %d", response.Code, http.StatusServiceUnavailable)
+			}
+			if response.Status != "Service Unavailable" {
+				t.Errorf("status: got %q want %q", response.Status, "Service Unavailable")
+			}
+			if response.ErrorCode != string(apperrors.ErrorTypeServiceUnavailable) {
+				t.Errorf("error_code: got %q want %q", response.ErrorCode, apperrors.ErrorTypeServiceUnavailable)
+			}
+		})
+	}
+}
+
+// TestHandleError_ServiceUnavailableType verifies the explicit
+// SERVICE_UNAVAILABLE AppError type also maps to HTTP 503.
+func TestHandleError_ServiceUnavailableType(t *testing.T) {
+	rr := httptest.NewRecorder()
+	appErr := &apperrors.AppError{
+		Type:    apperrors.ErrorTypeServiceUnavailable,
+		Message: "OLT unreachable",
+		Err:     errors.New("connection refused"),
+	}
+
+	HandleError(rr, newTestRequest(), appErr)
+
+	if rr.Code != http.StatusServiceUnavailable {
+		t.Fatalf("Status code: got %d want %d", rr.Code, http.StatusServiceUnavailable)
+	}
+	var response ErrorResponse
+	if err := json.NewDecoder(rr.Body).Decode(&response); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if response.ErrorCode != string(apperrors.ErrorTypeServiceUnavailable) {
+		t.Errorf("error_code: got %q want %q", response.ErrorCode, apperrors.ErrorTypeServiceUnavailable)
 	}
 }
 

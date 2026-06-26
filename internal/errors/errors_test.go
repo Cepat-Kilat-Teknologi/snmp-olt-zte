@@ -2,8 +2,59 @@ package errors
 
 import (
 	"errors"
+	"net"
+	"syscall"
 	"testing"
 )
+
+// netTimeoutErr is a minimal net.Error reporting Timeout()==true.
+type netTimeoutErr struct{}
+
+func (netTimeoutErr) Error() string   { return "deadline exceeded" }
+func (netTimeoutErr) Timeout() bool   { return true }
+func (netTimeoutErr) Temporary() bool { return false }
+
+func TestIsDeviceUnreachable(t *testing.T) {
+	unreachable := []struct {
+		name string
+		err  error
+	}{
+		{"nil-guard handled separately", errors.New("connection refused")},
+		{"connection refused string", errors.New("read udp 10.0.0.2:161->10.0.0.1:161: recvfrom: connection refused")},
+		{"i/o timeout string", errors.New("read udp: i/o timeout")},
+		{"gosnmp request timeout", errors.New("request timeout (after 3 retries)")},
+		{"no route to host", errors.New("dial udp: connect: no route to host")},
+		{"network unreachable", errors.New("connect: network is unreachable")},
+		{"reading from socket", errors.New("error reading from socket: connection reset by peer")},
+		{"typed net timeout", &net.OpError{Op: "read", Net: "udp", Err: netTimeoutErr{}}},
+		{"syscall ECONNREFUSED", &net.OpError{Op: "read", Net: "udp", Err: syscall.ECONNREFUSED}},
+		{"syscall ETIMEDOUT", syscall.ETIMEDOUT},
+	}
+	for _, tt := range unreachable {
+		t.Run("unreachable/"+tt.name, func(t *testing.T) {
+			if !IsDeviceUnreachable(tt.err) {
+				t.Errorf("IsDeviceUnreachable(%v) = false, want true", tt.err)
+			}
+		})
+	}
+
+	internal := []struct {
+		name string
+		err  error
+	}{
+		{"nil", nil},
+		{"no variables in response", errors.New("no variables in response")},
+		{"unmarshal", errors.New("failed to unmarshal pdu value")},
+		{"generic", errors.New("something internal went wrong")},
+	}
+	for _, tt := range internal {
+		t.Run("internal/"+tt.name, func(t *testing.T) {
+			if IsDeviceUnreachable(tt.err) {
+				t.Errorf("IsDeviceUnreachable(%v) = true, want false", tt.err)
+			}
+		})
+	}
+}
 
 func TestErrorType_Constants(t *testing.T) {
 	// Verify all error type constants
@@ -33,6 +84,10 @@ func TestErrorType_Constants(t *testing.T) {
 
 	if ErrorTypeUnauthorized != "UNAUTHORIZED" {
 		t.Errorf("Expected ErrorTypeUnauthorized to be 'UNAUTHORIZED', got '%s'", ErrorTypeUnauthorized)
+	}
+
+	if ErrorTypeServiceUnavailable != "SERVICE_UNAVAILABLE" {
+		t.Errorf("Expected ErrorTypeServiceUnavailable to be 'SERVICE_UNAVAILABLE', got '%s'", ErrorTypeServiceUnavailable)
 	}
 }
 
