@@ -7,12 +7,12 @@ import (
 	"testing"
 )
 
-// netTimeoutErr is a minimal net.Error reporting Timeout()==true.
-type netTimeoutErr struct{}
+// netTimeoutError is a minimal net.Error reporting Timeout()==true.
+type netTimeoutError struct{}
 
-func (netTimeoutErr) Error() string   { return "deadline exceeded" }
-func (netTimeoutErr) Timeout() bool   { return true }
-func (netTimeoutErr) Temporary() bool { return false }
+func (netTimeoutError) Error() string   { return "deadline exceeded" }
+func (netTimeoutError) Timeout() bool   { return true }
+func (netTimeoutError) Temporary() bool { return false }
 
 func TestIsDeviceUnreachable(t *testing.T) {
 	unreachable := []struct {
@@ -26,7 +26,7 @@ func TestIsDeviceUnreachable(t *testing.T) {
 		{"no route to host", errors.New("dial udp: connect: no route to host")},
 		{"network unreachable", errors.New("connect: network is unreachable")},
 		{"reading from socket", errors.New("error reading from socket: connection reset by peer")},
-		{"typed net timeout", &net.OpError{Op: "read", Net: "udp", Err: netTimeoutErr{}}},
+		{"typed net timeout", &net.OpError{Op: "read", Net: "udp", Err: netTimeoutError{}}},
 		{"syscall ECONNREFUSED", &net.OpError{Op: "read", Net: "udp", Err: syscall.ECONNREFUSED}},
 		{"syscall ETIMEDOUT", syscall.ETIMEDOUT},
 	}

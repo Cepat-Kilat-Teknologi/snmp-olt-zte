@@ -20,13 +20,13 @@ func newTestRequest() *http.Request {
 	return httptest.NewRequest(http.MethodGet, "/test", nil)
 }
 
-// timeoutErr is a minimal net.Error whose Timeout() reports true, used to
+// timeoutError is a minimal net.Error whose Timeout() reports true, used to
 // exercise the typed (non-string) device-unreachable detection path.
-type timeoutErr struct{}
+type timeoutError struct{}
 
-func (timeoutErr) Error() string   { return "i/o timeout" }
-func (timeoutErr) Timeout() bool   { return true }
-func (timeoutErr) Temporary() bool { return true }
+func (timeoutError) Error() string   { return "i/o timeout" }
+func (timeoutError) Timeout() bool   { return true }
+func (timeoutError) Temporary() bool { return true }
 
 func TestSendJSONResponse(t *testing.T) {
 	// Initiate ResponseWriter dan Request
@@ -279,7 +279,7 @@ func TestHandleError_SNMPError_DeviceUnreachable(t *testing.T) {
 		{"i/o timeout", errors.New("error reading from socket: read udp 10.0.0.2:50000->10.0.0.1:161: i/o timeout")},
 		{"request timeout", errors.New("request timeout (after 3 retries)")},
 		{"no route to host", errors.New("dial udp 10.0.0.1:161: connect: no route to host")},
-		{"typed net timeout", &net.OpError{Op: "read", Net: "udp", Err: timeoutErr{}}},
+		{"typed net timeout", &net.OpError{Op: "read", Net: "udp", Err: timeoutError{}}},
 		{"typed ECONNREFUSED", &net.OpError{Op: "read", Net: "udp", Err: syscall.ECONNREFUSED}},
 	}
 
