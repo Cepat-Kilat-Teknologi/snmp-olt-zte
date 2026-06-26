@@ -65,6 +65,8 @@ jobs:
           go-version: ${{ env.GO_VERSION }}
           cache-dependency-path: go.sum
       - run: go mod download
+      - name: Install C toolchain (for -race / CGO)
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends gcc libc6-dev
       - name: test (race + coverage)
         run: go test -race -covermode=atomic -coverprofile=coverage.out -count=1 ./...
       - name: Upload coverage to Codecov
