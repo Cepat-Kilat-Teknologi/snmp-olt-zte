@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed — GetBulk hang from unset SNMP max-repetitions
+- **SNMP connections now always set a non-zero GETBULK max-repetitions.**
+  `createConnection` (and the seed builder in `pkg/snmp`) configured `Timeout`,
+  `Retries`, and `MaxOids` but never `MaxRepetitions`, leaving it at the gosnmp
+  zero value (0). A GetBulk with max-repetitions=0 **hangs** on some ZTE OLTs:
+  proven live on a **ZTE C300 V2.1.0**, where `-Cr0` never returns (the request
+  times out and retries, yielding empty results after ~45s) while `-Cr10`/`-Cr50`
+  return rows in <0.1s. Connections are now built with a sane default of **20**,
+  tunable via the new **`SNMP_MAX_REPETITIONS`** env var (mirrors
+  `SNMP_TIMEOUT_SECONDS` / `SNMP_RETRIES`; any value ≤ 0 or non-numeric falls
+  back to 20 so the hang can never be reintroduced through config). Pool members
+  inherit the value from the seed, defaulting to 20 if the seed lacks one.
+  This makes GetBulk usable on the C300, removing the need for the per-OLT
+  `walk=true` (GetNext) workaround that was previously required just to read it
+  (~0.06s reads via GetBulk).
+
 ## [3.2.0] - 2026-06-10
 
 First release as the **relocated standalone module**: repository renamed

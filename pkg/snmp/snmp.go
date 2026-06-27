@@ -13,6 +13,11 @@ import (
 	"go.uber.org/zap"
 )
 
+// DefaultMaxRepetitions is the GETBULK max-repetitions applied when
+// SNMP_MAX_REPETITIONS is unset. It is intentionally never 0: a GetBulk with
+// max-repetitions=0 hangs on some ZTE OLTs (see snmpMaxRepetitions).
+const DefaultMaxRepetitions uint32 = 20
+
 // snmpTimeout / snmpRetries make the per-request SNMP timeout and retry count
 // tunable for slow links (e.g. an OLT reached over the public internet, where
 // the default 5s is too aggressive). Defaults preserve the previous behavior
@@ -33,6 +38,24 @@ func snmpRetries() int {
 		}
 	}
 	return 2
+}
+
+// snmpMaxRepetitions returns the GETBULK max-repetitions used by BulkWalk.
+// gosnmp leaves MaxRepetitions at its zero value (0) unless it is set
+// explicitly, and a GetBulk with max-repetitions=0 HANGS on some OLTs
+// (proven live on a ZTE C300 V2.1.0: -Cr0 never returns, the request times
+// out and retries, yielding empty results after ~45s, while -Cr10/-Cr50
+// return rows in <0.1s). We therefore always set a sane, conservative
+// default (20) and make it tunable via SNMP_MAX_REPETITIONS. A value of 0
+// (or any non-positive / non-numeric value) falls back to the default so
+// the hang can never be reintroduced through config.
+func snmpMaxRepetitions() uint32 {
+	if v := os.Getenv("SNMP_MAX_REPETITIONS"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			return uint32(n)
+		}
+	}
+	return DefaultMaxRepetitions
 }
 
 // SetupSnmpConnection is a function to set up snmp connection
@@ -81,14 +104,15 @@ func SetupSnmpConnectionWith(host string, port uint16, community string) (*gosnm
 	// Create a new SNMP target instance
 	// Note: SNMP library logging is disabled; we use zap via pkg/logger for application logging instead
 	target := &gosnmp.GoSNMP{
-		Target:    host,             // Target IP
-		Port:      port,             // Target Port
-		Community: community,        // Community String
-		Version:   gosnmp.Version2c, // SNMP Version 2c
-		Timeout:   snmpTimeout(),    // default 5s; raise via SNMP_TIMEOUT_SECONDS for slow/public links
-		Retries:   snmpRetries(),    // default 2; tune via SNMP_RETRIES
-		MaxOids:   60,               // Maximum OIDs per request (batch size for better performance)
-		Logger:    gosnmp.Logger{},  // Disable SNMP library logging (empty struct)
+		Target:         host,                 // Target IP
+		Port:           port,                 // Target Port
+		Community:      community,            // Community String
+		Version:        gosnmp.Version2c,     // SNMP Version 2c
+		Timeout:        snmpTimeout(),        // default 5s; raise via SNMP_TIMEOUT_SECONDS for slow/public links
+		Retries:        snmpRetries(),        // default 2; tune via SNMP_RETRIES
+		MaxOids:        60,                   // Maximum OIDs per request (batch size for better performance)
+		MaxRepetitions: snmpMaxRepetitions(), // default 20; never 0 (0 hangs GetBulk on ZTE C300) — tune via SNMP_MAX_REPETITIONS
+		Logger:         gosnmp.Logger{},      // Disable SNMP library logging (empty struct)
 	}
 
 	// Connect to the SNMP target
