@@ -509,6 +509,74 @@ func TestSnmpRepository_BulkWalk_Connected(t *testing.T) {
 	_ = err
 }
 
+// TestCreateConnection_SetsMaxRepetitions verifies that createConnection always
+// stamps a non-zero GETBULK max-repetitions onto the connection. A
+// max-repetitions of 0 makes GetBulk hang on some ZTE OLTs (C300 V2.1.0), so
+// this value must always be propagated from the config.
+func TestCreateConnection_SetsMaxRepetitions(t *testing.T) {
+	cfg := snmpConfig{
+		target:         "127.0.0.1",
+		port:           161,
+		community:      "public",
+		version:        gosnmp.Version2c,
+		timeout:        2 * time.Second,
+		retries:        1,
+		maxOids:        60,
+		maxRepetitions: 33,
+	}
+
+	conn, err := createConnection(cfg)
+	if err != nil {
+		t.Fatalf("createConnection failed: %v", err)
+	}
+	defer func() {
+		if conn.Conn != nil {
+			_ = conn.Conn.Close()
+		}
+	}()
+
+	if conn.MaxRepetitions != 33 {
+		t.Errorf("Expected MaxRepetitions 33, got %d", conn.MaxRepetitions)
+	}
+	if conn.MaxRepetitions == 0 {
+		t.Error("MaxRepetitions must never be 0 (GetBulk hangs on ZTE C300)")
+	}
+}
+
+// TestNewPonRepository_DefaultsMaxRepetitions verifies that when the seed
+// connection carries no explicit max-repetitions (the gosnmp zero value, 0),
+// the repository substitutes the safe DefaultMaxRepetitions instead of
+// propagating 0 to the pool — otherwise GetBulk would hang on a ZTE C300.
+func TestNewPonRepository_DefaultsMaxRepetitions(t *testing.T) {
+	conn := newTestConn("192.168.1.1", "public", 161) // MaxRepetitions left at 0
+	repo := NewPonRepository(conn)
+
+	snmpRepo, ok := repo.(*snmpRepository)
+	if !ok {
+		t.Fatal("Failed to type assert to *snmpRepository")
+	}
+	if snmpRepo.cfg.maxRepetitions != DefaultMaxRepetitions {
+		t.Errorf("Expected maxRepetitions to default to %d, got %d",
+			DefaultMaxRepetitions, snmpRepo.cfg.maxRepetitions)
+	}
+}
+
+// TestNewPonRepository_PropagatesMaxRepetitions verifies that an explicit
+// max-repetitions on the seed connection is carried into the pool config.
+func TestNewPonRepository_PropagatesMaxRepetitions(t *testing.T) {
+	conn := newTestConn("192.168.1.1", "public", 161)
+	conn.MaxRepetitions = 50
+	repo := NewPonRepository(conn)
+
+	snmpRepo, ok := repo.(*snmpRepository)
+	if !ok {
+		t.Fatal("Failed to type assert to *snmpRepository")
+	}
+	if snmpRepo.cfg.maxRepetitions != 50 {
+		t.Errorf("Expected maxRepetitions 50, got %d", snmpRepo.cfg.maxRepetitions)
+	}
+}
+
 func TestNewPonRepositoryWithConcurrency_ZeroMaxConcurrent(t *testing.T) {
 	conn := newTestConn("192.168.1.1", "public", 161)
 	repo := NewPonRepositoryWithConcurrency(conn, 0, false)
