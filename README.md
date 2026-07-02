@@ -20,7 +20,7 @@ REST API service for monitoring ZTE **C320 and C300** OLT devices via SNMP proto
 * [Go 1.26](https://go.dev/) - Programming language
 * [Chi](https://github.com/go-chi/chi/) - Lightweight HTTP router
 * [GoSNMP](https://github.com/gosnmp/gosnmp) - SNMP library with BulkWalk support
-* [Redis](https://github.com/redis/go-redis/v9) - Caching layer with background refresh
+* [Redis](https://github.com/redis/go-redis/v9) - Caching layer with background refresh (production: shared redis-ha cluster, DB 1)
 * [robfig/cron](https://github.com/robfig/cron) - Cron scheduling for power monitor
 * [Zap](https://github.com/uber-go/zap) - Structured JSON logger (standardized across all ISP adapters)
 * [Prometheus client_golang](https://github.com/prometheus/client_golang) - Metrics collection

@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **Smart CI** — doc-only changes (`.md`, `docs/`, `LICENSE`, `.gitignore`) no
+  longer trigger full build+push pipeline.
+- **Production Redis migrated to shared redis-ha cluster.** The deployment now
+  uses `redis-ha-master.redis-ha.svc.cluster.local` (DB index 1) instead of a
+  local per-namespace Redis deployment. The local redis container has been removed
+  from the ops-fe Kustomize stack. Config changes: `REDIS_HOST`, `REDIS_DB=1`,
+  `REDIS_PASSWORD` from `redis-ha-password` secret.
+
 ### Fixed — GetBulk hang from unset SNMP max-repetitions
 - **SNMP connections now always set a non-zero GETBULK max-repetitions.**
   `createConnection` (and the seed builder in `pkg/snmp`) configured `Timeout`,
