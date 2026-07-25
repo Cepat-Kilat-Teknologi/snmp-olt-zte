@@ -76,3 +76,14 @@ k6-results.json
 # Backup files
 *.bak
 *.backup
+
+# AI assistant tooling — local only, never committed
+.claude/
+CLAUDE.md
+CLAUDE.local.md
+AGENTS.md
+.mcp.json
+.cursor/
+.cursorrules
+.aider*
+.omc/
