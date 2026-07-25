@@ -8,3 +8,13 @@ Dockerfile
 examples/kustomize/overlays/k3s-dev/
 .env
 .env.*
+# AI assistant tooling — local only, never committed
+.claude/
+CLAUDE.md
+CLAUDE.local.md
+AGENTS.md
+.mcp.json
+.cursor/
+.cursorrules
+.aider*
+.omc/
