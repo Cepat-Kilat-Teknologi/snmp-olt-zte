@@ -87,3 +87,9 @@ AGENTS.md
 .cursorrules
 .aider*
 .omc/
+
+# Local artefacts — screenshots, tool output, coverage
+*.png
+graphify-out/
+.playwright-mcp/
+coverage*.out
