@@ -74,6 +74,7 @@ REST API service for monitoring ZTE **C320 and C300** OLT devices via SNMP proto
 # 1. Clone and configure
 cp .env.example .env
 # Edit .env with your OLT IP, SNMP community, and Redis settings
+# Production: .env.production has the prod template — copy and fill real values
 
 # 2. Start development (Redis in Docker + App with hot reload)
 task dev
