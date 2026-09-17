@@ -51,7 +51,7 @@ func Logger() func(next http.Handler) http.Handler {
 						zap.String("path", r.URL.Path),
 					)
 
-					// Report the panic to Sentry (no-op when SDK is not initialised).
+					// Report the panic to Sentry (no-op when SDK is not initialized).
 					switch v := rec.(type) {
 					case error:
 						sentry.CaptureException(v)
