@@ -1,5 +1,5 @@
 // Package sentry provides a thin wrapper around the Sentry Go SDK for
-// centralised error tracking. When SENTRY_DSN is empty Init is a no-op,
+// centralized error tracking. When SENTRY_DSN is empty Init is a no-op,
 // so the service starts cleanly in development without any Sentry config.
 package sentry
 
@@ -9,7 +9,7 @@ import (
 	sentrygo "github.com/getsentry/sentry-go"
 )
 
-// Init initialises the Sentry SDK. A blank dsn is treated as "disabled" and
+// Init initializes the Sentry SDK. A blank dsn is treated as "disabled" and
 // returns nil immediately, making the call safe in any environment.
 func Init(dsn, env, release string) error {
 	if dsn == "" {

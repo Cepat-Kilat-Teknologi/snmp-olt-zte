@@ -19,16 +19,16 @@ func TestInit_InvalidDSN_ReturnsError(t *testing.T) {
 }
 
 func TestCaptureException_NoPanic(t *testing.T) {
-	// Should not panic even when Sentry is not initialised.
+	// Should not panic even when Sentry is not initialized.
 	CaptureException(errors.New("test error"))
 }
 
 func TestCaptureMessage_NoPanic(t *testing.T) {
-	// Should not panic even when Sentry is not initialised.
+	// Should not panic even when Sentry is not initialized.
 	CaptureMessage("test message")
 }
 
 func TestFlush_NoPanic(t *testing.T) {
-	// Should not panic even when Sentry is not initialised.
+	// Should not panic even when Sentry is not initialized.
 	Flush()
 }
