@@ -36,6 +36,12 @@ RUN CGO_ENABLED=0 GOOS=linux go build \
     -o /go/bin/app \
     ./cmd/api
 
+# Build healthcheck binary for distroless HEALTHCHECK
+RUN CGO_ENABLED=0 GOOS=linux go build \
+    -ldflags="-s -w" \
+    -o /go/bin/healthcheck \
+    ./cmd/healthcheck
+
 # Production stage - minimal distroless image
 FROM gcr.io/distroless/static-debian12 AS prod
 
@@ -49,11 +55,16 @@ LABEL version="${APP_VERSION}"
 # Environment
 ENV APP_ENV=production
 
-# Copy binary from dev stage
+# Copy binaries from dev stage
 COPY --from=dev /go/bin/app /app
+COPY --from=dev /go/bin/healthcheck /healthcheck
 
 # Expose port
 EXPOSE 8081
+
+# Healthcheck — hit /healthz every 30s, fail after 3s, allow 5s startup
+HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
+    CMD ["/healthcheck"]
 
 # Run as non-root user (distroless nonroot user)
 USER nonroot:nonroot
