@@ -1,12 +1,14 @@
 package middleware
 
 import (
+	"fmt"
 	"net/http"
 	"runtime/debug"
 	"time"
 
 	"github.com/Cepat-Kilat-Teknologi/snmp-olt-zte/internal/utils"
 	"github.com/Cepat-Kilat-Teknologi/snmp-olt-zte/pkg/logger"
+	"github.com/Cepat-Kilat-Teknologi/snmp-olt-zte/pkg/sentry"
 	chimw "github.com/go-chi/chi/v5/middleware"
 	"go.uber.org/zap"
 )
@@ -48,6 +50,15 @@ func Logger() func(next http.Handler) http.Handler {
 						zap.String("method", r.Method),
 						zap.String("path", r.URL.Path),
 					)
+
+					// Report the panic to Sentry (no-op when SDK is not initialized).
+					switch v := rec.(type) {
+					case error:
+						sentry.CaptureException(v)
+					default:
+						sentry.CaptureException(fmt.Errorf("panic: %v", v))
+					}
+
 					ww.WriteHeader(http.StatusInternalServerError)
 				}
 

@@ -8,6 +8,7 @@ import (
 	"github.com/Cepat-Kilat-Teknologi/snmp-olt-zte/app"
 	"github.com/Cepat-Kilat-Teknologi/snmp-olt-zte/internal/buildinfo"
 	"github.com/Cepat-Kilat-Teknologi/snmp-olt-zte/pkg/logger"
+	"github.com/Cepat-Kilat-Teknologi/snmp-olt-zte/pkg/sentry"
 	"github.com/joho/godotenv"
 	"go.uber.org/zap"
 )
@@ -55,6 +56,12 @@ func main() {
 		zap.String("commit", commit),
 		zap.String("build_time", buildTime),
 	)
+
+	// Sentry error tracking — no-op when SENTRY_DSN is empty.
+	if err := sentry.Init(os.Getenv("SENTRY_DSN"), env, version); err != nil {
+		logger.Warn("sentry init failed", zap.Error(err))
+	}
+	defer sentry.Flush()
 
 	server := app.New()
 	ctx, cancel := context.WithCancel(context.Background())
