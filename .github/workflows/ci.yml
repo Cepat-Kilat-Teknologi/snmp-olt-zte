@@ -77,6 +77,12 @@ jobs:
       - run: go mod download
       - name: test (race + coverage)
         run: go test -race -covermode=atomic -coverprofile=coverage.out -count=1 ./...
+      - name: coverage gate (80%)
+        run: |
+          go tool cover -func=coverage.out
+          total=$(go tool cover -func=coverage.out | awk '/^total:/{print $3}' | tr -d '%')
+          echo "total coverage: ${total}%"
+          awk "BEGIN{exit !(${total:-0} >= 80)}" || { echo '::error::coverage below 80%'; exit 1; }
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v5
         env:
