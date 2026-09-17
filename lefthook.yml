@@ -1,0 +1,23 @@
+# lefthook — git hooks manager
+# Install: go install github.com/evilmartians/lefthook@latest && lefthook install
+# Or:      brew install lefthook && lefthook install
+
+pre-commit:
+  parallel: true
+  commands:
+    fmt:
+      glob: "*.go"
+      run: test -z "$(gofmt -l .)" || { gofmt -d .; exit 1; }
+    vet:
+      glob: "*.go"
+      run: go vet ./...
+    secrets:
+      run: |
+        grep -rnE '(password|secret|apikey|api_key|token)\s*[:=]\s*["'"'"'][^"'"'"']{6,}' \
+          --include='*.go' {staged_files} \
+          && { echo "Possible secret detected"; exit 1; } || true
+
+pre-push:
+  commands:
+    test:
+      run: go test ./...
