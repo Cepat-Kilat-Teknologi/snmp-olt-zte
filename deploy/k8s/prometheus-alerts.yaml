@@ -1,0 +1,110 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: snmp-olt-zte-alerts
+  namespace: misindo-snmp-olt-zte-prod
+  labels:
+    app: snmp-olt-zte
+    prometheus: kube-prometheus
+spec:
+  groups:
+    - name: snmp-olt-zte.rules
+      rules:
+        # ── Availability ──────────────────────────────────────────────
+        - alert: snmp-olt-zte_Down
+          expr: up{job="snmp-olt-zte", namespace="misindo-snmp-olt-zte-prod"} == 0
+          for: 1m
+          labels:
+            severity: critical
+            service: snmp-olt-zte
+          annotations:
+            summary: "snmp-olt-zte is down"
+            description: "{{ $labels.instance }} has been unreachable for >1m."
+
+        # ── Error rate ────────────────────────────────────────────────
+        - alert: snmp-olt-zte_HighErrorRate
+          expr: |
+            (
+              sum(rate(http_requests_total{job="snmp-olt-zte", status=~"5.."}[5m]))
+              /
+              sum(rate(http_requests_total{job="snmp-olt-zte"}[5m]))
+            ) > 0.05
+          for: 5m
+          labels:
+            severity: warning
+            service: snmp-olt-zte
+          annotations:
+            summary: "snmp-olt-zte error rate >5%"
+            description: "5xx rate is {{ $value | humanizePercentage }} over the last 5m."
+
+        - alert: snmp-olt-zte_CriticalErrorRate
+          expr: |
+            (
+              sum(rate(http_requests_total{job="snmp-olt-zte", status=~"5.."}[5m]))
+              /
+              sum(rate(http_requests_total{job="snmp-olt-zte"}[5m]))
+            ) > 0.15
+          for: 2m
+          labels:
+            severity: critical
+            service: snmp-olt-zte
+          annotations:
+            summary: "snmp-olt-zte error rate >15%"
+            description: "5xx rate is {{ $value | humanizePercentage }} — immediate attention needed."
+
+        # ── Latency ───────────────────────────────────────────────────
+        - alert: snmp-olt-zte_HighLatencyP99
+          expr: |
+            histogram_quantile(0.99,
+              sum(rate(http_request_duration_seconds_bucket{job="snmp-olt-zte"}[5m])) by (le)
+            ) > 2
+          for: 5m
+          labels:
+            severity: warning
+            service: snmp-olt-zte
+          annotations:
+            summary: "snmp-olt-zte p99 latency >2s"
+            description: "p99 latency is {{ $value | humanizeDuration }}."
+
+        # ── Pod restarts ──────────────────────────────────────────────
+        - alert: snmp-olt-zte_PodCrashLooping
+          expr: |
+            increase(kube_pod_container_status_restarts_total{
+              namespace="misindo-snmp-olt-zte-prod", container="snmp-olt-zte"
+            }[1h]) > 3
+          for: 5m
+          labels:
+            severity: warning
+            service: snmp-olt-zte
+          annotations:
+            summary: "snmp-olt-zte pod crash-looping"
+            description: "{{ $labels.pod }} has restarted {{ $value }} times in the last hour."
+
+        # ── In-flight requests ────────────────────────────────────────
+        - alert: snmp-olt-zte_HighInFlight
+          expr: http_requests_in_flight{job="snmp-olt-zte"} > 100
+          for: 5m
+          labels:
+            severity: warning
+            service: snmp-olt-zte
+          annotations:
+            summary: "snmp-olt-zte high in-flight requests"
+            description: "{{ $value }} concurrent requests — possible resource exhaustion."
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: snmp-olt-zte
+  namespace: misindo-snmp-olt-zte-prod
+  labels:
+    app: snmp-olt-zte
+    prometheus: kube-prometheus
+spec:
+  selector:
+    matchLabels:
+      app: snmp-olt-zte
+  endpoints:
+    - port: http
+      path: /metrics
+      interval: 15s
+      scrapeTimeout: 10s
