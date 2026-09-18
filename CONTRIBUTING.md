@@ -118,7 +118,7 @@ Follow the official [Effective Go](https://go.dev/doc/effective_go) guidelines a
 
 - Use `gofmt` for formatting (automatically applied in our workflow)
 - Run `go vet` to catch common mistakes
-- Use `golangci-lint` for comprehensive linting
+- Use `golangci-lint` for static analysis and linting
 
 ```bash
 # Format code
