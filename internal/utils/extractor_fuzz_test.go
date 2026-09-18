@@ -47,7 +47,7 @@ func FuzzExtractName(f *testing.F) {
 	f.Add("ONU-Customer-Name")
 	f.Add("")
 	f.Add("\x00\xff binary data")
-	f.Add("名前テスト")     // unicode
+	f.Add("名前テスト") // unicode
 	f.Add("a]very long name that might cause issues if not handled properly")
 
 	f.Fuzz(func(t *testing.T, input string) {
@@ -67,10 +67,10 @@ func FuzzExtractName(f *testing.F) {
 
 func FuzzExtractSerialNumber(f *testing.F) {
 	f.Add("ZTEGC1234567")
-	f.Add("1,ZTEGC1234567")  // with "1," prefix
+	f.Add("1,ZTEGC1234567") // with "1," prefix
 	f.Add("")
-	f.Add("1,")               // just the prefix
-	f.Add("2,SOMETHING")      // different prefix (not stripped)
+	f.Add("1,")          // just the prefix
+	f.Add("2,SOMETHING") // different prefix (not stripped)
 	f.Add("\x00\xff")
 
 	f.Fuzz(func(t *testing.T, input string) {

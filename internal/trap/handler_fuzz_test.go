@@ -24,7 +24,7 @@ func FuzzResolveEventType(f *testing.F) {
 	f.Add("", "")
 	f.Add("unknown status", "")
 	f.Add("\x00\xff", "")
-	f.Add("ONLINE", "")  // case sensitivity
+	f.Add("ONLINE", "") // case sensitivity
 	f.Add("partially_online", "")
 
 	f.Fuzz(func(t *testing.T, status, offlineReason string) {

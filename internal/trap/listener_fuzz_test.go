@@ -63,8 +63,8 @@ func FuzzMapTrapOID(f *testing.F) {
 func FuzzMapStatus(f *testing.F) {
 	f.Add(0)
 	f.Add(1)
-	f.Add(4)  // online
-	f.Add(5)  // dying gasp
+	f.Add(4) // online
+	f.Add(5) // dying gasp
 	f.Add(7)
 	f.Add(-1)
 	f.Add(100)

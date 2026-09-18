@@ -14,7 +14,7 @@ func FuzzDetectPlatform(f *testing.F) {
 	f.Add("https://example.com/webhook")
 	f.Add("")
 	f.Add("not-a-url")
-	f.Add("https://discord.com")  // partial match
+	f.Add("https://discord.com") // partial match
 	f.Add("https://hooks.slack.com")
 	f.Add("\x00\xff")
 
