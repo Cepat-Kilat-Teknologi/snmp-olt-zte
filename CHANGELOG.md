@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Sentry error tracking** -- runtime error capture via Sentry SDK with environment and release tagging.
+
 ### Changed
 - **Smart CI** — doc-only changes (`.md`, `docs/`, `LICENSE`, `.gitignore`) no
   longer trigger full build+push pipeline.
@@ -15,6 +18,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   local per-namespace Redis deployment. The local redis container has been removed
   from the ops-fe Kustomize stack. Config changes: `REDIS_HOST`, `REDIS_DB=1`,
   `REDIS_PASSWORD` from `redis-ha-password` secret.
+
+### Testing
+- **Go native fuzz tests** -- fuzz tests for SNMP telemetry parsing functions to catch panics and malformed input edge cases.
+
+### Infrastructure
+- **PrometheusRule alerts and ServiceMonitor** -- Kubernetes-native alerting rules and Prometheus scrape target for production monitoring.
+- **80% coverage gate in CI** -- pipeline fails if unit test coverage drops below the 80% threshold.
+- **Makefile and release workflow** -- standardized build/test/lint targets, GitHub Actions release automation, and lefthook pre-commit hooks.
 
 ### Fixed — GetBulk hang from unset SNMP max-repetitions
 - **SNMP connections now always set a non-zero GETBULK max-repetitions.**
