@@ -61,11 +61,8 @@ func FuzzConvertStringToUint16(f *testing.F) {
 	f.Add("\x00")
 
 	f.Fuzz(func(t *testing.T, input string) {
-		result := ConvertStringToUint16(input)
-		// Should never panic. Result is always in [0, 65535].
-		if result > 65535 {
-			t.Errorf("ConvertStringToUint16(%q) = %d, exceeds uint16 max", input, result)
-		}
+		// Must never panic. uint16 return type guarantees [0, 65535].
+		_ = ConvertStringToUint16(input)
 	})
 }
 
