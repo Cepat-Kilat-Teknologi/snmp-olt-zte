@@ -78,7 +78,8 @@ k6-results.json
 *.backup
 
 # AI assistant tooling — local only, never committed
-.claude/
+.claude/*
+!.claude/settings.json
 CLAUDE.md
 CLAUDE.local.md
 AGENTS.md
