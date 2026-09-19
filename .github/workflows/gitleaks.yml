@@ -25,4 +25,4 @@ jobs:
             | tar xz -C /usr/local/bin gitleaks
 
       - name: Run gitleaks
-        run: gitleaks detect --source . --verbose --redact --log-opts="--all"
+        run: gitleaks detect --source . --verbose --redact
