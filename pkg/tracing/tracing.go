@@ -1,4 +1,4 @@
-// Package tracing initialises the OpenTelemetry trace pipeline for snmp-olt-zte.
+// Package tracing initializes the OpenTelemetry trace pipeline for snmp-olt-zte.
 // When OTEL_ENABLED is false (the default) a noop provider is used, adding zero
 // overhead. When enabled, spans are exported via OTLP/gRPC to a collector.
 package tracing
