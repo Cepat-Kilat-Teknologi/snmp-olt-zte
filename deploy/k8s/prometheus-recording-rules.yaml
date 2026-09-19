@@ -1,0 +1,60 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: snmp-olt-zte-slo-recording-rules
+  namespace: misindo-snmp-olt-zte-prod
+  labels:
+    app: snmp-olt-zte
+    prometheus: kube-prometheus
+    role: recording-rules
+spec:
+  groups:
+    - name: snmp-olt-zte.slo.rules
+      interval: 30s
+      rules:
+        # ── Availability SLO (target: 99.9%) ─────────────────────
+        - record: snmp_olt_zte:availability:rate5m
+          expr: |
+            1 - (
+              sum(rate(http_requests_total{job="snmp-olt-zte", status=~"5.."}[5m]))
+              /
+              sum(rate(http_requests_total{job="snmp-olt-zte"}[5m]))
+            )
+
+        - record: snmp_olt_zte:availability:rate1h
+          expr: |
+            1 - (
+              sum(rate(http_requests_total{job="snmp-olt-zte", status=~"5.."}[1h]))
+              /
+              sum(rate(http_requests_total{job="snmp-olt-zte"}[1h]))
+            )
+
+        - record: snmp_olt_zte:availability:rate24h
+          expr: |
+            1 - (
+              sum(rate(http_requests_total{job="snmp-olt-zte", status=~"5.."}[24h]))
+              /
+              sum(rate(http_requests_total{job="snmp-olt-zte"}[24h]))
+            )
+
+        # ── Latency SLO (target: p99 < 500ms) ───────────────────
+        - record: snmp_olt_zte:latency_p99:rate5m
+          expr: |
+            histogram_quantile(0.99,
+              sum(rate(http_request_duration_seconds_bucket{job="snmp-olt-zte"}[5m])) by (le)
+            )
+
+        - record: snmp_olt_zte:latency_p95:rate5m
+          expr: |
+            histogram_quantile(0.95,
+              sum(rate(http_request_duration_seconds_bucket{job="snmp-olt-zte"}[5m])) by (le)
+            )
+
+        # ── Error budget burn rate ───────────────────────────────
+        - record: snmp_olt_zte:error_budget_burn:rate1h
+          expr: |
+            (
+              sum(rate(http_requests_total{job="snmp-olt-zte", status=~"5.."}[1h]))
+              /
+              sum(rate(http_requests_total{job="snmp-olt-zte"}[1h]))
+            ) / (1 - 0.999)

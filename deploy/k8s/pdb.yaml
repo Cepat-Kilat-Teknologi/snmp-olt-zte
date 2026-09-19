@@ -1,0 +1,12 @@
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: snmp-olt-zte
+  namespace: misindo-snmp-olt-zte-prod
+  labels:
+    app.kubernetes.io/name: snmp-olt-zte
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: snmp-olt-zte
