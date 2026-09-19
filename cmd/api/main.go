@@ -3,12 +3,14 @@ package main
 import (
 	"context"
 	"os"
+	"strconv"
 	_ "time/tzdata" // embed the IANA tz database so time.LoadLocation works in the distroless image (no OS tzdata)
 
 	"github.com/Cepat-Kilat-Teknologi/snmp-olt-zte/app"
 	"github.com/Cepat-Kilat-Teknologi/snmp-olt-zte/internal/buildinfo"
 	"github.com/Cepat-Kilat-Teknologi/snmp-olt-zte/pkg/logger"
 	"github.com/Cepat-Kilat-Teknologi/snmp-olt-zte/pkg/sentry"
+	"github.com/Cepat-Kilat-Teknologi/snmp-olt-zte/pkg/tracing"
 	"github.com/joho/godotenv"
 	"go.uber.org/zap"
 )
@@ -62,6 +64,29 @@ func main() {
 		logger.Warn("sentry init failed", zap.Error(err))
 	}
 	defer sentry.Flush()
+
+	// OpenTelemetry tracing — no-op when OTEL_ENABLED is not "true".
+	otelEnabled, _ := strconv.ParseBool(os.Getenv("OTEL_ENABLED"))
+	otelEndpoint := os.Getenv("OTEL_EXPORTER_OTLP_ENDPOINT")
+	if otelEndpoint == "" {
+		otelEndpoint = "localhost:4317"
+	}
+	shutdownTracer, err := tracing.Init(context.Background(), tracing.Config{
+		Enabled:     otelEnabled,
+		Endpoint:    otelEndpoint,
+		ServiceName: "snmp-olt-zte",
+		Environment: env,
+		Version:     version,
+	})
+	if err != nil {
+		logger.Warn("otel tracing init failed", zap.Error(err))
+	} else {
+		defer func() {
+			if err := shutdownTracer(context.Background()); err != nil {
+				logger.Warn("otel tracing shutdown error", zap.Error(err))
+			}
+		}()
+	}
 
 	server := app.New()
 	ctx, cancel := context.WithCancel(context.Background())

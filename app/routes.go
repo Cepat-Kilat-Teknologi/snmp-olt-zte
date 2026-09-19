@@ -17,6 +17,7 @@ import (
 	"github.com/Cepat-Kilat-Teknologi/snmp-olt-zte/pkg/metrics"
 	"github.com/Cepat-Kilat-Teknologi/snmp-olt-zte/pkg/snmp"
 	"github.com/go-chi/chi/v5"
+	"github.com/riandyrn/otelchi"
 )
 
 // oltRoute binds an OLT id to its handler and per-slot PON topology (used for
@@ -54,6 +55,9 @@ func loadRoutesMulti(olts []oltRoute, defaultOLT string, checker *health.Checker
 
 	// Request ID tracking (must be first so all downstream middleware sees it).
 	router.Use(middleware.RequestID)
+
+	// OpenTelemetry trace spans for every HTTP request (noop when tracing is disabled).
+	router.Use(otelchi.Middleware("snmp-olt-zte"))
 
 	// API/build version headers on every response.
 	router.Use(middleware.APIVersionHeader(middleware.DefaultAPIVersionConfig(
@@ -192,6 +196,7 @@ func loadRoutesWithRegistry(reg *OLTRegistry, checker *health.Checker, users map
 
 	// ── Global middleware (identical to loadRoutesMulti) ──
 	router.Use(middleware.RequestID)
+	router.Use(otelchi.Middleware("snmp-olt-zte"))
 	router.Use(middleware.APIVersionHeader(middleware.DefaultAPIVersionConfig(
 		buildinfo.APIVersion, buildinfo.Version, buildinfo.Commit,
 	)))
