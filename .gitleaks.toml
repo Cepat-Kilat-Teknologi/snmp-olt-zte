@@ -1,0 +1,9 @@
+[allowlist]
+description = "Known false positives in test fixtures, examples, docs, and templates"
+paths = [
+  '''_test\.go$''',
+  '''\.env\.example$''',
+  '''examples/''',
+  '''README\.md$''',
+  '''graphify-out/''',
+]
