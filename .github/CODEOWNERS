@@ -1,14 +1,14 @@
 # Code owners — auto-requested for review on matching paths.
 
 # Default owner for everything
-*                       @sumitroajiprabowo
+*                       @cepat-kilat-teknologi/engineering
 
 # OLT SNMP telemetry domain
-/app/                   @sumitroajiprabowo
-/cmd/                   @sumitroajiprabowo
-/pkg/                   @sumitroajiprabowo
+/app/                   @cepat-kilat-teknologi/engineering
+/cmd/                   @cepat-kilat-teknologi/engineering
+/pkg/                   @cepat-kilat-teknologi/engineering
 
 # CI/CD and tooling
-/.github/               @sumitroajiprabowo
-/Makefile               @sumitroajiprabowo
-/Dockerfile             @sumitroajiprabowo
+/.github/               @cepat-kilat-teknologi/engineering
+/Makefile               @cepat-kilat-teknologi/engineering
+/Dockerfile             @cepat-kilat-teknologi/engineering
