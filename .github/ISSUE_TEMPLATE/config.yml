@@ -1,0 +1,5 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Security vulnerability
+    url: mailto:admin@ckt.co.id
+    about: Please report security issues privately — see SECURITY.md. Do not open a public issue.
