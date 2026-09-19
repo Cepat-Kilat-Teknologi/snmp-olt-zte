@@ -1,0 +1,95 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: snmp-olt-zte-grafana-dashboard
+  namespace: misindo-snmp-olt-zte-prod
+  labels:
+    app: snmp-olt-zte
+    grafana_dashboard: "1"
+data:
+  snmp-olt-zte-slo.json: |
+    {
+      "annotations": {"list": []},
+      "editable": true,
+      "fiscalYearStartMonth": 0,
+      "graphTooltip": 1,
+      "links": [],
+      "panels": [
+        {
+          "title": "Availability (99.9% SLO)",
+          "type": "gauge",
+          "gridPos": {"h": 8, "w": 6, "x": 0, "y": 0},
+          "targets": [{"expr": "snmp_olt_zte:availability:rate1h", "refId": "A"}],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "percentunit",
+              "min": 0.99, "max": 1,
+              "thresholds": {
+                "steps": [
+                  {"color": "red", "value": null},
+                  {"color": "orange", "value": 0.999},
+                  {"color": "green", "value": 0.9995}
+                ]
+              }
+            }
+          }
+        },
+        {
+          "title": "Error Budget Burn Rate (1h)",
+          "type": "gauge",
+          "gridPos": {"h": 8, "w": 6, "x": 6, "y": 0},
+          "targets": [{"expr": "snmp_olt_zte:error_budget_burn:rate1h", "refId": "A"}],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "min": 0, "max": 20,
+              "thresholds": {
+                "steps": [
+                  {"color": "green", "value": null},
+                  {"color": "orange", "value": 6},
+                  {"color": "red", "value": 14.4}
+                ]
+              }
+            }
+          }
+        },
+        {
+          "title": "Request Rate",
+          "type": "timeseries",
+          "gridPos": {"h": 8, "w": 12, "x": 12, "y": 0},
+          "targets": [
+            {"expr": "sum(rate(http_requests_total{job=\"snmp-olt-zte\"}[5m]))", "legendFormat": "total", "refId": "A"},
+            {"expr": "sum(rate(http_requests_total{job=\"snmp-olt-zte\", status=~\"5..\"}[5m]))", "legendFormat": "5xx", "refId": "B"},
+            {"expr": "sum(rate(http_requests_total{job=\"snmp-olt-zte\", status=~\"4..\"}[5m]))", "legendFormat": "4xx", "refId": "C"}
+          ],
+          "fieldConfig": {"defaults": {"unit": "reqps"}}
+        },
+        {
+          "title": "Latency (p99 / p95)",
+          "type": "timeseries",
+          "gridPos": {"h": 8, "w": 12, "x": 0, "y": 8},
+          "targets": [
+            {"expr": "snmp_olt_zte:latency_p99:rate5m", "legendFormat": "p99", "refId": "A"},
+            {"expr": "snmp_olt_zte:latency_p95:rate5m", "legendFormat": "p95", "refId": "B"}
+          ],
+          "fieldConfig": {"defaults": {"unit": "s", "custom": {"thresholdsStyle": {"mode": "line"}}, "thresholds": {"steps": [{"color": "green", "value": null}, {"color": "red", "value": 0.5}]}}}
+        },
+        {
+          "title": "Availability (5m / 1h / 24h)",
+          "type": "timeseries",
+          "gridPos": {"h": 8, "w": 12, "x": 12, "y": 8},
+          "targets": [
+            {"expr": "snmp_olt_zte:availability:rate5m", "legendFormat": "5m", "refId": "A"},
+            {"expr": "snmp_olt_zte:availability:rate1h", "legendFormat": "1h", "refId": "B"},
+            {"expr": "snmp_olt_zte:availability:rate24h", "legendFormat": "24h", "refId": "C"}
+          ],
+          "fieldConfig": {"defaults": {"unit": "percentunit", "min": 0.99, "custom": {"thresholdsStyle": {"mode": "line"}}, "thresholds": {"steps": [{"color": "green", "value": null}, {"color": "red", "value": 0.999}]}}}
+        }
+      ],
+      "schemaVersion": 39,
+      "tags": ["slo", "snmp-olt-zte"],
+      "templating": {"list": []},
+      "time": {"from": "now-6h", "to": "now"},
+      "title": "snmp-olt-zte SLO Dashboard",
+      "uid": "snmp_olt_zte_slo"
+    }

@@ -1,0 +1,88 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: snmp-olt-zte-slo-alerts
+  namespace: misindo-snmp-olt-zte-prod
+  labels:
+    app: snmp-olt-zte
+    prometheus: kube-prometheus
+    role: slo-alerts
+spec:
+  groups:
+    - name: snmp-olt-zte.slo.alerts
+      rules:
+        # ── Fast burn: 2% of 30-day error budget consumed in 1h ──
+        # Burn rate 14.4x over 1h → pages on-call immediately.
+        - alert: snmp-olt-zte_SLOFastBurn
+          expr: |
+            snmp_olt_zte:error_budget_burn:rate1h > 14.4
+            and
+            (
+              sum(rate(http_requests_total{job="snmp-olt-zte", status=~"5.."}[5m]))
+              /
+              sum(rate(http_requests_total{job="snmp-olt-zte"}[5m]))
+            ) / (1 - 0.999) > 14.4
+          for: 2m
+          labels:
+            severity: critical
+            service: snmp-olt-zte
+            slo: availability
+          annotations:
+            summary: "snmp-olt-zte SLO fast burn — error budget depleting rapidly"
+            description: "1h burn rate {{ $value }}x (threshold 14.4x). At this rate, the 30-day error budget is exhausted in {{ $value | humanize }}h."
+
+        # ── Slow burn: 5% of 30-day error budget consumed in 6h ──
+        # Burn rate 6x over 6h → creates a ticket for investigation.
+        - alert: snmp-olt-zte_SLOSlowBurn
+          expr: |
+            (
+              sum(rate(http_requests_total{job="snmp-olt-zte", status=~"5.."}[6h]))
+              /
+              sum(rate(http_requests_total{job="snmp-olt-zte"}[6h]))
+            ) / (1 - 0.999) > 6
+            and
+            snmp_olt_zte:error_budget_burn:rate1h > 3
+          for: 15m
+          labels:
+            severity: warning
+            service: snmp-olt-zte
+            slo: availability
+          annotations:
+            summary: "snmp-olt-zte SLO slow burn — error budget eroding"
+            description: "6h burn rate exceeds 6x threshold. Investigate elevated error rate before budget exhaustion."
+
+        # ── Availability below SLO target over 1h ────────────────
+        - alert: snmp-olt-zte_AvailabilityBelowSLO
+          expr: snmp_olt_zte:availability:rate1h < 0.999
+          for: 10m
+          labels:
+            severity: warning
+            service: snmp-olt-zte
+            slo: availability
+          annotations:
+            summary: "snmp-olt-zte availability below 99.9% SLO"
+            description: "1h availability is {{ $value | humanizePercentage }} (target: 99.9%)."
+
+        # ── Latency SLO breach (p99 > 500ms) ────────────────────
+        - alert: snmp-olt-zte_LatencyP99AboveSLO
+          expr: snmp_olt_zte:latency_p99:rate5m > 0.5
+          for: 10m
+          labels:
+            severity: warning
+            service: snmp-olt-zte
+            slo: latency
+          annotations:
+            summary: "snmp-olt-zte p99 latency above 500ms SLO"
+            description: "p99 latency is {{ $value | humanizeDuration }} (target: <500ms)."
+
+        # ── Error budget exhausted (30-day window) ───────────────
+        - alert: snmp-olt-zte_ErrorBudgetExhausted
+          expr: snmp_olt_zte:availability:rate24h < 0.999
+          for: 1h
+          labels:
+            severity: critical
+            service: snmp-olt-zte
+            slo: availability
+          annotations:
+            summary: "snmp-olt-zte error budget exhausted"
+            description: "24h availability {{ $value | humanizePercentage }} is below the 99.9% SLO. Freeze non-critical deployments."
