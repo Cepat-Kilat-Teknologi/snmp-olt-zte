@@ -1,13 +1,54 @@
+# Git
+.git
+.gitignore
+.gitattributes
+
+# CI/CD
+.github/
+Makefile
+Dockerfile*
+docker-compose*.yml
+
+# Documentation
+*.md
+docs/
+
+# Development tools
 .task/
 Taskfile.yml
-*.md
-Dockerfile
 *.toml
 !.air.toml
-/sumitroajiprabowo/
-examples/kustomize/overlays/k3s-dev/
+.editorconfig
+.gitleaks.toml
+.golangci.yml
+lefthook.yml
+CODEOWNERS
+
+# Test and coverage
+*_test.go
+coverage.out
+coverage.html
+test-results/
+
+# Environment
 .env
 .env.*
+!.env.example
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Examples and local
+/sumitroajiprabowo/
+examples/kustomize/overlays/k3s-dev/
+
 # AI assistant tooling — local only, never committed
 .claude/
 CLAUDE.md
