@@ -2,10 +2,10 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: snmp-olt-zte
-  namespace: misindo-snmp-olt-zte-prod
+  namespace: snmp-olt-zte
   labels:
     app.kubernetes.io/name: snmp-olt-zte
-    app.kubernetes.io/part-of: misindo
+    app.kubernetes.io/part-of: my-platform
 spec:
   replicas: 2
   strategy:
@@ -40,13 +40,13 @@ spec:
               - matchExpressions:
                   - { key: storage, operator: In, values: ["false"] }
       imagePullSecrets:
-        - name: dockerhub-pull
+        - name: ghcr-pull
       volumes:
         - name: tmp
           emptyDir: {}
       containers:
         - name: snmp-olt-zte
-          image: docker.io/cepatkilatteknologi/snmp-olt-zte:latest  # pin to a tag in production
+          image: ghcr.io/your-org/snmp-olt-zte:latest  # pin to a tag in production
           imagePullPolicy: IfNotPresent
           securityContext:
             allowPrivilegeEscalation: false
