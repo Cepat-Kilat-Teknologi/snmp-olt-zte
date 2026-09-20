@@ -2,6 +2,8 @@ package repository
 
 import (
 	"fmt"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/gosnmp/gosnmp"
@@ -38,6 +40,8 @@ type snmpRepository struct {
 	cfg     snmpConfig
 	sem     chan struct{} // limits concurrent SNMP operations to prevent OLT saturation
 	useWalk bool          // use GetNext walk instead of GetBulk (robust over slow/public links)
+	closed  atomic.Bool   // set to true when Close() is called; guards release()
+	once    sync.Once     // ensures Close() is idempotent
 }
 
 // DefaultPoolSize is the default number of SNMP connections in the pool
@@ -126,13 +130,35 @@ func createConnection(cfg snmpConfig) (*gosnmp.GoSNMP, error) {
 	return conn, nil
 }
 
-// acquire gets a connection from the pool
-func (r *snmpRepository) acquire() *gosnmp.GoSNMP {
-	return <-r.pool
+// acquire gets a connection from the pool. Returns (nil, false) when the pool
+// has been closed — callers must check ok before using the connection.
+func (r *snmpRepository) acquire() (*gosnmp.GoSNMP, bool) {
+	if r.closed.Load() {
+		return nil, false
+	}
+	conn, ok := <-r.pool
+	return conn, ok
 }
 
-// release returns a connection to the pool
+// release returns a connection to the pool. If the pool has already been closed
+// (by a concurrent Reconcile removing this OLT), the connection is closed
+// directly instead of sending on the closed channel.
 func (r *snmpRepository) release(conn *gosnmp.GoSNMP) {
+	if r.closed.Load() {
+		if conn.Conn != nil {
+			_ = conn.Conn.Close()
+		}
+		return
+	}
+	// Guard against a race where Close() fires between the check above and
+	// the channel send below.
+	defer func() {
+		if rec := recover(); rec != nil {
+			if conn.Conn != nil {
+				_ = conn.Conn.Close()
+			}
+		}
+	}()
 	r.pool <- conn
 }
 
@@ -141,7 +167,10 @@ func (r *snmpRepository) Get(oids []string) (*gosnmp.SnmpPacket, error) {
 	r.sem <- struct{}{}
 	defer func() { <-r.sem }()
 
-	conn := r.acquire()
+	conn, ok := r.acquire()
+	if !ok {
+		return nil, fmt.Errorf("SNMP pool closed")
+	}
 	defer r.release(conn)
 
 	result, err := conn.Get(oids)
@@ -156,7 +185,10 @@ func (r *snmpRepository) Walk(oid string, walkFunc func(pdu gosnmp.SnmpPDU) erro
 	r.sem <- struct{}{}
 	defer func() { <-r.sem }()
 
-	conn := r.acquire()
+	conn, ok := r.acquire()
+	if !ok {
+		return fmt.Errorf("SNMP pool closed")
+	}
 	defer r.release(conn)
 
 	err := conn.Walk(oid, walkFunc)
@@ -166,14 +198,18 @@ func (r *snmpRepository) Walk(oid string, walkFunc func(pdu gosnmp.SnmpPDU) erro
 	return nil
 }
 
-// Close drains the pool and closes all SNMP connections
+// Close drains the pool and closes all SNMP connections. Safe to call
+// multiple times — subsequent calls are no-ops.
 func (r *snmpRepository) Close() {
-	close(r.pool)
-	for conn := range r.pool {
-		if conn.Conn != nil {
-			_ = conn.Conn.Close()
+	r.once.Do(func() {
+		r.closed.Store(true)
+		close(r.pool)
+		for conn := range r.pool {
+			if conn.Conn != nil {
+				_ = conn.Conn.Close()
+			}
 		}
-	}
+	})
 }
 
 // Ping performs a lightweight reachability check by fetching sysUpTime
@@ -189,7 +225,10 @@ func (r *snmpRepository) BulkWalk(oid string, walkFunc func(pdu gosnmp.SnmpPDU) 
 	r.sem <- struct{}{}
 	defer func() { <-r.sem }()
 
-	conn := r.acquire()
+	conn, ok := r.acquire()
+	if !ok {
+		return fmt.Errorf("SNMP pool closed")
+	}
 	defer r.release(conn)
 
 	// Some OLTs / high-latency public links don't handle GetBulk reliably — large
