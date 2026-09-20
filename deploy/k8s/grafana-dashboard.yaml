@@ -2,7 +2,7 @@ apiVersion: v1
 kind: ConfigMap
 metadata:
   name: snmp-olt-zte-grafana-dashboard
-  namespace: misindo-snmp-olt-zte-prod
+  namespace: snmp-olt-zte
   labels:
     app: snmp-olt-zte
     grafana_dashboard: "1"

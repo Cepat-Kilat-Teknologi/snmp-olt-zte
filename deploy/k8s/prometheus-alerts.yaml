@@ -2,7 +2,7 @@ apiVersion: monitoring.coreos.com/v1
 kind: PrometheusRule
 metadata:
   name: snmp-olt-zte-alerts
-  namespace: misindo-snmp-olt-zte-prod
+  namespace: snmp-olt-zte
   labels:
     app: snmp-olt-zte
     prometheus: kube-prometheus
@@ -12,7 +12,7 @@ spec:
       rules:
         # ── Availability ──────────────────────────────────────────────
         - alert: snmp-olt-zte_Down
-          expr: up{job="snmp-olt-zte", namespace="misindo-snmp-olt-zte-prod"} == 0
+          expr: up{job="snmp-olt-zte", namespace="snmp-olt-zte"} == 0
           for: 1m
           labels:
             severity: critical
@@ -70,7 +70,7 @@ spec:
         - alert: snmp-olt-zte_PodCrashLooping
           expr: |
             increase(kube_pod_container_status_restarts_total{
-              namespace="misindo-snmp-olt-zte-prod", container="snmp-olt-zte"
+              namespace="snmp-olt-zte", container="snmp-olt-zte"
             }[1h]) > 3
           for: 5m
           labels:
@@ -95,7 +95,7 @@ apiVersion: monitoring.coreos.com/v1
 kind: ServiceMonitor
 metadata:
   name: snmp-olt-zte
-  namespace: misindo-snmp-olt-zte-prod
+  namespace: snmp-olt-zte
   labels:
     app: snmp-olt-zte
     prometheus: kube-prometheus

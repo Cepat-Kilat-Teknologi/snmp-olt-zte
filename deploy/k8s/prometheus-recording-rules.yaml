@@ -2,7 +2,7 @@ apiVersion: monitoring.coreos.com/v1
 kind: PrometheusRule
 metadata:
   name: snmp-olt-zte-slo-recording-rules
-  namespace: misindo-snmp-olt-zte-prod
+  namespace: snmp-olt-zte
   labels:
     app: snmp-olt-zte
     prometheus: kube-prometheus
