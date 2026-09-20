@@ -592,3 +592,124 @@ func TestNewPonRepositoryWithConcurrency_NegativeMaxConcurrent(t *testing.T) {
 		t.Error("Expected non-nil repository with negative maxConcurrent")
 	}
 }
+
+// ---------------------------------------------------------------------------
+// Closed-pool panic prevention tests
+// ---------------------------------------------------------------------------
+// These tests exercise the closed-pool guard paths added to prevent panics
+// when a Reconcile loop closes an OLT's SNMP pool while in-flight requests
+// are still using it.
+
+func TestSnmpRepository_AcquireAfterClose(t *testing.T) {
+	conn := newTestConn("192.168.1.1", "public", 161)
+	repo := NewPonRepository(conn)
+
+	snmpRepo, ok := repo.(*snmpRepository)
+	if !ok {
+		t.Fatal("Failed to type assert to *snmpRepository")
+	}
+
+	// Close the pool first
+	repo.Close()
+
+	// acquire() must return (nil, false) on a closed pool
+	got, ok := snmpRepo.acquire()
+	if ok {
+		t.Error("Expected ok=false from acquire() after Close()")
+	}
+	if got != nil {
+		t.Error("Expected nil connection from acquire() after Close()")
+	}
+}
+
+func TestSnmpRepository_ReleaseAfterClose(t *testing.T) {
+	conn := newTestConn("192.168.1.1", "public", 161)
+	repo := NewPonRepository(conn)
+
+	snmpRepo, ok := repo.(*snmpRepository)
+	if !ok {
+		t.Fatal("Failed to type assert to *snmpRepository")
+	}
+
+	// Close the pool
+	repo.Close()
+
+	// release() on a closed pool must not panic — it should close the
+	// connection directly instead of sending on the closed channel.
+	spare := newTestConn("192.168.1.2", "public", 161)
+	snmpRepo.release(spare) // must not panic
+
+	// Also safe with a nil Conn field
+	nilConn := &gosnmp.GoSNMP{}
+	snmpRepo.release(nilConn) // must not panic
+}
+
+func TestSnmpRepository_DoubleClose(t *testing.T) {
+	conn := newTestConn("192.168.1.1", "public", 161)
+	repo := NewPonRepository(conn)
+
+	// First close should succeed
+	repo.Close()
+
+	// Second close must be a no-op (sync.Once), not panic
+	repo.Close()
+}
+
+func TestSnmpRepository_GetAfterClose(t *testing.T) {
+	conn := newTestConn("192.168.1.1", "public", 161)
+	repo := NewPonRepository(conn)
+	repo.Close()
+
+	result, err := repo.Get([]string{"1.3.6.1.2.1.1.3.0"})
+	if err == nil {
+		t.Fatal("Expected error from Get() after Close()")
+	}
+	if result != nil {
+		t.Error("Expected nil result from Get() after Close()")
+	}
+	if err.Error() != "SNMP pool closed" {
+		t.Errorf("Expected 'SNMP pool closed' error, got: %s", err.Error())
+	}
+}
+
+func TestSnmpRepository_WalkAfterClose(t *testing.T) {
+	conn := newTestConn("192.168.1.1", "public", 161)
+	repo := NewPonRepository(conn)
+	repo.Close()
+
+	called := false
+	err := repo.Walk("1.3.6.1.2.1.1", func(pdu gosnmp.SnmpPDU) error {
+		called = true
+		return nil
+	})
+	if err == nil {
+		t.Fatal("Expected error from Walk() after Close()")
+	}
+	if called {
+		t.Error("Walk callback should not be invoked on a closed pool")
+	}
+	if err.Error() != "SNMP pool closed" {
+		t.Errorf("Expected 'SNMP pool closed' error, got: %s", err.Error())
+	}
+}
+
+func TestSnmpRepository_BulkWalkAfterClose(t *testing.T) {
+	conn := newTestConn("192.168.1.1", "public", 161)
+	repo := NewPonRepository(conn)
+	repo.Close()
+
+	called := false
+	err := repo.BulkWalk("1.3.6.1.2.1.1", func(pdu gosnmp.SnmpPDU) error {
+		called = true
+		return nil
+	})
+	if err == nil {
+		t.Fatal("Expected error from BulkWalk() after Close()")
+	}
+	if called {
+		t.Error("BulkWalk callback should not be invoked on a closed pool")
+	}
+	if err.Error() != "SNMP pool closed" {
+		t.Errorf("Expected 'SNMP pool closed' error, got: %s", err.Error())
+	}
+}
