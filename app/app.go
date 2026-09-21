@@ -236,8 +236,11 @@ func (a *App) Start(ctx context.Context) error {
 		addr = "8081"
 	}
 	server := &http.Server{
-		Addr:    ":" + addr,
-		Handler: a.router,
+		Addr:         ":" + addr,
+		Handler:      a.router,
+		ReadTimeout:  15 * time.Second,
+		WriteTimeout: 30 * time.Second,
+		IdleTimeout:  60 * time.Second,
 	}
 
 	logger.Info("application started", zap.String("addr", addr))
