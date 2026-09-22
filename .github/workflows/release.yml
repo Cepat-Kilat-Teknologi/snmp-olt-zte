@@ -9,7 +9,7 @@ permissions:
 
 jobs:
   release:
-    runs-on: [self-hosted, jkt-runner]
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
         with:
