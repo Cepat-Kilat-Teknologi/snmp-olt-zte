@@ -12,7 +12,7 @@ permissions:
 jobs:
   gitleaks:
     name: Secret Scan
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, jkt-runner]
     steps:
       - uses: actions/checkout@v4
         with:
@@ -21,8 +21,10 @@ jobs:
       - name: Install gitleaks
         run: |
           GITLEAKS_VERSION="8.30.1"
+          mkdir -p "$HOME/.local/bin"
           curl -sSfL "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz" \
-            | tar xz -C /usr/local/bin gitleaks
+            | tar xz -C "$HOME/.local/bin" gitleaks
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
 
       - name: Run gitleaks
         run: gitleaks detect --source . --verbose --redact
