@@ -1,26 +1,14 @@
-## What & why
+Fixes LIN-<n>
 
-<!-- What does this change and why? Link any issue (Closes #123). -->
-
-## Type
-
-- [ ] fix &nbsp; [ ] feat &nbsp; [ ] docs &nbsp; [ ] refactor &nbsp; [ ] build/chore &nbsp; [ ] security
-
-## Testing
-
-<!-- What did you run? -->
-
-- [ ] `go build ./...` (compiles)
-- [ ] `go test ./...` (units pass)
-- [ ] `go vet ./...` (no issues)
-- [ ] Verified against a real device / simulator (if applicable)
-
-## Checklist
-
-- [ ] Conventional Commit messages; small, focused commits
-- [ ] No hardcoded secrets/credentials; config via environment
-- [ ] Docs updated (README / CLAUDE.md) if behavior changed
-
-## Notes for reviewers
-
-<!-- Anything risky, deferred, or that needs a closer look. -->
+## What changed
+## Why
+## How it was tested
+## Risk class and rollback
+<!-- risk:low | risk:standard | risk:high; rollback plan required for risk:high -->
+## Target environment(s)
+<!-- n/a for library/adapter release; otherwise the environment(s) this change is deployed to -->
+## Database impact
+<!-- none | additive migration | breaking migration (expand/contract step) -->
+## Deploy order (cross-repo only)
+## Docs updated
+- [ ] CLAUDE.md / README / OpenAPI / CHANGELOG
