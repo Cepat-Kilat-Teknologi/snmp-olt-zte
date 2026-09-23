@@ -7,14 +7,13 @@ assignees: ''
 ---
 
 <!--
-SECURITY: do NOT report vulnerabilities here. See SECURITY.md
-(email admin@ckt.co.id or open a private GitHub Security Advisory).
-Do NOT paste real device credentials, community strings, or production hostnames.
+SECURITY: do NOT report vulnerabilities here. See SECURITY.md.
+Do NOT paste credentials, community strings, hostnames or IP addresses.
 -->
 
 ## Describe the bug
 
-<!-- A clear and concise description of what's wrong. -->
+<!-- What is wrong. -->
 
 ## To reproduce
 
@@ -24,11 +23,9 @@ Do NOT paste real device credentials, community strings, or production hostnames
 
 ## Expected behavior
 
-<!-- What you expected to happen. -->
-
 ## Logs / output
 
-<!-- Relevant log output. REDACT secrets/IPs. -->
+<!-- Relevant output. Redact secrets, hostnames and IP addresses. -->
 
 ```
 paste here
@@ -41,5 +38,3 @@ paste here
 - OS:
 
 ## Additional context
-
-<!-- Anything else relevant (no secrets). -->
