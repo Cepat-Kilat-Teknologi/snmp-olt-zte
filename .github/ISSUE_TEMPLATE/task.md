@@ -2,7 +2,6 @@
 name: Task
 about: A unit of planned work (chore, refactor, docs, CI)
 title: "[task] "
-labels: task
 assignees: ''
 ---
 

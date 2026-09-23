@@ -1,4 +1,4 @@
-Fixes LIN-<n>
+Fixes #<issue>
 
 ## What changed
 ## Why

@@ -68,6 +68,18 @@ jobs:
             echo "code=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
+          # Fail safe: if the diff cannot be computed, run every required job.
+          # A skipped required check counts as passing, so an unknown change
+          # set must never be treated as docs-only.
+          if ! files=$(git diff --no-renames --name-only "$BASE_SHA...$HEAD_SHA"); then
+            echo "::warning::git diff failed; running all required jobs"
+            echo "code=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if [[ -z "$files" ]]; then
+            echo "code=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
           code=false
           while IFS= read -r f; do
             [[ -z "$f" ]] && continue
@@ -77,8 +89,9 @@ jobs:
               .gitleaks.toml|.golangci.yml|CODEOWNERS|lefthook.yml) ;;
               *) code=true ;;
             esac
-          done < <(git diff --name-only "$BASE_SHA...$HEAD_SHA")
+          done <<< "$files"
           echo "code=$code" >> "$GITHUB_OUTPUT"
+          echo "code changes: $code"
 
   # ========================================================================
   # Lint — gofmt, go vet, golangci-lint (built with the runner's toolchain so
@@ -88,7 +101,7 @@ jobs:
     name: lint
     runs-on: ubuntu-latest
     needs: changes
-    if: needs.changes.outputs.code == 'true'
+    if: ${{ !cancelled() && needs.changes.outputs.code != 'false' }}
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-go@v7
@@ -115,7 +128,7 @@ jobs:
     name: test
     runs-on: ubuntu-latest
     needs: changes
-    if: needs.changes.outputs.code == 'true'
+    if: ${{ !cancelled() && needs.changes.outputs.code != 'false' }}
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-go@v7
@@ -149,7 +162,7 @@ jobs:
     name: vuln
     runs-on: ubuntu-latest
     needs: changes
-    if: needs.changes.outputs.code == 'true'
+    if: ${{ !cancelled() && needs.changes.outputs.code != 'false' }}
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-go@v7
@@ -169,7 +182,7 @@ jobs:
     name: build
     runs-on: ubuntu-latest
     needs: changes
-    if: needs.changes.outputs.code == 'true'
+    if: ${{ !cancelled() && needs.changes.outputs.code != 'false' }}
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-go@v7
