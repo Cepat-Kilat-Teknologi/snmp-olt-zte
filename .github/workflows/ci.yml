@@ -1,8 +1,9 @@
 name: ci
 
 # Smart quality + security gate. PRs run the fast gate (lint / test / vuln /
-# build); docs-only PRs report those checks as Skipped via the changes job;
-# pushes to main and version tags additionally build, scan (Trivy), and — on
+# build); non-code changes (PR or push) report those checks as Skipped via the
+# changes job and skip image/chart publishing; pushes to main and version tags
+# with code changes additionally build, scan (Trivy), and — on
 # tags — keyless-sign a multi-arch image to GHCR + DockerHub. A helm chart is
 # published to GitHub Pages from main.
 
@@ -10,27 +11,14 @@ on:
   push:
     branches: [main]
     tags: ["v*.*.*"]
-    paths-ignore:
-      - "**.md"
-      - "docs/**"
-      - "LICENSE"
-      - ".gitignore"
-      - ".editorconfig"
-      - ".claude/**"
-      - ".github/ISSUE_TEMPLATE/**"
-      - ".github/PULL_REQUEST_TEMPLATE/**"
-      - ".github/dependabot.yml"
-      - ".gitleaks.toml"
-      - ".golangci.yml"
-      - "CODEOWNERS"
-      - "lefthook.yml"
   pull_request:
     branches: [main]
   workflow_dispatch:
 
+# Cancel superseded PR runs only; main and tag runs always finish.
 concurrency:
-  group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
   contents: read
@@ -41,57 +29,57 @@ env:
 
 jobs:
   # ========================================================================
-  # Path filter: docs-only PRs still report every required check (as Skipped)
-  # instead of not running the workflow at all. Mirrors the push paths-ignore
-  # list above. Push and workflow_dispatch always run the full pipeline.
+  # Change classifier: when a PR or branch push touches only non-code files
+  # (docs, templates, repo metadata), lint/test/vuln/build report as Skipped
+  # and nothing is published. Tags, new branches, workflow_dispatch and any
+  # classification failure are treated as code changes (fail safe).
   # ========================================================================
   changes:
     name: changes
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     outputs:
       code: ${{ steps.filter.outputs.code }}
     steps:
       - name: Checkout code
-        if: github.event_name == 'pull_request'
         uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
-      - name: Detect code changes
+      - name: Classify changed files
         id: filter
         env:
-          EVENT_NAME: ${{ github.event_name }}
-          BASE_SHA: ${{ github.event.pull_request.base.sha }}
-          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          EVENT: ${{ github.event_name }}
+          REF: ${{ github.ref }}
+          PR_BASE: ${{ github.event.pull_request.base.sha }}
+          PR_HEAD: ${{ github.event.pull_request.head.sha }}
+          BEFORE: ${{ github.event.before }}
+          SHA: ${{ github.sha }}
+        shell: bash
         run: |
-          if [[ "$EVENT_NAME" != "pull_request" ]]; then
-            echo "code=true" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-          # Fail safe: if the diff cannot be computed, run every required job.
-          # A skipped required check counts as passing, so an unknown change
-          # set must never be treated as docs-only.
-          if ! files=$(git diff --no-renames --name-only "$BASE_SHA...$HEAD_SHA"); then
-            echo "::warning::git diff failed; running all required jobs"
-            echo "code=true" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-          if [[ -z "$files" ]]; then
-            echo "code=true" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-          code=false
+          set -uo pipefail
+          out() { echo "code=$1" >> "$GITHUB_OUTPUT"; echo "code=$1 ($2)"; exit 0; }
+          case "$EVENT" in
+            pull_request) RANGE="$PR_BASE...$PR_HEAD" ;;
+            push)
+              [[ "$REF" == refs/tags/* ]] && out true "tag"
+              [[ -z "$BEFORE" || "$BEFORE" =~ ^0+$ ]] && out true "new branch"
+              RANGE="$BEFORE..$SHA" ;;
+            *) out true "event $EVENT" ;;
+          esac
+          if ! files=$(git diff --no-renames --name-only "$RANGE"); then out true "git diff failed"; fi
+          [ -z "$files" ] && out true "no files listed"
           while IFS= read -r f; do
-            [[ -z "$f" ]] && continue
             case "$f" in
-              *.md|docs/*|LICENSE|.gitignore|.editorconfig|.claude/*) ;;
-              .github/ISSUE_TEMPLATE/*|.github/PULL_REQUEST_TEMPLATE/*|.github/dependabot.yml) ;;
-              .gitleaks.toml|.golangci.yml|CODEOWNERS|lefthook.yml) ;;
-              *) code=true ;;
+              *.md|docs/*|LICENSE|LICENSE.*|.gitignore|.gitattributes|.editorconfig|.claude/*|CODEOWNERS|\
+              .github/CODEOWNERS|.github/ISSUE_TEMPLATE/*|.github/pull_request_template.md|\
+              .github/PULL_REQUEST_TEMPLATE/*|.github/dependabot.yml|.github/actionlint.yaml|\
+              .gitleaks.toml|.gitleaksignore|.github/workflows/gitleaks.yml|.env.example|.env.*.example|*.http) ;;
+              *) out true "code file: $f" ;;
             esac
           done <<< "$files"
-          echo "code=$code" >> "$GITHUB_OUTPUT"
-          echo "code changes: $code"
+          out false "non-code only"
 
   # ========================================================================
   # Lint — gofmt, go vet, golangci-lint (built with the runner's toolchain so
@@ -200,8 +188,13 @@ jobs:
   image:
     name: image
     runs-on: ubuntu-latest
-    needs: [lint, test, vuln, build]
-    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
+    needs: [changes, lint, test, vuln, build]
+    if: >-
+      ${{ !cancelled()
+      && github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
+      && needs.changes.outputs.code == 'true'
+      && needs.lint.result == 'success' && needs.test.result == 'success'
+      && needs.vuln.result == 'success' && needs.build.result == 'success' }}
     permissions:
       contents: read
       actions: read # codeql-action/upload-sarif needs this on private repos
@@ -300,8 +293,13 @@ jobs:
   helm-release:
     name: Publish Helm Chart
     runs-on: ubuntu-latest
-    needs: [lint, test, vuln, build]
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: [changes, lint, test, vuln, build]
+    if: >-
+      ${{ !cancelled()
+      && github.event_name == 'push' && github.ref == 'refs/heads/main'
+      && needs.changes.outputs.code == 'true'
+      && needs.lint.result == 'success' && needs.test.result == 'success'
+      && needs.vuln.result == 'success' && needs.build.result == 'success' }}
     permissions:
       contents: write
     steps:
