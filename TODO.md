@@ -1,6 +1,6 @@
-# TODO — Agent Integration Readiness
+# TODO - Agent Integration Readiness
 
-> **STATUS: COMPLETED in v3.0.0 (released 2026-04-12)** — see CHANGELOG.md
+> **STATUS: COMPLETED in v3.0.0 (released 2026-04-12)**: see CHANGELOG.md
 >
 > All standardization tasks listed below have been delivered. This file is
 > kept as a historical record of the work that landed in v3.0.0. New tasks
@@ -13,21 +13,21 @@
 ## Result
 
 `go-snmp-olt-zte-c320 v3.0.0` is now the second compliant adapter (after
-`freeradius-api v1.2.0`) for the [ISP adapter standard](https://github.com/Cepat-Kilat-Teknologi/) — see wiki:
-- `[[go-snmp-olt-zte-c320]]` — entity page
-- `[[isp-adapter-standard]]` — JSON contract
-- `[[isp-logging-standard]]` — zap schema
-- `[[isp-development-requirements]]` — full dev requirements
+`freeradius-api v1.2.0`) for the [ISP adapter standard](https://github.com/Cepat-Kilat-Teknologi/), see wiki:
+- `[[go-snmp-olt-zte-c320]]`: entity page
+- `[[isp-adapter-standard]]`: JSON contract
+- `[[isp-logging-standard]]`: zap schema
+- `[[isp-development-requirements]]`: full dev requirements
 
 ## Delivered (all priorities below shipped in v3.0.0)
 
-### Priority 1 — Response Format ✅
+### Priority 1 - Response Format Yes
 - [x] `error_code` flattened from `error.type` to top level
 - [x] `error.message` renamed to `data` (string or `{message,details}` map)
 - [x] Success status `"OK"` → `"success"`
 - [x] All handlers updated, OpenAPI spec regenerated, unit tests updated
 
-### Priority 2 — Logging ✅
+### Priority 2 - Logging Yes
 - [x] Migrated `github.com/rs/zerolog` → `go.uber.org/zap` (146 call sites across 13 files)
 - [x] Centralized `pkg/logger/logger.go` with `Init`, `WithRequestID`, `WithModule`, `SetForTest`
 - [x] Required base fields (`service`, `version`) auto-attached
@@ -38,20 +38,20 @@
 - [x] Skip logging `/health`, `/healthz`, `/ready`, `/readyz`, `/metrics` endpoints
 - [x] Audit log middleware for POST/PUT/PATCH/DELETE via `"audit"` named sub-logger
 
-### Priority 3 — Request ID ✅
+### Priority 3 - Request ID Yes
 - [x] `request_id` field added to error response body (was header-only)
 - [x] `internal/reqctx` leaf package created to break import cycle
 - [x] Context propagated through usecase → repository layer
 - [x] X-Request-ID echoed in response header AND error body
 
-### Priority 4 — Health Endpoints ✅
+### Priority 4 - Health Endpoints Yes
 - [x] `/health` kept as backwards-compat alias
 - [x] `/healthz` added (k8s liveness probe)
 - [x] `/readyz` added with cached dependency probes (Redis 5s TTL, SNMP 30s TTL)
 - [x] Returns 503 + `{"status":"not_ready", "dependencies":{...}}` when down
 - [x] `/version` endpoint added with build metadata (uses ldflags)
 
-### Priority 5 — Prometheus Metrics ✅
+### Priority 5 - Prometheus Metrics Yes
 - [x] `pkg/metrics/prometheus.go` created
 - [x] HTTP middleware records request counter + duration histogram + in-flight gauge
 - [x] SNMP operation metrics: `snmp_operations_total`, `snmp_operation_duration_seconds`
@@ -59,18 +59,18 @@
 - [x] `/metrics` endpoint mounted (unauthenticated)
 - [x] Path normalization to avoid label cardinality explosion
 
-### Priority 6 — Framework Migration (chi → Fiber)
-- [x] **Decision: SKIP** — chi works fine, JSON contract is what matters
-- Documented in CLAUDE.md §Framework notes for future contributors
+### Priority 6 - Framework Migration (chi → Fiber)
+- [x] **Decision: SKIP**: chi works fine, JSON contract is what matters
+- Documented in CLAUDE.md sectionFramework notes for future contributors
 
-### Priority 7 — CI/CD Verification ✅
-- [x] golangci-lint v2 — 0 issues
-- [x] govulncheck — 0 vulnerabilities
+### Priority 7 - CI/CD Verification Yes
+- [x] golangci-lint v2: 0 issues
+- [x] govulncheck: 0 vulnerabilities
 - [x] Multi-arch Docker build (amd64, arm64, arm/v7) verified on Docker Hub
 - [x] Dockerfile ldflags fix: `main.Version` (uppercase, never matched) → `main.version` + `main.commit` + `main.buildTime`
 - [x] CI passes APP_COMMIT and APP_BUILD_TIME to docker build-push-action
 
-### Priority 8 — Documentation ✅
+### Priority 8 - Documentation Yes
 - [x] CLAUDE.md created (project overview, architecture, import boundaries, patterns)
 - [x] OpenAPI spec updated to v3.0.0 with new ErrorResponse schema + /healthz, /readyz, /version, /metrics paths
 - [x] CHANGELOG.md [3.0.0] section with migration table
@@ -80,11 +80,11 @@
 - [x] Wiki entity page `go-snmp-olt-zte-c320` created
 - [x] Wiki `isp-adapter-standard` and `isp-logging-standard` compliance tables updated
 
-### Priority 9 — Dependencies & Security ✅
+### Priority 9 - Dependencies & Security Yes
 - [x] `go mod tidy` clean
-- [x] `govulncheck ./...` — 0 vulnerabilities
+- [x] `govulncheck ./...`: 0 vulnerabilities
 
-## Acceptance Criteria — all met
+## Acceptance Criteria - all met
 
 ```
 [x] Response: status/data/code format (success="success", error_code top-level)
@@ -117,7 +117,7 @@ All 12 thresholds passed.
 
 ## Lessons Learned
 
-See `[[go-snmp-olt-zte-c320]]` wiki page §Lessons Learned for the full list.
+See `[[go-snmp-olt-zte-c320]]` wiki page sectionLessons Learned for the full list.
 Highlights:
 - ldflags injection silently broken for entire 2.x series due to capitalisation typo
 - Naive context-key placement caused import cycle; fixed by extracting to leaf package

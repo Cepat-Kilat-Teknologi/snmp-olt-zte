@@ -53,7 +53,7 @@ kubectl apply -k examples/kustomize/overlays/development/
 
 The examples below show the single-OLT setup (`snmp.host` / `SNMP_HOST`). To run
 many OLTs from one instance and scope each to a tenant, use the `OLTS` /
-`OLTS_FILE` registry (each OLT carries a `user_id`) plus `API_USERS` — see the
+`OLTS_FILE` registry (each OLT carries a `user_id`) plus `API_USERS`, see the
 root `README.md` and `examples/helm/snmp-olt-zte/README.md`.
 
 ## Image

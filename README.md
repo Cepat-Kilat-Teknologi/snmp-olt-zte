@@ -7,14 +7,14 @@
 > **Repository moved (v3.2.0).** This module was previously published as
 > `github.com/Cepat-Kilat-Teknologi/go-snmp-olt-zte-c320` (C320-only). It is now
 > the canonical multi-OLT, C320 **and** C300 SNMP adapter at
-> `github.com/Cepat-Kilat-Teknologi/snmp-olt-zte` — the old URL auto-redirects
+> `github.com/Cepat-Kilat-Teknologi/snmp-olt-zte`: the old URL auto-redirects
 > on GitHub, but update Go imports to the new module path:
 >
 > ```bash
 > go get github.com/Cepat-Kilat-Teknologi/snmp-olt-zte@v3.2.0
 > ```
 
-REST API service for monitoring ZTE **C320 and C300** OLT devices via SNMP protocol, built with Go. Provides real-time ONU information including status, optical power levels, uptime, and serial numbers across all board/PON combinations. C300 and C320 V2.1.0 share the same MIB tree and ifIndex encoding — a single image serves both; only the populated GPON slots differ (configured via `OLT_BOARDS`).
+REST API service for monitoring ZTE **C320 and C300** OLT devices via SNMP protocol, built with Go. Provides real-time ONU information including status, optical power levels, uptime, and serial numbers across all board/PON combinations. C300 and C320 V2.1.0 share the same MIB tree and ifIndex encoding, a single image serves both; only the populated GPON slots differ (configured via `OLT_BOARDS`).
 
 ### Tech Stack
 * [Go 1.26](https://go.dev/) - Programming language
@@ -32,7 +32,7 @@ REST API service for monitoring ZTE **C320 and C300** OLT devices via SNMP proto
 * [k6](https://k6.io/) - Load testing
 
 ### Key Features
-- **ZTE C320 & C300 in one image** — identical MIB/ifIndex encoding; only the
+- **ZTE C320 & C300 in one image**: identical MIB/ifIndex encoding; only the
   populated GPON slots differ (`OLT_BOARDS`, per-slot PON counts `slot:pons`)
 - **Multi-OLT in a single instance** (`OLTS` / `OLTS_FILE` / `REGISTRY_URL`):
   any mix of C320/C300, each with its own SNMP pool, slot topology, and
@@ -40,7 +40,7 @@ REST API service for monitoring ZTE **C320 and C300** OLT devices via SNMP proto
   readiness probes
 - **Dynamic OLT registry** (`REGISTRY_URL` mode): OLTs are added, removed,
   and updated at runtime without a restart. A background poller fetches the
-  OLT list from device-registry every 30s and reconciles the diff — only
+  OLT list from device-registry every 30s and reconciles the diff, only
   changed OLTs reconnect, unchanged OLTs keep their live SNMP connections
 - **Per-tenant access control** (`API_USERS`): each API key sees only the OLTs
   it owns (cross-tenant → 404); `role:"admin"` sees all
@@ -60,7 +60,7 @@ REST API service for monitoring ZTE **C320 and C300** OLT devices via SNMP proto
 ### API Documentation
 - OpenAPI 3.1 spec: [`api/openapi.yaml`](api/openapi.yaml)
 - REST collection (VS Code REST Client / JetBrains HTTP Client):
-  [`test.http`](test.http) — health, per-tenant isolation (`API_USERS`), multi-OLT
+  [`test.http`](test.http): health, per-tenant isolation (`API_USERS`), multi-OLT
   paths, validation/error contract
 - k6 load test: [`k6-load-test.js`](k6-load-test.js) (+ stages variant in
   [`scripts/k6-load-test.js`](scripts/k6-load-test.js))
@@ -90,7 +90,7 @@ curl http://localhost:8081/api/v1/board/1/pon/1 | jq
 
 ### OLT model & slot configuration (C320 / C300)
 
-The OID encoding is identical for ZTE C320 and C300 V2.1.0 — only the physical
+The OID encoding is identical for ZTE C320 and C300 V2.1.0, only the physical
 slots that hold GPON line cards differ. `OLT_BOARDS` lists them, optionally with
 each card's PON-port count as `slot:pons` (a C300 has up to 14 service slots,
 each a **GTGO** with 8 PONs or a **GTGH** with 16, mixed freely):
@@ -106,11 +106,11 @@ A slot not in `OLT_BOARDS`, or a `pon_id` beyond that card's count
 (e.g. `/board/5/pon/9` on an 8-port GTGO), returns `400`.
 
 > Tip: to find a C300's GPON slots, walk `ifName` and look for `gpon_<shelf>/<slot>/<port>`
-> entries — the `<slot>` values are your `OLT_BOARDS`.
+> entries: the `<slot>` values are your `OLT_BOARDS`.
 
 ### Multiple OLTs in one instance (`OLTS`)
 
-Set `OLTS` to a JSON array to manage many OLTs — any mix of C320/C300 — from a
+Set `OLTS` to a JSON array to manage many OLTs, any mix of C320/C300, from a
 single instance:
 
 ```bash
@@ -123,13 +123,13 @@ DEFAULT_OLT=c320
 
 - Each OLT is reachable at `GET /api/v1/olt/{id}/board/{slot}/pon/{pon}/...`
 - The `DEFAULT_OLT` is **also** served on the bare `/api/v1/board/...` paths (back-compat)
-- Each OLT gets its own SNMP pool and a **namespaced Redis cache** (`olt_<id>_...`) — no collisions
+- Each OLT gets its own SNMP pool and a **namespaced Redis cache** (`olt_<id>_...`), no collisions
 - `/readyz` reports `snmp_<id>` per OLT; one unreachable secondary OLT degrades (not 503)
 
 When `OLTS` is unset, the single-OLT `SNMP_*` / `OLT_BOARDS` settings above apply unchanged.
 
 For many OLTs (or to keep community strings out of env), put the same JSON array in
-a file and point `OLTS_FILE` at it — handy for mounting as a Kubernetes Secret:
+a file and point `OLTS_FILE` at it, handy for mounting as a Kubernetes Secret:
 
 ```bash
 OLTS_FILE=/etc/olt/olts.json
@@ -154,12 +154,12 @@ A background goroutine polls `GET /v1/registry/snmp` every `REGISTRY_POLL_INTERV
 (default 30 s). On each tick, the poller diffs the response against the live
 registry and applies the minimum set of changes:
 
-- **New OLT in response** — SNMP connection opened, handler created, OLT starts
+- **New OLT in response**: SNMP connection opened, handler created, OLT starts
   serving requests immediately
-- **OLT removed from response** — SNMP connection closed, requests return 404
-- **Connection params changed** (host, port, community, walk, boards) — SNMP
+- **OLT removed from response**: SNMP connection closed, requests return 404
+- **Connection params changed** (host, port, community, walk, boards), SNMP
   reconnected; other OLTs unaffected
-- **Metadata changed** (user_id only) — updated in-place, no reconnection
+- **Metadata changed** (user_id only): updated in-place, no reconnection
 
 If a poll fails or returns an empty list, the current OLT set is kept intact.
 The service never wipes its registry on a transient upstream error.
@@ -170,7 +170,7 @@ set, the initial OLT list comes from them and the poller is not started.
 ### Per-tenant access control (`API_USERS`)
 
 Give each OLT a `user_id` and map API keys to users so a caller only sees the
-OLTs they own. Requesting another tenant's OLT returns **404** (not 403 — so a
+OLTs they own. Requesting another tenant's OLT returns **404** (not 403, so a
 tenant can't enumerate others' OLTs). A `role:"admin"` key sees every OLT.
 
 ```bash
@@ -360,7 +360,7 @@ curl -sS localhost:8081/api/v1/olt/c300a/uplinks | jq
 SNMP auto-detect of the OLT's **cards** (ENTITY-MIB `entPhysicalDescr` /
 `entPhysicalClass`, classified as `gpon` / `control` / `uplink` / `power`) and
 **uplink ethernet ports** (IF-MIB `ifName`/admin/oper/speed; `xgei_` = 10G,
-`gei_` = 1G). Detection-only — no configuration writes. Field-agnostic across
+`gei_` = 1G). Detection-only: no configuration writes. Field-agnostic across
 C320/C300: it works regardless of card layout or port numbering, so an
 operator UI can discover which `gei_`/`xgei_` ports exist before configuring
 trunks via write-olt-zte.
@@ -410,9 +410,9 @@ Real-time ONU event monitoring via SNMP Trap with multi-platform webhook notific
 | LOW | DyingGasp | 8 hours |
 
 Key features:
-- **Deduplication** — each ONU appears only once per batch (keyed by Board/PON/ONU)
-- **Recovery detection** — ONUs that come back online before flush are automatically removed
-- **Double verification** — SNMP GET on trap receive and again at batch flush to eliminate false alarms
+- **Deduplication**: each ONU appears only once per batch (keyed by Board/PON/ONU)
+- **Recovery detection**: ONUs that come back online before flush are automatically removed
+- **Double verification**: SNMP GET on trap receive and again at batch flush to eliminate false alarms
 
 ```env
 TRAP_ENABLED=true
@@ -556,7 +556,7 @@ task load-test
 k6 run -e BASE_URL=http://10.0.0.1:8081 -e API_KEY=your-key k6-load-test.js
 ```
 
-**Multi-OLT load testing** — pass the *same* `OLTS` JSON the server uses and the
+**Multi-OLT load testing**: pass the *same* `OLTS` JSON the server uses and the
 test automatically targets the per-OLT paths `/api/v1/olt/{id}/board/...` with
 each OLT's valid board/pon ranges (derived from its `boards` spec), and asserts
 the per-OLT `snmp_<id>` readiness probes plus an unknown-OLT `404`:

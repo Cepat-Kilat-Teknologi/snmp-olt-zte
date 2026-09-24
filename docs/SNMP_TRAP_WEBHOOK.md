@@ -54,10 +54,10 @@ via SNMP before sending to eliminate false alarms.
 
 | Severity | Color | Events | Interval | Action (default) |
 |----------|-------|--------|----------|------------------|
-| CRITICAL | 🔴 Red | LOS, LOSi, LOFi, Offline, AuthFailed, PowerOff | 5 min | Mandatory customer visit within 1x24 hours |
-| HIGH | 🟠 Orange | Logging, Synchronization (stuck) | 1 hr | Mandatory visit within 1x24 hours if Hard Restart does not resolve |
-| MEDIUM | 🟡 Yellow | HighRxPower (> -8 dBm), LowRxPower (< -28 dBm) | 4 hr | Mandatory visit within 2x24 hours after notification |
-| LOW | 🔵 Blue | DyingGasp | 8 hr | Coordinate with customer to ensure no electrical issues |
+| CRITICAL | Broken Red | LOS, LOSi, LOFi, Offline, AuthFailed, PowerOff | 5 min | Mandatory customer visit within 1x24 hours |
+| HIGH | Medium Orange | Logging, Synchronization (stuck) | 1 hr | Mandatory visit within 1x24 hours if Hard Restart does not resolve |
+| MEDIUM | Low Yellow | HighRxPower (> -8 dBm), LowRxPower (< -28 dBm) | 4 hr | Mandatory visit within 2x24 hours after notification |
+| LOW | Info Blue | DyingGasp | 8 hr | Coordinate with customer to ensure no electrical issues |
 
 > **i18n:** Action messages are configurable via `TRAP_ACTION_CRITICAL`, `TRAP_ACTION_HIGH`,
 > `TRAP_ACTION_MEDIUM`, `TRAP_ACTION_LOW` environment variables. Defaults are English.
@@ -335,7 +335,7 @@ Full suite:    20/20 packages pass
 - Webhook test CLI (`cmd/webhook-test/`)
 
 ### Changed
-- Trap handler no longer trusts trap OID for event type — always verifies via SNMP
+- Trap handler no longer trusts trap OID for event type, always verifies via SNMP
 - Listener parses snmpTrapOID, ONU name/type/description/serial from trap PDU
 - OID prefix matching uses `.` suffix to avoid collision (`.1.1` vs `.1.18`)
 - Handler `ONUDetailFetcher` interface extended with `InvalidateONUCache`
@@ -347,5 +347,5 @@ Full suite:    20/20 packages pass
 - Race condition: ONU recovers between trap and flush → re-verify catches it
 - Duplicate entries: same ONU appearing multiple times in batch
 - OID prefix collision: serial OID matched by type OID prefix
-- Severity migration: ONU can only exist in one severity queue at a time — re-adding to a different severity removes from the old queue
+- Severity migration: ONU can only exist in one severity queue at a time, re-adding to a different severity removes from the old queue
 - Batcher re-verify: flush checks that ONU still matches the severity of its queue before sending (prevents stale severity mismatch)
