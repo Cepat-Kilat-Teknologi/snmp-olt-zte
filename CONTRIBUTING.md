@@ -461,4 +461,4 @@ By contributing, you agree that your contributions will be licensed under the MI
 
 ---
 
-Thank you for contributing! 🎉
+Thank you for contributing! 

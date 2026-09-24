@@ -35,8 +35,8 @@ Before deploying, update the following values:
 
 ### ConfigMap (`base/configmap.yaml`)
 
-- `SNMP_HOST` — IP address of your ZTE C320 OLT
-- `TRAP_WEBHOOK_URL` — Webhook URL for trap and power monitor notifications
+- `SNMP_HOST`: IP address of your ZTE C320 OLT
+- `TRAP_WEBHOOK_URL`: Webhook URL for trap and power monitor notifications
 
 ### Secret (`base/secret.yaml`)
 

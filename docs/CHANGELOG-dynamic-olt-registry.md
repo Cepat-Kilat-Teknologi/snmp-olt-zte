@@ -1,4 +1,4 @@
-# Dynamic OLT Registry Refactor — Changelog & Documentation
+# Dynamic OLT Registry Refactor - Changelog & Documentation
 
 ## Overview
 
@@ -9,7 +9,7 @@ a service restart.
 
 **Impact:** 9 files changed (7 modified + 2 new), 268 insertions, 106 deletions  
 **Test coverage:** 20/20 packages pass, including 17 new OLTRegistry tests  
-**Breaking changes:** None — all 4 configuration modes remain backward-compatible
+**Breaking changes:** None: all 4 configuration modes remain backward-compatible
 
 ---
 
@@ -87,7 +87,7 @@ of which mode actually provided the initial OLT list. This means:
 
 **Edge case:** If both `OLTS` and `REGISTRY_URL` are set, the initial load uses
 `OLTS` (higher precedence), but the poller starts and overwrites the registry on
-its first tick (~30s). This is by design — `OLTS` provides the bootstrap set,
+its first tick (~30s). This is by design, `OLTS` provides the bootstrap set,
 and the registry takes over for ongoing management.
 
 ---
@@ -104,7 +104,7 @@ No existing environment variables were changed or removed.
 
 ## Files Changed
 
-### 1. `config/config.go` — 1 line changed
+### 1. `config/config.go` - 1 line changed
 
 **Change:** Updated call site from `buildOLTRegistry` to `BuildOLTRegistry`.
 
@@ -113,15 +113,15 @@ No existing environment variables were changed or removed.
 olts, defaultOLT, err := BuildOLTRegistry(oltsJSON, getEnv("DEFAULT_OLT", ""), legacy)
 ```
 
-### 2. `config/olts.go` — 2 lines changed (export rename)
+### 2. `config/olts.go` - 2 lines changed (export rename)
 
 **Change:** `buildOLTRegistry` -> `BuildOLTRegistry` (exported).
 
 Required so `app/registry.go`'s poller can call the parser from outside the
 config package. The function signature, behavior, and all call paths are
-identical — only the visibility changed.
+identical: only the visibility changed.
 
-### 3. `config/registry.go` — 31 lines changed
+### 3. `config/registry.go` - 31 lines changed
 
 **Changes:**
 
@@ -143,17 +143,17 @@ This convenience function combines fetch + parse into a single call, used by the
 poller in `app/registry.go`. Returns `nil, nil` on empty response (signals
 "keep current OLTs" to the poller).
 
-### 4. `config/olts_test.go` — 18 lines changed
+### 4. `config/olts_test.go` - 18 lines changed
 
 Updated all `buildOLTRegistry` references to `BuildOLTRegistry`. No logic changes.
 
-### 5. `config/registry_test.go` — 18 lines changed
+### 5. `config/registry_test.go` - 18 lines changed
 
 Updated all `fetchRegistryOLTS` references to `FetchRegistryOLTS`. Test function
 names updated to match Go convention: `TestFetchRegistryOLTSWithRetry_*` ->
 `Test_fetchRegistryOLTSWithRetry_*`.
 
-### 6. `app/registry.go` — NEW (297 lines)
+### 6. `app/registry.go` - NEW (297 lines)
 
 Core new file. The thread-safe, dynamically-updatable OLT registry.
 
@@ -188,7 +188,7 @@ type OLTRegistry struct {
 | `DefaultOLTID() string` | Returns configured default OLT identifier |
 | `List() []string` | Returns sorted OLT IDs (deterministic for health probes) |
 | `Len() int` | Returns count of registered OLTs |
-| `Reconcile(newOLTs)` | Core diff engine — add/remove/update with minimal disruption |
+| `Reconcile(newOLTs)` | Core diff engine: add/remove/update with minimal disruption |
 | `Close()` | Closes all SNMP connections (idempotent) |
 | `HealthCheck(ctx) error` | Pings all OLTs, returns first error |
 | `StartPoller(ctx, url, key, interval)` | Background goroutine polling device-registry |
@@ -199,11 +199,11 @@ The `Reconcile()` method is the heart of the dynamic registry. It compares the
 current registry state against the incoming OLT list and performs the minimum
 set of operations to converge:
 
-1. **Remove** — OLTs in current map but not in incoming set: close SNMP, delete
-2. **Add** — OLTs in incoming set but not in current map: create full stack
-3. **Update (connection change)** — OLT exists in both but `oltChangeKey()` differs:
+1. **Remove**: OLTs in current map but not in incoming set: close SNMP, delete
+2. **Add**: OLTs in incoming set but not in current map: create full stack
+3. **Update (connection change)**: OLT exists in both but `oltChangeKey()` differs:
    remove + add (full SNMP reconnection)
-4. **Update (metadata only)** — OLT exists in both, same connection params, but
+4. **Update (metadata only)**: OLT exists in both, same connection params, but
    `user_id` changed: update fields in-place (no reconnection)
 
 **Change detection key:**
@@ -228,7 +228,7 @@ are applied in-place without disruption.
 - `Close()` is idempotent (safe to call multiple times)
 - All map access protected by `sync.RWMutex` (read-locked for hot path)
 
-### 7. `app/registry_test.go` — NEW (784 lines, 17 tests)
+### 7. `app/registry_test.go` - NEW (784 lines, 17 tests)
 
 Comprehensive test suite covering all `OLTRegistry` methods:
 
@@ -255,7 +255,7 @@ Comprehensive test suite covering all `OLTRegistry` methods:
 | `TestOLTRegistry_Poller_DisabledByZeroInterval` | interval=0 → poller returns immediately |
 | `TestOLTRegistry_Poller_StopsOnContextCancel` | Context cancel → poller exits cleanly |
 
-### 8. `app/app.go` — 127 lines changed (major rewrite of startup)
+### 8. `app/app.go` - 127 lines changed (major rewrite of startup)
 
 **Removed:**
 
@@ -294,11 +294,11 @@ a.router = loadRoutesWithRegistry(reg, checker, principals, cfg.APIKey)
 Before: one probe per OLT, each with its own `repo.Ping()` goroutine. The
 default OLT was critical; others were optional.
 
-After: Two probes — `snmp_default` (critical, probes the default OLT) and
+After: Two probes: `snmp_default` (critical, probes the default OLT) and
 `snmp_olts` (optional, aggregate `HealthCheck` across all OLTs). Simpler,
 and adapts to OLTs being added/removed without re-registering probes.
 
-### 9. `app/routes.go` — 174 lines added
+### 9. `app/routes.go` - 174 lines added
 
 **New imports:** `context`, `apperrors`, `utils`
 
@@ -338,7 +338,7 @@ next poll tick without a restart.
 
 **Backward compatibility:**
 
-The static `loadRoutesMulti` and `mountONURoutes` functions are preserved — they
+The static `loadRoutesMulti` and `mountONURoutes` functions are preserved, they
 are still used by tests and could serve as a fallback. The new dynamic functions
 are additive.
 
@@ -397,7 +397,7 @@ ok  github.com/Cepat-Kilat-Teknologi/snmp-olt-zte/pkg/snmp              3.011s
 ### No configuration changes required
 
 Existing deployments (k3s ConfigMap, Helm values) continue working without any
-changes. The refactor is purely internal — the HTTP API, the environment
+changes. The refactor is purely internal, the HTTP API, the environment
 variables, and the response format are all identical.
 
 ### New capability: dynamic OLT management
@@ -421,9 +421,9 @@ kubectl --context=k3s -n misindo-snmp-olt-zte-prod logs -f deploy/snmp-olt-zte \
 
 ### Tuning
 
-- `REGISTRY_POLL_INTERVAL=30s` (default) — suitable for most deployments
-- `REGISTRY_POLL_INTERVAL=10s` — faster pickup, slightly more device-registry load
-- `REGISTRY_POLL_INTERVAL=0` — disable polling entirely (fetch-once-at-startup)
+- `REGISTRY_POLL_INTERVAL=30s` (default): suitable for most deployments
+- `REGISTRY_POLL_INTERVAL=10s`: faster pickup, slightly more device-registry load
+- `REGISTRY_POLL_INTERVAL=0`: disable polling entirely (fetch-once-at-startup)
 
 ---
 
@@ -476,7 +476,7 @@ registry model allows zero-downtime OLT management.
 ### Why Reconcile() instead of replace-all?
 
 A naive "close everything, rebuild everything" approach would disconnect all
-SNMP connections on every poll tick — even if nothing changed. The diff engine
+SNMP connections on every poll tick, even if nothing changed. The diff engine
 ensures unchanged OLTs keep their live connections, and only changed OLTs
 reconnect.
 
@@ -494,7 +494,7 @@ dynamicHandler((*handler.OnuHandler).GetByBoardIDAndPonID)
 
 This pattern avoids creating a new handler function per OLT. The method
 expression is resolved once at route setup; only the receiver (the `*OLTEntry`
-in context) changes per request. It's type-safe — if `OnuHandler` gains or
+in context) changes per request. It's type-safe, if `OnuHandler` gains or
 loses a method, the compiler catches it.
 
 ### Why not use chi's built-in route params for board/pon validation?
@@ -502,4 +502,4 @@ loses a method, the compiler catches it.
 Board/PON topology varies per OLT (C320 has boards 1,2 with 16 PONs each; C300
 has boards 3,5 with 16 PONs each). The `dynamicValidateBoardPon` middleware
 reads the topology from the resolved OLTEntry in context, so validation adapts
-to whichever OLT the request targets — even if that OLT was added 30 seconds ago.
+to whichever OLT the request targets, even if that OLT was added 30 seconds ago.
