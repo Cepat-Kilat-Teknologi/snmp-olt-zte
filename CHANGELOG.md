@@ -7,7 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-_No unreleased changes._
+### Fixed
+- **Burst of "SNMP pool closed" errors after pod start.** The startup cache
+  pre-warm ran on the OLT entry built from the initial config. When the
+  device-registry poller later rebuilt that OLT (connection settings differ
+  between the startup source and the registry view), the old SNMP pool was
+  closed while the pre-warm was still running, so every remaining board and
+  PON logged `get_onu_information_failed` with `SNMP pool closed`. Background
+  work is now bound to its OLT entry: a rebuild or removal cancels the
+  pre-warm, and the old pool is closed only after the pre-warm has stopped.
+- **Trap handler, batcher and power monitor kept a closed pool after a
+  default OLT rebuild.** They captured the default OLT usecase once at
+  startup. They now resolve the current default OLT on every call.
+- **Data race on metadata-only OLT updates.** Reconcile changed the owner
+  fields of a live registry entry in place while request handlers read it
+  without a lock. It now swaps in an updated copy that shares the same SNMP
+  pool.
 
 ## [3.3.3] - 2026-09-24
 

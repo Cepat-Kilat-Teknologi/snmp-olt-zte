@@ -90,3 +90,34 @@ func TestPreWarmCache_WithErrors(t *testing.T) {
 	// Should not panic, should log errors for missing configs
 	uc.PreWarmCache(context.Background())
 }
+
+// A pre-warm canceled while its ONU list walk is in flight must not issue the
+// serial-number walk (or any further SNMP call) afterwards.
+func TestPreWarmCache_CanceledDuringFetch_StopsBeforeNextSNMPCall(t *testing.T) {
+	cfg := &config.Config{
+		OltCfg:      config.OltConfig{BaseOID1: "1.3.6.1.4.1", BaseOID2: "1.3.6.1.4.2"},
+		CacheCfg:    config.CacheConfig{ONUInfoTTL: 1800, ONUDetailTTL: 900, EmptyOnuIDTTL: 300},
+		BoardPonMap: make(map[config.BoardPonKey]*config.BoardPonConfig),
+	}
+	for p := 1; p <= 4; p++ {
+		cfg.BoardPonMap[config.BoardPonKey{BoardID: 1, PonID: p}] = &config.BoardPonConfig{OnuIDNameOID: ".1.1.1"}
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	walks := 0
+	snmpRepo := &mockSnmpRepository{
+		BulkWalkFunc: func(string, func(pdu gosnmp.SnmpPDU) error) error {
+			walks++
+			cancel() // canceled while the first walk is in flight
+			return nil
+		},
+	}
+
+	uc := NewOnuUsecase(snmpRepo, &mockRedisRepository{}, cfg)
+	uc.PreWarmCache(ctx)
+
+	if walks != 1 {
+		t.Fatalf("expected exactly 1 SNMP walk before stopping, got %d", walks)
+	}
+}

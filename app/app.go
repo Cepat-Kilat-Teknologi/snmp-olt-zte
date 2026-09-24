@@ -88,18 +88,17 @@ func (a *App) Start(ctx context.Context) error {
 		go reg.StartPoller(pollerCtx, registryURL, apiKey, pollInterval)
 	}
 
-	// Pre-warm cache for every registered OLT in the background.
+	// Pre-warm cache for every registered OLT in the background. Each pre-warm
+	// is bound to its OLT entry, so a Reconcile that rebuilds or removes the
+	// OLT cancels it and closes the old SNMP pool only after it has stopped.
 	if cfg.CacheCfg.PreWarm {
-		for _, id := range reg.List() {
-			if e, ok := reg.Get(id); ok {
-				go e.UC.PreWarmCache(ctx)
-			}
-		}
+		reg.StartPreWarm(ctx)
 	}
 
-	// Default OLT usecase — used by the trap listener/batcher/power monitor.
-	defaultEntry, _ := reg.GetDefault()
-	defaultUsecase := defaultEntry.UC
+	// Default OLT usecase, used by the trap listener/batcher/power monitor. It
+	// resolves the current default entry on every call, so these long-lived
+	// consumers follow a Reconcile rebuild instead of keeping a closed pool.
+	defaultUsecase := defaultOLTFetcher{reg: reg}
 
 	// Start SNMP Trap listener if enabled.
 	if cfg.TrapCfg.Enabled {
