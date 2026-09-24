@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+_No unreleased changes._
+
+## [3.3.3] - 2026-09-24
+
 ### Added
 - **Sentry error tracking** -- runtime error capture via Sentry SDK with environment and release tagging.
 
