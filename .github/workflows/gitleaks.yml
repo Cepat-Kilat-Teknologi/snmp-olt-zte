@@ -5,6 +5,10 @@ on:
     branches: [main, master]
   pull_request:
     branches: [main, master]
+  schedule:
+    # Weekly full-history report (gitleaks-history job only).
+    - cron: "0 3 * * 1"
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -12,6 +16,10 @@ permissions:
 jobs:
   gitleaks:
     name: gitleaks
+    # Required check: scans only the commits introduced by the PR or push.
+    # Historical findings are reported by gitleaks-history until the W4.5
+    # history purge, so they do not block unrelated changes.
+    if: github.event_name == 'pull_request' || github.event_name == 'push'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -26,5 +34,43 @@ jobs:
             | tar xz -C "$HOME/.local/bin" gitleaks
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
 
-      - name: Run gitleaks
-        run: gitleaks detect --source . --verbose --redact
+      - name: Run gitleaks (new commits only)
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          PUSH_BEFORE: ${{ github.event.before }}
+        run: |
+          if [ "$EVENT_NAME" = "pull_request" ]; then
+            RANGE="${PR_BASE_SHA}..${PR_HEAD_SHA}"
+          elif [ -z "$PUSH_BEFORE" ] || [ "$PUSH_BEFORE" = "0000000000000000000000000000000000000000" ]; then
+            # New branch: no previous tip, scan the pushed commit only.
+            RANGE="-1 ${GITHUB_SHA}"
+          else
+            RANGE="${PUSH_BEFORE}..${GITHUB_SHA}"
+          fi
+          echo "Scanning commit range: ${RANGE}"
+          gitleaks git --no-banner --redact --verbose --config .gitleaks.toml --log-opts="${RANGE}" .
+
+  gitleaks-history:
+    name: gitleaks-history
+    # Weekly / manual full-history scan. Report-only until the W4.5 history
+    # purge; never runs on pull_request/push, so it is never a required check.
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install gitleaks
+        run: |
+          GITLEAKS_VERSION="8.30.1"
+          mkdir -p "$HOME/.local/bin"
+          curl -sSfL "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz" \
+            | tar xz -C "$HOME/.local/bin" gitleaks
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - name: Run gitleaks (full history, report-only)
+        run: gitleaks git --no-banner --redact --verbose --config .gitleaks.toml .
