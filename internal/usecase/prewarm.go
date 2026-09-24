@@ -39,6 +39,13 @@ func (u *onuUsecase) PreWarmCache(ctx context.Context) {
 			total++
 		}
 
+		// Stop before the next SNMP call when the pre-warm was canceled while
+		// the ONU list fetch was in flight (shutdown, or the OLT was rebuilt).
+		if ctx.Err() != nil {
+			logger.Warn("cache_prewarm_canceled")
+			return
+		}
+
 		// Also pre-warm serial number list cache.
 		_, err = u.GetOnuIDAndSerialNumber(ctx, key.BoardID, key.PonID)
 		if err != nil {
