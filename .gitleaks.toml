@@ -1,3 +1,14 @@
+# gitleaks configuration
+#
+# [extend] useDefault = true turns on the built-in gitleaks rule set. Without
+# it gitleaks evaluates only the rules declared in this file, so an
+# allowlist-only config detects nothing.
+
+title = "snmp-olt-zte gitleaks config"
+
+[extend]
+useDefault = true
+
 [allowlist]
 description = "Known false positives in test fixtures, examples, docs, and templates"
 paths = [
@@ -6,4 +17,34 @@ paths = [
   '''examples/''',
   '''README\.md$''',
   '''graphify-out/''',
+]
+
+# ── Custom rules (xc-cicd-01) ────────────────────────────────────────
+# Both rules fire on literal values only. Field names on their own,
+# env-var references (${VAR}, $VAR), template placeholders ({{ }}, <...>)
+# and code identifiers (cfg.SMTPPassword) are not matched.
+
+[[rules]]
+id = "pppoe-password"
+description = "Literal PPPoE / RADIUS subscriber password (SQL Cleartext-Password row, users-file entry, or ppp(oe)_password assignment)"
+regex = '''(?i)(?:['"]Cleartext-Password['"][ \t]*,[ \t]*['"][:=+]{1,2}['"][ \t]*,[ \t]*['"]([^'"\s$]{6,})['"]|Cleartext-Password[ \t]*:=[ \t]*"([^"\s$]{6,})"|ppp(?:oe)?[_-]?password["']?[ \t]*(?::=|=|:)[ \t]*["']([^"'\s${<]{6,})["'])'''
+keywords = ["cleartext-password", "ppp"]
+
+[[rules.allowlists]]
+description = "Obvious placeholders are not credentials"
+regexTarget = "secret"
+regexes = ['''(?i)^(?:x{6,}|\*{6,}|changeme|change_me|password|placeholder|redacted|example|your[_-].*)$''']
+
+[[rules]]
+id = "smtp-password"
+description = "Literal SMTP password (quoted or env-style assignment, or a Gmail app password on an smtp line)"
+regex = '''(?im)(?:smtp[-_]?pass(?:word)?["']?[ \t]*(?::=|=|:)[ \t]*["']([^"'\s${<]{8,})["']|^[ \t]*(?:export[ \t]+)?[a-z0-9_.-]*smtp[-_]?pass(?:word)?[ \t]*[=:][ \t]*([^"'\s${<#][^"'\s,;()]{7,})[ \t]*$|smtp[^\n]*?[=:][ \t]*["']?((?-i:[a-z]{4} [a-z]{4} [a-z]{4} [a-z]{4}))["']?[ \t]*$)'''
+keywords = ["smtp"]
+
+[[rules.allowlists]]
+description = "Code references (cfg.SMTPPassword) and obvious placeholders are not credentials"
+regexTarget = "secret"
+regexes = [
+  '''^[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*)+$''',
+  '''(?i)^(?:x{8,}|\*{8,}|changeme|change_me|password|placeholder|redacted|example|your[_-].*)$''',
 ]
