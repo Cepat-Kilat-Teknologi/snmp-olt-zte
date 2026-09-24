@@ -6,6 +6,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/Cepat-Kilat-Teknologi/snmp-olt-zte/config"
@@ -32,6 +33,35 @@ type OLTEntry struct {
 	Handler   *handler.OnuHandler
 	BoardPons map[int]int // physical slot -> PON count (used by ValidateBoardPonParams)
 	UserID    int         // owner tenant id (used by RequireOLTOwner)
+
+	// Lifecycle of background work bound to this entry (see GoForEach). It is
+	// shared by the copies Reconcile makes on a metadata-only update, and it
+	// is retired when Reconcile removes or rebuilds the OLT.
+	lcOnce sync.Once
+	lc     *entryLifecycle
+}
+
+// entryLifecycle tracks the background workers bound to one OLT stack. The
+// context is canceled when the stack is retired, and the SNMP pool is closed
+// only after every worker has returned, so a long-running job such as the
+// cache pre-warm never runs against a closed pool.
+type entryLifecycle struct {
+	ctx     context.Context
+	cancel  context.CancelFunc
+	workers sync.WaitGroup
+	active  atomic.Int32
+}
+
+// lifecycle returns the entry's lifecycle, creating it on first use. Safe for
+// concurrent callers.
+func (e *OLTEntry) lifecycle() *entryLifecycle {
+	e.lcOnce.Do(func() {
+		if e.lc == nil {
+			ctx, cancel := context.WithCancel(context.Background())
+			e.lc = &entryLifecycle{ctx: ctx, cancel: cancel}
+		}
+	})
+	return e.lc
 }
 
 // OLTRegistry is a thread-safe, dynamically-updatable registry of OLT runtime
@@ -160,10 +190,20 @@ func (reg *OLTRegistry) Reconcile(newOLTs []config.OLTRuntimeConfig) {
 			continue
 		}
 
-		// Connection params unchanged — update metadata in-place (user/org ID
-		// may have changed in device-registry without requiring reconnection).
-		existing.OLT = o
-		existing.UserID = o.UserID
+		// Connection params unchanged: apply metadata (user/org ID may have
+		// changed in device-registry) without reconnecting. The entry is
+		// replaced by an updated copy rather than mutated, because request
+		// handlers read entries without holding reg.mu. The copy keeps the
+		// same SNMP stack and lifecycle.
+		reg.entries[o.ID] = &OLTEntry{
+			OLT:       o,
+			Repo:      existing.Repo,
+			UC:        existing.UC,
+			Handler:   existing.Handler,
+			BoardPons: existing.BoardPons,
+			UserID:    o.UserID,
+			lc:        existing.lifecycle(),
+		}
 	}
 }
 
@@ -203,15 +243,68 @@ func (reg *OLTRegistry) addOLTLocked(olt config.OLTRuntimeConfig) error {
 	return nil
 }
 
-// removeOLTLocked closes the SNMP connection pool and deletes the entry from
-// the registry. Caller must hold reg.mu write lock.
+// removeOLTLocked deletes the entry from the registry and retires it: workers
+// bound to the entry are canceled and its SNMP pool is closed once they have
+// returned. Caller must hold reg.mu write lock.
 func (reg *OLTRegistry) removeOLTLocked(id string, entry *OLTEntry) {
-	entry.Repo.Close()
+	retireEntry(entry)
 	delete(reg.entries, id)
 
 	logger.Info("olt_removed",
 		zap.String("olt_id", id),
 		zap.String("host", entry.OLT.Host))
+}
+
+// retireEntry cancels the entry's workers and closes its SNMP pool. When no
+// worker is running the pool is closed immediately; otherwise it is closed in
+// the background after the last worker returns, so an in-flight job never sees
+// "SNMP pool closed". No new worker can be added once the entry has left the
+// registry map, because GoForEach only starts workers for mapped entries under
+// the read lock.
+func retireEntry(entry *OLTEntry) {
+	lc := entry.lifecycle()
+	lc.cancel()
+	if lc.active.Load() == 0 {
+		entry.Repo.Close()
+		return
+	}
+	go func() {
+		lc.workers.Wait()
+		entry.Repo.Close()
+	}()
+}
+
+// GoForEach starts fn in its own goroutine for every registered OLT. Each run
+// is bound to that entry's lifetime: the ctx passed to fn is canceled when
+// parent is done or when Reconcile removes or rebuilds the entry, and the
+// entry's SNMP pool is not closed until fn has returned. Use it for
+// long-running per-OLT background work such as the cache pre-warm.
+func (reg *OLTRegistry) GoForEach(parent context.Context, fn func(ctx context.Context, e *OLTEntry)) {
+	reg.mu.RLock()
+	defer reg.mu.RUnlock()
+	for _, e := range reg.entries {
+		lc := e.lifecycle()
+		ctx, cancel := context.WithCancel(parent)
+		stop := context.AfterFunc(lc.ctx, cancel)
+		lc.active.Add(1)
+		lc.workers.Add(1)
+		go func(e *OLTEntry) {
+			defer lc.workers.Done()
+			defer lc.active.Add(-1)
+			defer stop()
+			defer cancel()
+			fn(ctx, e)
+		}(e)
+	}
+}
+
+// StartPreWarm pre-warms the Redis cache of every registered OLT in the
+// background. Each pre-warm stops early when ctx is done or when its OLT is
+// removed or rebuilt by Reconcile, and never runs against a closed SNMP pool.
+func (reg *OLTRegistry) StartPreWarm(ctx context.Context) {
+	reg.GoForEach(ctx, func(ctx context.Context, e *OLTEntry) {
+		e.UC.PreWarmCache(ctx)
+	})
 }
 
 // StartPoller runs a background goroutine that fetches the OLT list from
@@ -251,13 +344,16 @@ func (reg *OLTRegistry) StartPoller(ctx context.Context, registryURL, apiKey str
 	}
 }
 
-// Close tears down all OLT stacks, closing every SNMP connection pool.
-// Safe to call multiple times (subsequent calls are no-ops on an empty map).
+// Close tears down all OLT stacks. Each stack is retired like a removal:
+// background workers are canceled and the SNMP pool is closed immediately when
+// none is running, otherwise as soon as the last one returns, so shutdown is
+// never delayed by an in-flight SNMP walk. Safe to call multiple times
+// (subsequent calls are no-ops on an empty map).
 func (reg *OLTRegistry) Close() {
 	reg.mu.Lock()
 	defer reg.mu.Unlock()
 	for id, entry := range reg.entries {
-		entry.Repo.Close()
+		retireEntry(entry)
 		logger.Info("olt_closed", zap.String("olt_id", id))
 		delete(reg.entries, id)
 	}
