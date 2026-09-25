@@ -4,9 +4,9 @@ VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 COMMIT  ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo none)
 DATE    ?= $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
 LDFLAGS := -s -w \
-  -X $(MODULE)/pkg/version.Version=$(VERSION) \
-  -X $(MODULE)/pkg/version.Commit=$(COMMIT) \
-  -X $(MODULE)/pkg/version.Date=$(DATE)
+  -X main.version=$(VERSION) \
+  -X main.commit=$(COMMIT) \
+  -X main.buildTime=$(DATE)
 
 .PHONY: tidy run build test vet fmt vulncheck docker clean help
 
@@ -35,7 +35,7 @@ vulncheck:     ## run govulncheck
 	go run golang.org/x/vuln/cmd/govulncheck@latest ./...
 
 docker:        ## build container image
-	docker build --build-arg VERSION=$(VERSION) --build-arg COMMIT=$(COMMIT) -t $(APP):$(VERSION) .
+	docker build --build-arg APP_VERSION=$(VERSION) --build-arg APP_COMMIT=$(COMMIT) --build-arg APP_BUILD_TIME=$(DATE) -t $(APP):$(VERSION) .
 
 clean:         ## remove build artifacts
 	rm -rf bin

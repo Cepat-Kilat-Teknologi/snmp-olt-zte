@@ -172,6 +172,7 @@ Loaded from `.env` via godotenv. Key variables:
 - `REDIS_HOST`, `REDIS_PORT`, `REDIS_PASSWORD`, `REDIS_DB`: cache
 - `TRAP_*`: SNMP trap listener configuration (optional)
 - Power monitor knobs: `POWER_MONITOR_INTERVAL`, `POWER_MONITOR_CRON`, `RX_POWER_HIGH_THRESHOLD`, `RX_POWER_LOW_THRESHOLD`
+- `SENTRY_DSN`: empty disables Sentry. `SENTRY_ENVIRONMENT` overrides the Sentry environment (default: `APP_ENV`). `SENTRY_RELEASE` overrides the release (default: `snmp-olt-zte@<version>`, where CI injects the tag on tag builds and the 7-char SHA on main builds; local builds report `dev`). Resolution: `sentry.Resolve` in `pkg/sentry/resolve.go`
 
 Metrics and audit logging are always on; there is no `METRICS_ENABLED` flag (the overhead is negligible and the `/metrics` endpoint is harmless when nothing scrapes it).
 
@@ -180,7 +181,7 @@ Metrics and audit logging are always on; there is no `METRICS_ENABLED` flag (the
 | Feature | Status | Details |
 |---------|:------:|---------|
 | OTel tracing | Yes | `OTEL_ENABLED`, `OTEL_EXPORTER_OTLP_ENDPOINT`, `OTEL_SERVICE_NAME` |
-| Sentry | Yes | `SENTRY_DSN` (empty = disabled) |
+| Sentry | Yes | `SENTRY_DSN` (empty = disabled), `SENTRY_ENVIRONMENT`, `SENTRY_RELEASE` |
 | Rate limiting | Yes | Per-IP middleware |
 | Security headers | Yes | `securityHeadersMiddleware` (always active) |
 | Body size limit | Yes | Request body limit middleware |
