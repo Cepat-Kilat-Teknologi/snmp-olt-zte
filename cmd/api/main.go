@@ -59,8 +59,10 @@ func main() {
 		zap.String("build_time", buildTime),
 	)
 
-	// Sentry error tracking — no-op when SENTRY_DSN is empty.
-	if err := sentry.Init(os.Getenv("SENTRY_DSN"), env, version); err != nil {
+	// Sentry error tracking — no-op when SENTRY_DSN is empty. Environment and
+	// release honor SENTRY_ENVIRONMENT / SENTRY_RELEASE overrides.
+	sentryEnv, sentryRelease := sentry.Resolve(os.Getenv, "snmp-olt-zte", env, version)
+	if err := sentry.Init(os.Getenv("SENTRY_DSN"), sentryEnv, sentryRelease); err != nil {
 		logger.Warn("sentry init failed", zap.Error(err))
 	}
 	defer sentry.Flush()

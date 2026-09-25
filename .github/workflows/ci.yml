@@ -236,6 +236,24 @@ jobs:
             type=semver,pattern={{major}}.{{minor}}
             type=sha,format=short
 
+      # Build info baked into the binary via -ldflags (Dockerfile APP_* args).
+      # version is the tag on tag builds and the short SHA on main builds; it
+      # becomes the Sentry release "snmp-olt-zte@<version>".
+      - name: Build info
+        id: buildinfo
+        env:
+          REF_TYPE: ${{ github.ref_type }}
+          REF_NAME: ${{ github.ref_name }}
+          SHA: ${{ github.sha }}
+        run: |
+          short_sha="${SHA:0:7}"
+          if [ "$REF_TYPE" = "tag" ]; then version="$REF_NAME"; else version="$short_sha"; fi
+          {
+            echo "version=$version"
+            echo "commit=$short_sha"
+            echo "build_time=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          } >> "$GITHUB_OUTPUT"
+
       - name: Build & push (amd64 + arm64)
         id: build
         uses: docker/build-push-action@v6
@@ -244,6 +262,10 @@ jobs:
           target: prod
           platforms: linux/amd64,linux/arm64
           push: true
+          build-args: |
+            APP_VERSION=${{ steps.buildinfo.outputs.version }}
+            APP_COMMIT=${{ steps.buildinfo.outputs.commit }}
+            APP_BUILD_TIME=${{ steps.buildinfo.outputs.build_time }}
           provenance: true
           sbom: true
           tags: ${{ steps.meta.outputs.tags }}

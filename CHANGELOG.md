@@ -7,7 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-_No unreleased changes._
+### Added
+- `SENTRY_ENVIRONMENT` and `SENTRY_RELEASE` override the Sentry environment
+  (default `APP_ENV`) and release (default `snmp-olt-zte@<version>`) (MIS-12).
+
+### Changed
+- Sentry release is now `snmp-olt-zte@<version>` instead of the bare version.
+
+### Fixed
+- CI image builds now pass `APP_VERSION`, `APP_COMMIT` and `APP_BUILD_TIME`
+  to the Dockerfile, so images report the tag (tag builds) or the short SHA
+  (main builds) instead of `dev`.
+- `make build` and `make docker` target the real ldflags variables
+  (`main.version`, `main.commit`, `main.buildTime`) and Dockerfile build args.
 
 ## [3.3.3] - 2026-09-24
 
