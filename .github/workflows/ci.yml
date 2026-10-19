@@ -72,7 +72,7 @@ jobs:
           [ -z "$files" ] && out true "no files listed"
           while IFS= read -r f; do
             case "$f" in
-              *.md|docs/*|LICENSE|LICENSE.*|.gitignore|.gitattributes|.editorconfig|.claude/*|CODEOWNERS|\
+              *.md|docs/*|LICENSE|LICENSE.*|.gitignore|.dockerignore|.gitattributes|.editorconfig|.claude/*|CODEOWNERS|\
               .github/CODEOWNERS|.github/ISSUE_TEMPLATE/*|.github/pull_request_template.md|\
               .github/PULL_REQUEST_TEMPLATE/*|.github/dependabot.yml|.github/actionlint.yaml|\
               .gitleaks.toml|.gitleaksignore|.github/workflows/gitleaks.yml|.env.example|.env.*.example|*.http) ;;
