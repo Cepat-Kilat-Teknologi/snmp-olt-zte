@@ -3,7 +3,7 @@ module github.com/Cepat-Kilat-Teknologi/snmp-olt-zte
 go 1.26.9
 
 require (
-	github.com/alicebob/miniredis/v2 v2.37.0
+	github.com/alicebob/miniredis/v2 v2.40.0
 	github.com/getsentry/sentry-go v0.49.0
 	github.com/go-chi/chi/v5 v5.3.2
 	github.com/go-chi/cors v1.2.2
