@@ -133,7 +133,7 @@ jobs:
           echo "total coverage: ${total}%"
           awk "BEGIN{exit !(${total:-0} >= 80)}" || { echo '::error::coverage below 80%'; exit 1; }
       - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@v6
+        uses: codecov/codecov-action@v7
         env:
           CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
         with:
