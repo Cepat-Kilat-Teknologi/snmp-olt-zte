@@ -6,7 +6,7 @@ ARG APP_COMMIT=none
 ARG APP_BUILD_TIME=unknown
 
 # Development stage with hot reload
-FROM golang:1.26-alpine AS dev
+FROM golang:1.26.10-alpine AS dev
 
 # Install air for hot reload
 RUN go install github.com/air-verse/air@latest
