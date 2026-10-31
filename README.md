@@ -374,6 +374,20 @@ curl -sS -H "X-API-Key: your-api-key" localhost:8081/api/v1/board/2/pon/7 | jq
 
 Without a valid API key, the server returns `401 Unauthorized`. If `API_KEY` is not set, authentication is disabled (backward compatible). Health check (`/health`) never requires authentication.
 
+## Client IP in Audit Logs
+
+The audit log records the caller address in its `ip` field. `RATE_LIMIT_TRUSTED_PROXIES`
+(comma-separated IPs or CIDRs, default empty) controls where that address comes from:
+
+- Empty: the TCP peer address only. `X-Forwarded-For` and `X-Real-IP` are ignored, so a
+  caller cannot write its own audit IP.
+- The TCP peer is in the list: `X-Forwarded-For` is walked right to left and the first hop
+  that is not a trusted proxy is the client. `X-Real-IP` is read only when
+  `X-Forwarded-For` is absent.
+
+A malformed entry fails startup. In Kubernetes, set it to the cluster pod CIDR. The rate
+limiter is a single global bucket and does not use the client IP.
+
 ## Response Format
 
 **Success:**
