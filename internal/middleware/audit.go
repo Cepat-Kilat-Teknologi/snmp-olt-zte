@@ -2,7 +2,6 @@ package middleware
 
 import (
 	"net/http"
-	"strings"
 	"time"
 
 	"github.com/Cepat-Kilat-Teknologi/snmp-olt-zte/internal/reqctx"
@@ -72,20 +71,9 @@ func maskAPIKey(key string) string {
 	return key[:8] + "***"
 }
 
-// clientIP returns the best-effort client IP for the request. It honors
-// X-Forwarded-For and X-Real-IP headers if present (common behind load
-// balancers/reverse proxies) and falls back to RemoteAddr otherwise.
+// clientIP returns the client address for the audit entry. Forwarding
+// headers count only from a peer in RATE_LIMIT_TRUSTED_PROXIES, so a caller
+// cannot write its own audit IP.
 func clientIP(r *http.Request) string {
-	if v := r.Header.Get("X-Forwarded-For"); v != "" {
-		// X-Forwarded-For may contain a comma-separated chain; the leftmost
-		// entry is the original client.
-		if idx := strings.IndexByte(v, ','); idx >= 0 {
-			return strings.TrimSpace(v[:idx])
-		}
-		return strings.TrimSpace(v)
-	}
-	if v := r.Header.Get("X-Real-IP"); v != "" {
-		return strings.TrimSpace(v)
-	}
-	return r.RemoteAddr
+	return auditTrusted.Load().ClientIP(r)
 }
