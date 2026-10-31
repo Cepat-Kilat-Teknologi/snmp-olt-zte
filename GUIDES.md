@@ -115,6 +115,12 @@ OLT_PONS_PER_BOARD=16
 # Combined with each OLT's user_id, a caller only sees its own OLTs (cross-tenant
 # -> 404); role "admin" sees all. Overrides the single API_KEY above.
 # API_USERS=[{"user_id":1,"api_key":"keyA"},{"user_id":2,"api_key":"keyB"},{"user_id":0,"api_key":"adminKey","role":"admin"}]
+
+# Client IP for the audit log (optional): comma-separated IPs or CIDRs whose
+# X-Forwarded-For / X-Real-IP are honored. Empty (default) = TCP peer address
+# only. From a trusted peer the XFF chain is walked right to left to the first
+# hop that is not a trusted proxy. A malformed entry fails startup.
+# RATE_LIMIT_TRUSTED_PROXIES=10.42.0.0/16
 ```
 
 > The full, annotated variable reference lives in `.env.example` (includes the
