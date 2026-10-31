@@ -35,6 +35,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   fields of a live registry entry in place while request handlers read it
   without a lock. It now swaps in an updated copy that shares the same SNMP
   pool.
+- **Flaky `TestMain_RunsAndShutsDown` under `-race` load.** The test sent
+  SIGTERM after a fixed 300 ms sleep, which could arrive before the server
+  registered its signal handler. It now polls `/healthz` on a reserved port
+  with a deadline, guards the test binary against an early SIGTERM, and
+  repeats SIGTERM until `main` returns (billing-platform#84).
 
 ## [3.3.3] - 2026-09-24
 
