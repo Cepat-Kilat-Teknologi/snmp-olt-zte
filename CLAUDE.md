@@ -155,6 +155,8 @@ The `/metrics` endpoint is unauthenticated: Prometheus scrapers typically run on
 - **Log capture**: `pkg/logger.SetForTest(newTestLogger(buf))` + restore closure
 - **Health checker**: tests can pass `nil` to `loadRoutes` to skip dependency gating (`/readyz` then always returns 200)
 - **Coverage**: aim for >95%
+- **Timing**: wait for readiness by polling against a deadline (see
+  `waitHealthy` in `cmd/api/main_test.go`), never a fixed `time.Sleep`
 - **Integration**: `examples/` contains Docker Compose + Helm for end-to-end smoke tests
 
 ## Environment Configuration

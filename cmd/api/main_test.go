@@ -2,6 +2,9 @@ package main
 
 import (
 	"net"
+	"net/http"
+	"os"
+	"os/signal"
 	"strconv"
 	"syscall"
 	"testing"
@@ -54,8 +57,9 @@ func TestMain_RunsAndShutsDown(t *testing.T) {
 	defer func() { _ = udp.Close() }()
 	snmpAddr := udp.LocalAddr().(*net.UDPAddr)
 
-	t.Setenv("APP_ENV", "")      // empty -> defaults to "production" (covers the default branch)
-	t.Setenv("SERVER_PORT", "0") // ephemeral — no conflict with anything running
+	port := freeTCPPort(t)
+	t.Setenv("APP_ENV", "") // empty -> defaults to "production" (covers the default branch)
+	t.Setenv("SERVER_PORT", strconv.Itoa(port))
 	t.Setenv("SNMP_HOST", "127.0.0.1")
 	t.Setenv("SNMP_PORT", strconv.Itoa(snmpAddr.Port))
 	t.Setenv("SNMP_COMMUNITY", "public")
@@ -68,16 +72,69 @@ func TestMain_RunsAndShutsDown(t *testing.T) {
 	t.Setenv("REGISTRY_URL", "")
 	t.Setenv("TRAP_ENABLED", "false")
 
+	// A bind failure would reach logger.Fatal and exit the test binary.
+	orig := fatal
+	fatal = func(msg string, _ ...zapcore.Field) { t.Errorf("fatal: %s", msg) }
+	defer func() { fatal = orig }()
+
+	// Keep a SIGTERM that arrives before main registers its handler from
+	// terminating the test binary. Signals are delivered to every channel
+	// registered for them, so main still receives the ones sent later.
+	guard := make(chan os.Signal, 1)
+	signal.Notify(guard, syscall.SIGTERM)
+	defer signal.Stop(guard)
+
 	done := make(chan struct{})
 	go func() { main(); close(done) }()
 
-	time.Sleep(300 * time.Millisecond) // let the server bind + register its signal handler
-	if err := syscall.Kill(syscall.Getpid(), syscall.SIGTERM); err != nil {
-		t.Fatalf("signal: %v", err)
+	waitHealthy(t, "http://127.0.0.1:"+strconv.Itoa(port)+"/healthz", 30*time.Second)
+
+	// The HTTP server can answer before graceful.Shutdown calls
+	// signal.Notify, so repeat SIGTERM until main returns.
+	deadline := time.After(30 * time.Second)
+	tick := time.NewTicker(50 * time.Millisecond)
+	defer tick.Stop()
+	for {
+		if err := syscall.Kill(syscall.Getpid(), syscall.SIGTERM); err != nil {
+			t.Fatalf("signal: %v", err)
+		}
+		select {
+		case <-done:
+			return
+		case <-deadline:
+			t.Fatal("main did not return after SIGTERM")
+		case <-tick.C:
+		}
 	}
-	select {
-	case <-done:
-	case <-time.After(5 * time.Second):
-		t.Fatal("main did not return after SIGTERM")
+}
+
+// freeTCPPort returns a loopback port that was free a moment ago. main binds
+// the port itself, so the test needs to know it in advance to poll /healthz.
+func freeTCPPort(t *testing.T) int {
+	t.Helper()
+	l, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("free port: %v", err)
 	}
+	port := l.Addr().(*net.TCPAddr).Port
+	_ = l.Close()
+	return port
+}
+
+// waitHealthy polls url until it answers 200 or the timeout passes.
+func waitHealthy(t *testing.T, url string, timeout time.Duration) {
+	t.Helper()
+	client := &http.Client{Timeout: time.Second}
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		resp, err := client.Get(url) //nolint:noctx // test-only poll with a client timeout
+		if err == nil {
+			_ = resp.Body.Close()
+			if resp.StatusCode == http.StatusOK {
+				return
+			}
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	t.Fatalf("server at %s not healthy within %s", url, timeout)
 }
