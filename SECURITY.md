@@ -361,8 +361,13 @@ This service processes network device data:
 
 Logs may contain:
 - Request IDs
-- IP addresses (not logged by default)
+- Client IP addresses (audit log `ip` field)
 - Error messages
+
+The audit `ip` is the TCP peer address unless the peer is listed in
+`RATE_LIMIT_TRUSTED_PROXIES` (comma-separated IPs or CIDRs, default empty). Only then are
+`X-Forwarded-For` (walked right to left to the first untrusted hop) and `X-Real-IP` read.
+Leave it empty unless a proxy you control fronts the service.
 
 **Do not log:**
 - SNMP community strings

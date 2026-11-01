@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+- The audit log `ip` no longer comes from a client-supplied `X-Forwarded-For`
+  or `X-Real-IP`. Both were read from any caller (leftmost XFF entry), so a
+  caller could write its own audit IP. They are now honored only when the TCP
+  peer is in `RATE_LIMIT_TRUSTED_PROXIES` (default empty: trust nobody), with
+  the XFF chain walked right to left to the first untrusted hop. The fallback
+  drops the port from `RemoteAddr`. A malformed value fails startup.
+
 ### Added
 - `SENTRY_ENVIRONMENT` and `SENTRY_RELEASE` override the Sentry environment
   (default `APP_ENV`) and release (default `snmp-olt-zte@<version>`) (MIS-12).

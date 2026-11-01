@@ -113,43 +113,63 @@ func TestAuditLog_APIKeyMasking(t *testing.T) {
 func TestAuditLog_ClientIPResolution(t *testing.T) {
 	tests := []struct {
 		name       string
-		xff        string
+		trusted    string
+		xff        []string
 		xRealIP    string
 		remoteAddr string
 		want       string
 	}{
 		{
-			name:       "x-forwarded-for chain uses first entry trimmed",
-			xff:        "203.0.113.1, 10.0.0.2, 10.0.0.3",
+			name:       "spoofed x-forwarded-for from untrusted peer ignored",
+			xff:        []string{"203.0.113.1"},
+			remoteAddr: "192.0.2.1:1234",
+			want:       "192.0.2.1",
+		},
+		{
+			name:       "spoofed x-real-ip from untrusted peer ignored",
+			xRealIP:    "198.51.100.7",
+			remoteAddr: "192.0.2.1:1234",
+			want:       "192.0.2.1",
+		},
+		{
+			name:       "trusted peer chain walked right to left",
+			trusted:    "192.0.2.0/24,10.0.0.0/8",
+			xff:        []string{"6.6.6.6, 203.0.113.1, 10.0.0.2"},
 			remoteAddr: "192.0.2.1:1234",
 			want:       "203.0.113.1",
 		},
 		{
-			name:       "x-forwarded-for single entry",
-			xff:        "  203.0.113.5  ",
+			name:       "trusted peer multiple x-forwarded-for lines",
+			trusted:    "192.0.2.0/24,10.0.0.0/8",
+			xff:        []string{"6.6.6.6, 203.0.113.1", "10.0.0.2"},
 			remoteAddr: "192.0.2.1:1234",
-			want:       "203.0.113.5",
+			want:       "203.0.113.1",
 		},
 		{
-			name:       "x-real-ip when no x-forwarded-for",
+			name:       "x-real-ip from trusted peer when no x-forwarded-for",
+			trusted:    "192.0.2.1",
 			xRealIP:    "198.51.100.7",
 			remoteAddr: "192.0.2.1:1234",
 			want:       "198.51.100.7",
 		},
 		{
-			name:       "remoteaddr fallback",
+			name:       "remoteaddr fallback drops the port",
 			remoteAddr: "192.0.2.1:1234",
-			want:       "192.0.2.1:1234",
+			want:       "192.0.2.1",
 		},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			logs, restore := installObserver(t)
 			defer restore()
+			tp, err := ParseTrustedProxies(tc.trusted)
+			require.NoError(t, err)
+			SetTrustedProxies(tp)
+			t.Cleanup(func() { SetTrustedProxies(nil) })
 
 			req := httptest.NewRequest(http.MethodPost, "/ip", nil)
-			if tc.xff != "" {
-				req.Header.Set("X-Forwarded-For", tc.xff)
+			for _, v := range tc.xff {
+				req.Header.Add("X-Forwarded-For", v)
 			}
 			if tc.xRealIP != "" {
 				req.Header.Set("X-Real-IP", tc.xRealIP)

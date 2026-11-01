@@ -329,6 +329,20 @@ func TestLoadConfig_MissingSNMPHost(t *testing.T) {
 	}
 }
 
+func TestLoadConfig_TrustedProxies(t *testing.T) {
+	t.Setenv("SNMP_HOST", "10.0.0.1")
+	t.Setenv("SNMP_COMMUNITY", "public")
+	t.Setenv("RATE_LIMIT_TRUSTED_PROXIES", "10.42.0.0/16")
+
+	cfg, err := LoadConfig()
+	if err != nil {
+		t.Fatalf("LoadConfig: %v", err)
+	}
+	if cfg.TrustedProxies != "10.42.0.0/16" {
+		t.Errorf("TrustedProxies = %q, want the raw env value", cfg.TrustedProxies)
+	}
+}
+
 func TestLoadConfig_MissingSNMPCommunity(t *testing.T) {
 	t.Setenv("SNMP_HOST", "10.0.0.1")
 	t.Setenv("SNMP_COMMUNITY", "")

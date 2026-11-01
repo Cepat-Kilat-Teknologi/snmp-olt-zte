@@ -59,7 +59,7 @@ Migration chi↔Fiber is a significant refactor with little upside, SNMP/SSH dom
 
 Fiber→chi porting: `fiber.Ctx` → `http.ResponseWriter + *http.Request`,
 `c.Locals("request_id")` → `reqctx.RequestIDFromContext(r.Context())`,
-`c.IP()` → `middleware/audit.go` `clientIP` helper (X-Forwarded-For aware).
+`c.IP()` → `middleware/audit.go` `clientIP` helper (forwarding headers only from `RATE_LIMIT_TRUSTED_PROXIES`).
 Both chi adapters use the **leaf-package `reqctx` pattern** to avoid
 the utils ↔ middleware ↔ logger import cycle.
 
@@ -167,6 +167,7 @@ Loaded from `.env` via godotenv. Key variables:
 - `SERVER_PORT`: HTTP listen port (default 8081)
 - `API_KEY`: optional single key; when set, all `/api/v1/*` endpoints require `X-API-Key` header
 - `API_USERS`, optional **per-tenant** access control (JSON array of `{user_id, api_key, role}`), keyed by `api_key`. Overrides the single `API_KEY`. Each `X-API-Key` resolves to a `user_id`+role; an OLT (which carries its own `user_id` in `OLTS`) is visible only to its owner, a cross-tenant request returns **404** (not 403, to avoid enumeration). `role:"admin"` sees all OLTs; an OLT with `user_id` 0/unset is admin-only. Registry in `config/users.go` (`buildUserRegistry`); enforced by `middleware.Authenticator` (key→`reqctx.Principal`) + `middleware.RequireOLTOwner` (per-OLT 404). JSON-only for now (no file variant yet).
+- `RATE_LIMIT_TRUSTED_PROXIES` (default empty): comma-separated CIDRs or IPs whose `X-Forwarded-For` / `X-Real-IP` the audit log honors for its `ip` field. Empty = TCP peer only, so a caller cannot write its own audit IP. The XFF chain is walked right to left to the first untrusted hop; `X-Real-IP` only when XFF is absent. A malformed value fails startup. Production: cluster pod CIDR. Same name as in the other adapters, although this service's rate limiter is global and does not key on the client IP
 - `SNMP_HOST`, `SNMP_PORT`, `SNMP_COMMUNITY`: OLT connection
 - `OLT_BOARDS`: physical GPON slots, optionally `slot:pons` (default `1,2`; a C300 e.g. `3:16,5:8` for a GTGH in slot 3 + GTGO in slot 5). Drives OID generation, validation, pre-warm, power-monitor, and trap decoding. `OLT_PONS_PER_BOARD` (default 16) is the default PON count for bare slots. C320 and C300 V2.1.0 are OID-identical; only the slots/cards differ.
 - `OLTS`: **multi-OLT in one instance**: JSON array of `{id,host,port,community,boards}` (boards supports `slot:pons`). When set, overrides `SNMP_*`/`OLT_BOARDS`; each OLT is served at `/api/v1/olt/{id}/...` with a per-OLT SNMP pool + namespaced Redis cache (`olt_<id>_...`). `DEFAULT_OLT` picks which OLT also answers the bare `/board/...` paths. Registry built in `config/olts.go` (`OLTRuntimeConfig`, `buildOLTRegistry`); wired per-OLT in `app/app.go` via `loadRoutesMulti`.
@@ -184,7 +185,7 @@ Metrics and audit logging are always on; there is no `METRICS_ENABLED` flag (the
 |---------|:------:|---------|
 | OTel tracing | Yes | `OTEL_ENABLED`, `OTEL_EXPORTER_OTLP_ENDPOINT`, `OTEL_SERVICE_NAME` |
 | Sentry | Yes | `SENTRY_DSN` (empty = disabled), `SENTRY_ENVIRONMENT`, `SENTRY_RELEASE` |
-| Rate limiting | Yes | Per-IP middleware |
+| Rate limiting | Yes | One global token bucket (100 rps, burst 200), not per client; `/health*`, `/readyz`, `/metrics` exempt |
 | Security headers | Yes | `securityHeadersMiddleware` (always active) |
 | Body size limit | Yes | Request body limit middleware |
 

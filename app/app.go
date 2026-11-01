@@ -9,6 +9,7 @@ import (
 
 	"github.com/Cepat-Kilat-Teknologi/snmp-olt-zte/config"
 	"github.com/Cepat-Kilat-Teknologi/snmp-olt-zte/internal/health"
+	"github.com/Cepat-Kilat-Teknologi/snmp-olt-zte/internal/middleware"
 	"github.com/Cepat-Kilat-Teknologi/snmp-olt-zte/internal/repository"
 	"github.com/Cepat-Kilat-Teknologi/snmp-olt-zte/internal/reqctx"
 	"github.com/Cepat-Kilat-Teknologi/snmp-olt-zte/internal/trap"
@@ -42,6 +43,14 @@ func (a *App) Start(ctx context.Context) error {
 		logger.Error("failed to load config", zap.Error(err))
 		return err
 	}
+
+	trustedProxies, err := middleware.ParseTrustedProxies(cfg.TrustedProxies)
+	if err != nil {
+		err = fmt.Errorf("RATE_LIMIT_TRUSTED_PROXIES: %w", err)
+		logger.Error("failed to load config", zap.Error(err))
+		return err
+	}
+	middleware.SetTrustedProxies(trustedProxies)
 
 	// Initialize Redis client.
 	redisClient := redis.NewRedisClient(cfg)

@@ -4,6 +4,7 @@ import (
 	"context"
 	"net"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -46,6 +47,19 @@ func TestApp_Start_MissingConfig(t *testing.T) {
 	err := app.Start(ctx)
 	if err == nil {
 		t.Error("Expected error for missing SNMP config")
+	}
+}
+
+// TestApp_Start_MalformedTrustedProxies checks that a typo in
+// RATE_LIMIT_TRUSTED_PROXIES stops startup before any connection is made.
+func TestApp_Start_MalformedTrustedProxies(t *testing.T) {
+	t.Setenv("SNMP_HOST", "10.0.0.1")
+	t.Setenv("SNMP_COMMUNITY", "public")
+	t.Setenv("RATE_LIMIT_TRUSTED_PROXIES", "10.0.0.0/33")
+
+	err := New().Start(context.Background())
+	if err == nil || !strings.Contains(err.Error(), "RATE_LIMIT_TRUSTED_PROXIES") {
+		t.Fatalf("Start() error = %v, want RATE_LIMIT_TRUSTED_PROXIES error", err)
 	}
 }
 

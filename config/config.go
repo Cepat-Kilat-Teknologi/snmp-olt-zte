@@ -25,6 +25,9 @@ type Config struct { // Define the main configuration struct named Config
 	DefaultOLT   string                          // ID of the OLT served by the bare /board routes (back-compat)
 	APIKey       string                          `mapstructure:"-"` // Legacy single API key (API_KEY); applies when APIUsers is nil
 	APIUsers     map[string]APIUser              `mapstructure:"-"` // Per-tenant API-key registry (API_USERS), keyed by api_key; nil = per-user auth off
+	// TrustedProxies is RATE_LIMIT_TRUSTED_PROXIES: comma-separated CIDRs or
+	// IPs whose X-Forwarded-For / X-Real-IP the audit log honors. Empty trusts nobody.
+	TrustedProxies string `mapstructure:"-"`
 }
 
 // SnmpConfig contains configuration parameters for SNMP connection
@@ -375,6 +378,8 @@ func LoadConfig() (*Config, error) {
 		return nil, err
 	}
 	cfg.APIUsers = apiUsers
+
+	cfg.TrustedProxies = getEnv("RATE_LIMIT_TRUSTED_PROXIES", "")
 
 	// Mirror the default OLT into the legacy top-level fields so cfg-level
 	// helpers (GetBoardPonConfig, ValidateConfig) reflect the default device.
