@@ -3,6 +3,7 @@ package config
 import (
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
@@ -580,5 +581,47 @@ func TestLoadConfig_RegistryURLError(t *testing.T) {
 
 	if _, err := LoadConfig(); err == nil {
 		t.Fatal("expected fail-fast error for unreachable REGISTRY_URL")
+	}
+}
+
+func TestLoadConfig_ProductionRequiresAPIKey(t *testing.T) {
+	t.Setenv("SNMP_HOST", "10.0.0.1")
+	t.Setenv("SNMP_COMMUNITY", "public")
+
+	// Production with no API_KEY and no API_USERS must fail.
+	t.Setenv("APP_ENV", "production")
+	t.Setenv("API_KEY", "")
+	t.Setenv("API_USERS", "")
+	_, err := LoadConfig()
+	if err == nil {
+		t.Fatal("LoadConfig must fail in production without API_KEY or API_USERS")
+	}
+	if !strings.Contains(err.Error(), "API_KEY or API_USERS is required") {
+		t.Errorf("unexpected error: %v", err)
+	}
+
+	// Production with API_KEY set must pass the guard.
+	t.Setenv("API_KEY", "test-key")
+	cfg, err := LoadConfig()
+	if err != nil {
+		t.Fatalf("LoadConfig with API_KEY: %v", err)
+	}
+	if cfg.APIKey != "test-key" {
+		t.Errorf("APIKey = %q, want %q", cfg.APIKey, "test-key")
+	}
+
+	// Production with API_USERS (no single key) must pass the guard.
+	t.Setenv("API_KEY", "")
+	t.Setenv("API_USERS", `[{"user_id":1,"api_key":"k1"},{"user_id":0,"api_key":"admin","role":"admin"}]`)
+	if _, err := LoadConfig(); err != nil {
+		t.Fatalf("LoadConfig with API_USERS: %v", err)
+	}
+
+	// Development with no key must pass the guard.
+	t.Setenv("APP_ENV", "development")
+	t.Setenv("API_KEY", "")
+	t.Setenv("API_USERS", "")
+	if _, err := LoadConfig(); err != nil {
+		t.Fatalf("LoadConfig in development without key: %v", err)
 	}
 }
