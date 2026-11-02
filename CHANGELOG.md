@@ -14,6 +14,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   peer is in `RATE_LIMIT_TRUSTED_PROXIES` (default empty: trust nobody), with
   the XFF chain walked right to left to the first untrusted hop. The fallback
   drops the port from `RemoteAddr`. A malformed value fails startup.
+- **`API_KEY` or `API_USERS` required in production (ADR-018).** The service
+  refuses to start when `APP_ENV=production` and neither `API_KEY` nor
+  `API_USERS` is set. Set `APP_ENV=development` to bypass for local dev.
 
 ### Added
 - `SENTRY_ENVIRONMENT` and `SENTRY_RELEASE` override the Sentry environment

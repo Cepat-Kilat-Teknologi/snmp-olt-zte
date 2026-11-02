@@ -5,7 +5,7 @@ go 1.26.10
 require (
 	github.com/alicebob/miniredis/v2 v2.40.0
 	github.com/getsentry/sentry-go v0.49.0
-	github.com/go-chi/chi/v5 v5.3.2
+	github.com/go-chi/chi/v5 v5.5.0
 	github.com/go-chi/cors v1.2.2
 	github.com/go-redis/redismock/v9 v9.2.0
 	github.com/gosnmp/gosnmp v1.45.0

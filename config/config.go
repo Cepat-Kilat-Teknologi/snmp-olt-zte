@@ -379,6 +379,14 @@ func LoadConfig() (*Config, error) {
 	}
 	cfg.APIUsers = apiUsers
 
+	// ADR-018: every service that is called directly must refuse to start in
+	// production without an API key. When neither the legacy single API_KEY nor
+	// the per-tenant API_USERS registry is set, an unauthenticated production
+	// instance would accept any request.
+	if getEnv("APP_ENV", "") == "production" && cfg.APIKey == "" && cfg.APIUsers == nil {
+		return nil, fmt.Errorf("API_KEY or API_USERS is required in production (set APP_ENV=development to bypass)")
+	}
+
 	cfg.TrustedProxies = getEnv("RATE_LIMIT_TRUSTED_PROXIES", "")
 
 	// Mirror the default OLT into the legacy top-level fields so cfg-level

@@ -165,7 +165,7 @@ Loaded from `.env` via godotenv. Key variables:
 
 - `APP_ENV`: `development` / `production` / `staging` (controls zap encoder)
 - `SERVER_PORT`: HTTP listen port (default 8081)
-- `API_KEY`: optional single key; when set, all `/api/v1/*` endpoints require `X-API-Key` header
+- `API_KEY`: optional single key; when set, all `/api/v1/*` endpoints require `X-API-Key` header. Required in production (`APP_ENV=production`) when `API_USERS` is not set (ADR-018)
 - `API_USERS`, optional **per-tenant** access control (JSON array of `{user_id, api_key, role}`), keyed by `api_key`. Overrides the single `API_KEY`. Each `X-API-Key` resolves to a `user_id`+role; an OLT (which carries its own `user_id` in `OLTS`) is visible only to its owner, a cross-tenant request returns **404** (not 403, to avoid enumeration). `role:"admin"` sees all OLTs; an OLT with `user_id` 0/unset is admin-only. Registry in `config/users.go` (`buildUserRegistry`); enforced by `middleware.Authenticator` (key→`reqctx.Principal`) + `middleware.RequireOLTOwner` (per-OLT 404). JSON-only for now (no file variant yet).
 - `RATE_LIMIT_TRUSTED_PROXIES` (default empty): comma-separated CIDRs or IPs whose `X-Forwarded-For` / `X-Real-IP` the audit log honors for its `ip` field. Empty = TCP peer only, so a caller cannot write its own audit IP. The XFF chain is walked right to left to the first untrusted hop; `X-Real-IP` only when XFF is absent. A malformed value fails startup. Production: cluster pod CIDR. Same name as in the other adapters, although this service's rate limiter is global and does not key on the client IP
 - `SNMP_HOST`, `SNMP_PORT`, `SNMP_COMMUNITY`: OLT connection
